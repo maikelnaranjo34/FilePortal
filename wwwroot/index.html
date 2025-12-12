@@ -12,6 +12,7 @@
       color: #e5e7eb;
     }
     .item.selected { box-shadow: 0 0 0 2px rgba(14,165,233,0.18); border:1px solid #0ea5e9 }
+    .item.keyboard-selected { box-shadow: 0 0 0 3px #0ea5e9; background: rgba(14,165,233,0.15); }
     .item input[type="checkbox"] { display:none }
     .item.selection-mode input[type="checkbox"] { display:inline-block }
     /* Image viewer modal */
@@ -120,6 +121,71 @@
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
       gap: 12px;
+    }
+    .grid.list-view {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .grid.list-view .item {
+      flex-direction: row;
+      height: 48px;
+      align-items: center;
+      padding: 0 12px;
+    }
+    .grid.list-view .item-thumbnail {
+      width: 32px;
+      height: 32px;
+      flex-shrink: 0;
+    }
+    .grid.list-view .item-info {
+      flex: 1;
+      flex-direction: row;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .grid.list-view .item-name {
+      flex: 1;
+    }
+    .grid.list-view .item-meta {
+      flex-direction: row;
+      gap: 16px;
+    }
+    .grid.details-view {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+    .grid.details-view .item {
+      flex-direction: row;
+      height: 40px;
+      align-items: center;
+      padding: 0 12px;
+      border-radius: 0;
+      border-left: none;
+      border-right: none;
+      border-top: none;
+    }
+    .grid.details-view .item-thumbnail {
+      width: 24px;
+      height: 24px;
+      flex-shrink: 0;
+      margin-right: 8px;
+    }
+    .grid.details-view .item-info {
+      flex: 1;
+      flex-direction: row;
+      align-items: center;
+      gap: 16px;
+    }
+    .grid.details-view .item-name {
+      flex: 1;
+      min-width: 200px;
+    }
+    .grid.details-view .item-meta {
+      flex-direction: row;
+      gap: 24px;
+      min-width: 200px;
     }
     .item {
       background: #020617;
@@ -273,9 +339,12 @@
             </div>
           </div>
           <button id="selectBtn" class="btn-like" type="button" style="margin-left:8px">☑️ Select</button>
+          <button id="selectAllBtn" class="btn-like" type="button" style="margin-left:8px;display:none" onclick="selectAll()">☑️ Select All</button>
+          <button id="downloadSelectedBtn" class="btn-like" type="button" style="margin-left:8px;background:#10b981;display:none" onclick="downloadSelected()">⬇️ Download</button>
           <button id="deleteSelectedBtn" class="btn-like" type="button" style="margin-left:8px;background:#ef4444;display:none" onclick="deleteSelected()">🗑️ Delete Selected</button>
           <span id="selectedCountLabel" style="color:#9ca3af;font-size:13px;margin-left:8px;display:none"></span>
           <button class="secondary" type="button" onclick="goUp()">⬆️ Up</button>
+          <button id="viewTypeBtn" class="secondary" type="button" onclick="toggleViewType()">📋 View</button>
           <a href="/users.html" class="btn-like" style="background:#111827;color:#e5e7eb;padding:6px 10px;">👥 Manage Users</a>
           <span id="currentUser" style="color:#9ca3af; font-size:13px; margin-left:8px; display:none;"></span>
           <button id="logoutBtn" class="secondary" style="margin-left:8px; display:none;" type="button" onclick="performLogout()">Logout</button>
@@ -314,6 +383,8 @@
     let isPanning = false;
     let panStartX = 0;
     let panStartY = 0;
+    let lastSearchLetter = '';
+    let searchLetterIndex = 0;
 
     // Check if user is authenticated on page load
     async function checkAuth() {
@@ -391,9 +462,7 @@
         // Login successful
         document.getElementById("username").value = "";
         document.getElementById("password").value = "";
-        document.getElementById("loginOverlay").style.display = "none";
-        document.getElementById("mainApp").style.display = "flex";
-        loadDrives();
+        checkAuth(); // Re-check auth to set up user display and load drives
       } catch (err) {
         console.error(err);
         errorEl.textContent = "Network error: " + err.message;
@@ -700,10 +769,13 @@
 
     // Selection mode
     let selectionMode = false;
+    let viewType = 'tiles'; // 'tiles', 'list', 'details'
 
     function toggleSelectionMode() {
       selectionMode = !selectionMode;
       const selectBtn = document.getElementById('selectBtn');
+      const selectAllBtn = document.getElementById('selectAllBtn');
+      const downloadBtn = document.getElementById('downloadSelectedBtn');
       const deleteBtn = document.getElementById('deleteSelectedBtn');
       const countLabel = document.getElementById('selectedCountLabel');
       const items = document.querySelectorAll('.item');
@@ -711,6 +783,8 @@
       if (selectionMode) {
         selectBtn.style.background = '#0ea5e9';
         selectBtn.style.color = '#081025';
+        selectAllBtn.style.display = 'inline-block';
+        downloadBtn.style.display = 'inline-block';
         deleteBtn.style.display = 'inline-block';
         countLabel.style.display = 'inline-block';
         items.forEach(item => item.classList.add('selection-mode'));
@@ -718,6 +792,8 @@
       } else {
         selectBtn.style.background = '';
         selectBtn.style.color = '';
+        selectAllBtn.style.display = 'none';
+        downloadBtn.style.display = 'none';
         deleteBtn.style.display = 'none';
         countLabel.style.display = 'none';
         items.forEach(item => item.classList.remove('selection-mode'));
@@ -729,6 +805,81 @@
     function updateSelectedCount() {
       const selected = document.querySelectorAll('.item input[type="checkbox"]:checked').length;
       document.getElementById('selectedCountLabel').textContent = selected + ' selected';
+    }
+
+    function selectAll() {
+      const checkboxes = document.querySelectorAll('.item input[type="checkbox"]');
+      const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+      checkboxes.forEach(cb => cb.checked = !allChecked);
+      updateSelectedCount();
+      document.getElementById('selectAllBtn').textContent = allChecked ? '☑️ Select All' : '◻️ Deselect All';
+    }
+
+    function toggleViewType() {
+      const views = ['tiles', 'list', 'details'];
+      const currentIndex = views.indexOf(viewType);
+      viewType = views[(currentIndex + 1) % views.length];
+      
+      const grid = document.getElementById('items');
+      grid.classList.remove('list-view', 'details-view');
+      
+      if (viewType === 'list') {
+        grid.classList.add('list-view');
+        document.getElementById('viewTypeBtn').textContent = '📝 List';
+      } else if (viewType === 'details') {
+        grid.classList.add('details-view');
+        document.getElementById('viewTypeBtn').textContent = '📊 Details';
+      } else {
+        document.getElementById('viewTypeBtn').textContent = '📋 Tiles';
+      }
+    }
+
+    async function downloadSelected() {
+      const selected = Array.from(document.querySelectorAll('.item input[type="checkbox"]:checked')).map(cb => cb.parentElement.dataset.path);
+      if (selected.length === 0) { alert('No items selected'); return; }
+      
+      if (selected.length === 1) {
+        // Single file - direct download
+        const link = document.createElement('a');
+        link.href = '/api/files/open?path=' + encodeURIComponent(selected[0]);
+        link.download = selected[0].split(/[\\\/]/).pop();
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      } else {
+        // Multiple files - create zip
+        try {
+          console.log('Creating ZIP with paths:', selected);
+          const response = await fetch('/api/files/download-zip', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ paths: selected })
+          });
+          
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error('ZIP creation failed:', response.status, errorText);
+            alert('Failed to create zip file: ' + response.status + ' - ' + errorText);
+            return;
+          }
+          
+          const blob = await response.blob();
+          console.log('ZIP blob received:', blob.size, 'bytes');
+          const url = window.URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = 'files.zip';
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          window.URL.revokeObjectURL(url);
+          alert('Download started!');
+        } catch (err) {
+          console.error('Download error:', err);
+          alert('Error downloading files: ' + err.message);
+        }
+      }
     }
 
     async function deleteSelected() {
@@ -982,6 +1133,50 @@
         itemsEl.innerHTML = "";
       }
     }
+
+    // Keyboard letter navigation
+    document.addEventListener('keydown', (e) => {
+      // Ignore if typing in input fields, or if modifier keys pressed
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.ctrlKey || e.altKey || e.metaKey) return;
+      
+      // Only handle letter keys (a-z)
+      if (e.key.length === 1 && /[a-zA-Z]/.test(e.key)) {
+        e.preventDefault();
+        const letter = e.key.toLowerCase();
+        
+        // Get all visible items
+        const items = Array.from(document.querySelectorAll('.item'));
+        if (items.length === 0) return;
+        
+        // Filter items that start with this letter
+        const matchingItems = items.filter(item => {
+          const itemData = JSON.parse(item.getAttribute('data-item') || '{}');
+          const name = (itemData.name || '').toLowerCase();
+          return name.startsWith(letter);
+        });
+        
+        if (matchingItems.length === 0) return;
+        
+        // If same letter pressed, cycle to next match
+        if (letter === lastSearchLetter) {
+          searchLetterIndex = (searchLetterIndex + 1) % matchingItems.length;
+        } else {
+          // New letter, start at first match
+          lastSearchLetter = letter;
+          searchLetterIndex = 0;
+        }
+        
+        // Clear previous highlight
+        items.forEach(item => item.classList.remove('keyboard-selected'));
+        
+        // Highlight current match
+        const selectedItem = matchingItems[searchLetterIndex];
+        selectedItem.classList.add('keyboard-selected');
+        
+        // Scroll into view
+        selectedItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    });
 
     // Start: check authentication
     checkAuth();

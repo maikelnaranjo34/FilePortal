@@ -35,7 +35,7 @@ namespace FilePortal.Controllers
 
         [AllowAnonymous]
         [HttpPost("init")]
-        public IActionResult PostInit([FromForm] string username, [FromForm] string password)
+        public IActionResult PostInit([FromForm] string username, [FromForm] string password, [FromForm] string? firstName, [FromForm] string? lastName)
         {
             if (!_store.IsEmpty())
                 return BadRequest(new { error = "Users already exist." });
@@ -43,7 +43,10 @@ namespace FilePortal.Controllers
             if (string.IsNullOrWhiteSpace(username) || string.IsNullOrEmpty(password))
                 return BadRequest(new { error = "username and password are required" });
 
-            var ok = _store.AddUser(username, password, isAdmin: true);
+            if (string.IsNullOrWhiteSpace(firstName) || string.IsNullOrWhiteSpace(lastName))
+                return BadRequest(new { error = "first name and last name are required" });
+
+            var ok = _store.AddUser(username, password, isAdmin: true, firstName: firstName ?? "", lastName: lastName ?? "");
             if (!ok) return StatusCode(500, new { error = "Failed to create admin." });
             return CreatedAtAction(null, null);
         }
@@ -52,18 +55,21 @@ namespace FilePortal.Controllers
         [HttpGet]
         public IActionResult Get()
         {
-            var users = _store.GetUsers().Select(u => new { u.Username, u.IsAdmin });
+            var users = _store.GetUsers().Select(u => new { u.Username, u.FirstName, u.LastName, u.IsAdmin });
             return Ok(users);
         }
 
         [Authorize(Roles = "Admin")]
         [HttpPost]
-        public IActionResult Post([FromForm] string username, [FromForm] string password, [FromForm] bool isAdmin = false)
+        public IActionResult Post([FromForm] string username, [FromForm] string password, [FromForm] bool isAdmin = false, [FromForm] string? firstName = null, [FromForm] string? lastName = null)
         {
             if (string.IsNullOrWhiteSpace(username) || string.IsNullOrEmpty(password))
                 return BadRequest(new { error = "username and password are required" });
 
-            var ok = _store.AddUser(username, password, isAdmin);
+            if (string.IsNullOrWhiteSpace(firstName) || string.IsNullOrWhiteSpace(lastName))
+                return BadRequest(new { error = "first name and last name are required" });
+
+            var ok = _store.AddUser(username, password, isAdmin, firstName ?? "", lastName ?? "");
             if (!ok) return Conflict(new { error = "user exists or invalid input" });
             return CreatedAtAction(nameof(Get), null);
         }

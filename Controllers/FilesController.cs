@@ -10,6 +10,7 @@ using System.Security.Cryptography;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Processing;
 using SixLabors.ImageSharp.Formats.Jpeg;
+using System.IO.Compression;
 
 namespace FilePortal.Controllers
 {
@@ -477,6 +478,104 @@ namespace FilePortal.Controllers
             {
                 return BadRequest(new { error = ex.Message });
             }
+        }
+
+        [HttpPost("download-zip")]
+        public async Task<IActionResult> DownloadZip([FromBody] DownloadZipRequest request)
+        {
+            if (request?.Paths == null || request.Paths.Count == 0)
+            {
+                return BadRequest(new { error = "No paths provided" });
+            }
+
+            var memoryStream = new MemoryStream();
+            try
+            {
+                using (var archive = new ZipArchive(memoryStream, ZipArchiveMode.Create, leaveOpen: true))
+                {
+                    var fileCount = 0;
+                    var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    
+                    foreach (var path in request.Paths)
+                    {
+                        if (string.IsNullOrWhiteSpace(path)) continue;
+
+                        var fullPath = Path.GetFullPath(path);
+
+                        if (System.IO.File.Exists(fullPath))
+                        {
+                            var fileName = Path.GetFileName(fullPath);
+                            // Ensure unique names in zip
+                            var entryName = fileName;
+                            var counter = 1;
+                            while (usedNames.Contains(entryName))
+                            {
+                                var nameWithoutExt = Path.GetFileNameWithoutExtension(fileName);
+                                var ext = Path.GetExtension(fileName);
+                                entryName = $"{nameWithoutExt}_{counter}{ext}";
+                                counter++;
+                            }
+                            usedNames.Add(entryName);
+
+                            var entry = archive.CreateEntry(entryName, CompressionLevel.Fastest);
+                            using var entryStream = entry.Open();
+                            using var fileStream = System.IO.File.OpenRead(fullPath);
+                            await fileStream.CopyToAsync(entryStream);
+                            fileCount++;
+                        }
+                        else if (Directory.Exists(fullPath))
+                        {
+                            // Add folder and its contents recursively
+                            await AddDirectoryToZip(archive, fullPath, Path.GetFileName(fullPath));
+                            fileCount++;
+                        }
+                    }
+
+                    if (fileCount == 0)
+                    {
+                        memoryStream.Dispose();
+                        return NotFound(new { error = "No valid files found" });
+                    }
+                }
+
+                memoryStream.Position = 0;
+                return File(memoryStream, "application/zip", "files.zip");
+            }
+            catch (Exception ex)
+            {
+                memoryStream.Dispose();
+                return StatusCode(500, new { error = ex.Message });
+            }
+        }
+
+        private async Task AddDirectoryToZip(ZipArchive archive, string directoryPath, string entryPrefix)
+        {
+            try
+            {
+                foreach (var file in Directory.GetFiles(directoryPath))
+                {
+                    var relativePath = Path.Combine(entryPrefix, Path.GetFileName(file)).Replace('\\', '/');
+                    var entry = archive.CreateEntry(relativePath, CompressionLevel.Fastest);
+                    using var entryStream = entry.Open();
+                    using var fileStream = System.IO.File.OpenRead(file);
+                    await fileStream.CopyToAsync(entryStream);
+                }
+
+                foreach (var subDir in Directory.GetDirectories(directoryPath))
+                {
+                    var relativePath = Path.Combine(entryPrefix, Path.GetFileName(subDir));
+                    await AddDirectoryToZip(archive, subDir, relativePath);
+                }
+            }
+            catch
+            {
+                // Skip inaccessible directories
+            }
+        }
+
+        public class DownloadZipRequest
+        {
+            public List<string> Paths { get; set; } = new();
         }
     }
 }

@@ -22,7 +22,9 @@
       <h2>Create Initial Admin</h2>
       <p style="color:#9ca3af;margin-bottom:16px">No users exist yet. Create the initial admin account to continue.</p>
       <div>
-        <input id="setupUser" placeholder="admin username" />
+        <input id="setupUser" placeholder="username" />
+        <input id="setupFirstName" placeholder="first name" />
+        <input id="setupLastName" placeholder="last name" />
         <input id="setupPass" placeholder="password" type="password" />
         <button onclick="createInitialAdmin()">Create Admin</button>
         <div id="setupMsg" style="color:#f97373;margin-top:6px"></div>
@@ -51,6 +53,8 @@
     <h3>Add User</h3>
     <div>
       <input id="newUser" placeholder="username" />
+      <input id="newFirstName" placeholder="first name" />
+      <input id="newLastName" placeholder="last name" />
       <input id="newPass" placeholder="password" type="password" />
       <label style="display:block;margin:6px 0;color:#9ca3af"><input type="checkbox" id="newAdmin" /> Make admin</label>
       <button onclick="addUser()">Add</button>
@@ -102,7 +106,8 @@
         const div = document.createElement('div');
         div.className = 'user';
         const left = document.createElement('div');
-        left.textContent = u.username + (u.isAdmin ? ' (admin)' : '');
+        const displayName = u.firstName || u.lastName ? `${u.firstName} ${u.lastName}`.trim() + ` (${u.username})` : u.username;
+        left.textContent = displayName + (u.isAdmin ? ' - admin' : '');
 
         const actions = document.createElement('div');
 
@@ -143,10 +148,17 @@
 
     async function createInitialAdmin() {
       const u = document.getElementById('setupUser').value.trim();
+      const fn = document.getElementById('setupFirstName').value.trim();
+      const ln = document.getElementById('setupLastName').value.trim();
       const p = document.getElementById('setupPass').value;
       const msg = document.getElementById('setupMsg'); msg.textContent = '';
       if (!u || !p) { msg.textContent = 'username and password required'; return; }
-      const fd = new FormData(); fd.append('username', u); fd.append('password', p);
+      if (!fn || !ln) { msg.textContent = 'first name and last name required'; return; }
+      const fd = new FormData(); 
+      fd.append('username', u); 
+      fd.append('firstName', fn);
+      fd.append('lastName', ln);
+      fd.append('password', p);
       const res = await fetch('/api/users/init', { method:'POST', body: fd, credentials:'include' });
       if (res.status === 201) {
         alert('Initial admin created successfully!');
@@ -159,13 +171,29 @@
 
     async function addUser() {
       const u = document.getElementById('newUser').value.trim();
+      const fn = document.getElementById('newFirstName').value.trim();
+      const ln = document.getElementById('newLastName').value.trim();
       const p = document.getElementById('newPass').value;
       const isAdmin = document.getElementById('newAdmin').checked;
       const msg = document.getElementById('msg'); msg.textContent = '';
       if (!u || !p) { msg.textContent = 'username and password required'; return; }
-      const fd = new FormData(); fd.append('username', u); fd.append('password', p); fd.append('isAdmin', isAdmin ? 'true' : 'false');
+      if (!fn || !ln) { msg.textContent = 'first name and last name required'; return; }
+      const fd = new FormData(); 
+      fd.append('username', u); 
+      fd.append('firstName', fn);
+      fd.append('lastName', ln);
+      fd.append('password', p); 
+      fd.append('isAdmin', isAdmin ? 'true' : 'false');
       const res = await fetch('/api/users', { method:'POST', body: fd, credentials:'include' });
-      if (res.status === 201) { document.getElementById('newUser').value=''; document.getElementById('newPass').value=''; document.getElementById('newAdmin').checked=false; load(); return; }
+      if (res.status === 201) { 
+        document.getElementById('newUser').value=''; 
+        document.getElementById('newFirstName').value=''; 
+        document.getElementById('newLastName').value=''; 
+        document.getElementById('newPass').value=''; 
+        document.getElementById('newAdmin').checked=false; 
+        load(); 
+        return; 
+      }
       const text = await res.text(); msg.textContent = text || 'Error';
     }
 

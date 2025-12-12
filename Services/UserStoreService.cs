@@ -75,7 +75,7 @@ public class UserStoreService
         return true;
     }
 
-    public bool AddUser(string username, string password, bool isAdmin = false)
+    public bool AddUser(string username, string password, bool isAdmin = false, string firstName = "", string lastName = "")
     {
         if (string.IsNullOrWhiteSpace(username) || string.IsNullOrEmpty(password)) return false;
         username = username.Trim();
@@ -90,6 +90,8 @@ public class UserStoreService
         var rec = new UserRecord
         {
             Username = username,
+            FirstName = firstName?.Trim() ?? string.Empty,
+            LastName = lastName?.Trim() ?? string.Empty,
             Salt = Convert.ToBase64String(salt),
             Hash = Convert.ToBase64String(hash),
             CreatedUtc = DateTime.UtcNow
