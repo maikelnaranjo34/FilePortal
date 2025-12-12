@@ -1,0 +1,717 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>File Portal</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #020617;
+      color: #e5e7eb;
+    }
+    .item.selected { box-shadow: 0 0 0 2px rgba(14,165,233,0.18); border:1px solid #0ea5e9 }
+    .item input[type="checkbox"] { display:none }
+    .item.selection-mode input[type="checkbox"] { display:inline-block }
+    .app {
+      display: flex;
+      height: 100vh;
+    }
+    .sidebar {
+      width: 260px;
+      background: #020617;
+      border-right: 1px solid #1f2937;
+      display: flex;
+      flex-direction: column;
+    }
+    .sidebar-header {
+      padding: 16px;
+      border-bottom: 1px solid #1f2937;
+      font-weight: 600;
+      font-size: 18px;
+    }
+    .drive-list {
+      flex: 1;
+      overflow: auto;
+      padding: 8px;
+    }
+    .drive-item {
+      padding: 8px 10px;
+      border-radius: 999px;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .drive-item span.icon {
+      font-size: 16px;
+    }
+    .drive-item.active {
+      background: #0ea5e9;
+      color: #0b1120;
+    }
+    .drive-item:not(.active):hover {
+      background: #111827;
+    }
+    .main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+    .toolbar {
+      padding: 10px 16px;
+      border-bottom: 1px solid #1f2937;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .path {
+      font-size: 13px;
+      color: #9ca3af;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .buttons {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    button, .btn-like {
+      border: none;
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 13px;
+      cursor: pointer;
+      background: #0ea5e9;
+      color: #0b1120;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    button.secondary {
+      background: #111827;
+      color: #e5e7eb;
+      border: 1px solid #374151;
+    }
+    button:hover, .btn-like:hover {
+      opacity: 0.9;
+    }
+    .content {
+      flex: 1;
+      overflow: auto;
+      padding: 12px 16px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 12px;
+    }
+    .item {
+      background: #020617;
+      border-radius: 12px;
+      padding: 0;
+      border: 1px solid #1f2937;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      overflow: hidden;
+      transition: all 0.2s ease;
+    }
+    .item:hover {
+      border-color: #0ea5e9;
+      box-shadow: 0 0 12px rgba(14, 165, 233, 0.3);
+    }
+    .item-thumbnail {
+      width: 100%;
+      height: 120px;
+      background: #111827;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    .item-thumbnail img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .item-thumbnail svg {
+      width: 60%;
+      height: 60%;
+      filter: drop-shadow(0 0 2px rgba(0,0,0,0.5));
+    }
+    .item-info {
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .item-name {
+      font-size: 12px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: #e5e7eb;
+    }
+    .item-meta {
+      font-size: 10px;
+      color: #9ca3af;
+      display: flex;
+      justify-content: space-between;
+    }
+    .empty {
+      font-size: 13px;
+      color: #6b7280;
+    }
+    .error {
+      font-size: 12px;
+      color: #f97373;
+      margin-top: 8px;
+    }
+    #fileInput {
+      display: none;
+    }
+    .login-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.8);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+    .login-box {
+      background: #1f2937;
+      border: 1px solid #374151;
+      border-radius: 12px;
+      padding: 32px;
+      width: 100%;
+      max-width: 320px;
+      box-shadow: 0 20px 25px rgba(0,0,0,0.5);
+    }
+    .login-box h1 {
+      margin: 0 0 24px 0;
+      font-size: 24px;
+      color: #e5e7eb;
+    }
+    .login-box input {
+      width: 100%;
+      padding: 8px 12px;
+      margin-bottom: 12px;
+      background: #111827;
+      border: 1px solid #374151;
+      border-radius: 6px;
+      color: #e5e7eb;
+      font-size: 13px;
+      box-sizing: border-box;
+    }
+    .login-box input::placeholder {
+      color: #9ca3af;
+    }
+    .login-box button {
+      width: 100%;
+      margin-top: 8px;
+    }
+    .login-error {
+      color: #f97373;
+      font-size: 12px;
+      margin-bottom: 12px;
+    }
+  </style>
+</head>
+<body>
+  <!-- Login Modal -->
+  <div id="loginOverlay" class="login-overlay">
+    <div class="login-box">
+      <h1>FilePortal</h1>
+      <div id="loginError" class="login-error"></div>
+      <input id="username" type="text" placeholder="Username" autocomplete="off" />
+      <input id="password" type="password" placeholder="Password" autocomplete="off" />
+      <button onclick="performLogin()">Sign In</button>
+    </div>
+  </div>
+
+  <div class="app" style="display:none;" id="mainApp">
+    <div class="sidebar">
+      <div class="sidebar-header">Drives & Sources</div>
+      <div id="driveList" class="drive-list"></div>
+    </div>
+    <div class="main">
+      <div class="toolbar">
+        <div class="path" id="currentPathLabel">Select a drive…</div>
+        <div class="buttons">
+          <div style="position:relative;display:inline-block">
+            <button id="uploadBtn" class="btn-like" type="button">⬆️ Upload</button>
+            <div id="uploadMenu" style="display:none;position:absolute;right:0;margin-top:6px;background:#0b1220;border:1px solid #1f2937;border-radius:6px;padding:6px;z-index:50;min-width:140px">
+              <div id="uploadFilesOption" style="padding:8px;cursor:pointer;color:#e5e7eb">⬆️ Upload Files</div>
+              <div id="uploadFolderOption" style="padding:8px;cursor:pointer;color:#e5e7eb">📁 Upload Folder</div>
+            </div>
+          </div>
+          <button id="selectBtn" class="btn-like" type="button" style="margin-left:8px">☑️ Select</button>
+          <button id="deleteSelectedBtn" class="btn-like" type="button" style="margin-left:8px;background:#ef4444;display:none" onclick="deleteSelected()">🗑️ Delete Selected</button>
+          <span id="selectedCountLabel" style="color:#9ca3af;font-size:13px;margin-left:8px;display:none"></span>
+          <button class="secondary" type="button" onclick="goUp()">⬆️ Up</button>
+          <a href="/users.html" class="btn-like" style="background:#111827;color:#e5e7eb;padding:6px 10px;">👥 Manage Users</a>
+          <span id="currentUser" style="color:#9ca3af; font-size:13px; margin-left:8px; display:none;"></span>
+          <button id="logoutBtn" class="secondary" style="margin-left:8px; display:none;" type="button" onclick="performLogout()">Logout</button>
+        </div>
+      </div>
+      <div class="content">
+        <div id="error" class="error"></div>
+        <div id="items" class="grid"></div>
+        <div id="emptyMsg" class="empty" style="display:none;">This folder is empty.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Hidden inputs for files and folders -->
+  <input id="fileInputFiles" type="file" multiple style="display:none" />
+  <input id="fileInputFolder" type="file" multiple webkitdirectory style="display:none" />
+
+  <script>
+    let currentRoot = null;
+    let currentPath = null;
+
+    // Check if user is authenticated on page load
+    async function checkAuth() {
+      try {
+        const res = await fetch("/api/auth/me", { credentials: "include" });
+        if (res.ok) {
+          const data = await res.json().catch(() => null);
+          const user = data?.user || '';
+          // User is authenticated, show main app
+          document.getElementById("loginOverlay").style.display = "none";
+          document.getElementById("mainApp").style.display = "flex";
+          if (user) {
+            const cu = document.getElementById("currentUser");
+            cu.textContent = `Hi, ${user}`;
+            cu.style.display = "inline-block";
+            document.getElementById("logoutBtn").style.display = "inline-flex";
+          }
+          loadDrives();
+        } else {
+          // Not authenticated, show login
+          document.getElementById("loginOverlay").style.display = "flex";
+          document.getElementById("mainApp").style.display = "none";
+          document.getElementById("currentUser").style.display = "none";
+          document.getElementById("logoutBtn").style.display = "none";
+        }
+      } catch (err) {
+        console.error("Auth check failed:", err);
+        // Default to login
+        document.getElementById("loginOverlay").style.display = "flex";
+        document.getElementById("mainApp").style.display = "none";
+      }
+    }
+
+    async function performLogout() {
+      try {
+        await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
+      } catch (err) {
+        console.error('Logout failed', err);
+      }
+      document.getElementById("loginOverlay").style.display = "flex";
+      document.getElementById("mainApp").style.display = "none";
+      document.getElementById("currentUser").style.display = "none";
+      document.getElementById("logoutBtn").style.display = "none";
+    }
+
+    async function performLogin() {
+      const username = document.getElementById("username").value.trim();
+      const password = document.getElementById("password").value.trim();
+      const errorEl = document.getElementById("loginError");
+
+      if (!username || !password) {
+        errorEl.textContent = "Enter username and password.";
+        return;
+      }
+
+      errorEl.textContent = "";
+
+      const formData = new FormData();
+      formData.append("username", username);
+      formData.append("password", password);
+
+      try {
+        const res = await fetch("/api/auth/login", {
+          method: "POST",
+          body: formData,
+          credentials: "include"
+        });
+
+        if (!res.ok) {
+          const data = await res.json();
+          errorEl.textContent = data.message || "Login failed.";
+          return;
+        }
+
+        // Login successful
+        document.getElementById("username").value = "";
+        document.getElementById("password").value = "";
+        document.getElementById("loginOverlay").style.display = "none";
+        document.getElementById("mainApp").style.display = "flex";
+        loadDrives();
+      } catch (err) {
+        console.error(err);
+        errorEl.textContent = "Network error: " + err.message;
+      }
+    }
+
+    // Allow Enter key to submit login
+    document.addEventListener("DOMContentLoaded", () => {
+      document.getElementById("password").addEventListener("keypress", (e) => {
+        if (e.key === "Enter") performLogin();
+      });
+    });
+
+    async function loadDrives() {
+      setError("");
+      const listEl = document.getElementById("driveList");
+      listEl.innerHTML = "Loading…";
+
+      try {
+        const res = await fetch("/api/files/roots", { credentials: "include" });
+        if (!res.ok) {
+          if (res.status === 401) {
+            // Unauthorized - go back to login
+            checkAuth();
+            return;
+          }
+          throw new Error("HTTP " + res.status);
+        }
+        const roots = await res.json();
+
+        listEl.innerHTML = "";
+        roots.forEach((root, idx) => {
+          const div = document.createElement("div");
+          div.className = "drive-item";
+          div.dataset.path = root.path;
+          div.onclick = () => {
+            document.querySelectorAll(".drive-item").forEach(d => d.classList.remove("active"));
+            div.classList.add("active");
+            currentRoot = root.path;
+            loadFolder(root.path);
+          };
+
+          const icon = document.createElement("span");
+          icon.className = "icon";
+          icon.textContent = "💽";
+
+          const label = document.createElement("span");
+          label.textContent = root.name;
+
+          div.appendChild(icon);
+          div.appendChild(label);
+          listEl.appendChild(div);
+
+          if (idx === 0) {
+            div.classList.add("active");
+            currentRoot = root.path;
+            loadFolder(root.path);
+          }
+        });
+      } catch (err) {
+        console.error(err);
+        listEl.innerHTML = "Failed to load drives.";
+        setError("Error loading drives: " + err.message);
+      }
+    }
+
+    async function loadFolder(path) {
+      if (!path) return;
+      currentPath = path;
+      document.getElementById("currentPathLabel").textContent = path;
+      setError("");
+
+      const itemsEl = document.getElementById("items");
+      const emptyMsgEl = document.getElementById("emptyMsg");
+      itemsEl.innerHTML = "Loading…";
+      emptyMsgEl.style.display = "none";
+
+      try {
+        const res = await fetch("/api/files/folder?path=" + encodeURIComponent(path), { credentials: "include" });
+        if (!res.ok) {
+          if (res.status === 401) {
+            checkAuth();
+            return;
+          }
+          const text = await res.text();
+          throw new Error("HTTP " + res.status + " – " + text);
+        }
+        const items = await res.json();
+        itemsEl.innerHTML = "";
+
+        if (!items.length) {
+          emptyMsgEl.style.display = "block";
+          return;
+        }
+
+        items.forEach(item => {
+          const card = document.createElement("div");
+          card.className = "item";
+          card.dataset.path = item.path;
+          card.onclick = () => {
+            if (selectionMode) {
+              // Toggle checkbox
+              const cb = card.querySelector('input[type="checkbox"]');
+              if (cb) cb.checked = !cb.checked;
+              updateSelectedCount();
+            } else {
+              onItemClick(item);
+            }
+          };
+
+          // Checkbox (only visible in selection mode)
+          const checkbox = document.createElement('input');
+          checkbox.type = 'checkbox';
+          checkbox.style.marginRight = '8px';
+          checkbox.style.cursor = 'pointer';
+          checkbox.onclick = (ev) => { ev.stopPropagation(); updateSelectedCount(); };
+
+          // Thumbnail container
+          const thumbContainer = document.createElement("div");
+          thumbContainer.className = "item-thumbnail";
+
+          const thumbImg = document.createElement("img");
+          thumbImg.src = "/api/files/thumbnail?path=" + encodeURIComponent(item.path);
+          thumbImg.alt = item.name;
+          thumbImg.onerror = () => {
+            thumbImg.style.display = "none";
+          };
+
+          thumbContainer.appendChild(thumbImg);
+
+          // Info container
+          const infoContainer = document.createElement("div");
+          infoContainer.className = "item-info";
+
+          const name = document.createElement("div");
+          name.className = "item-name";
+          name.textContent = item.name;
+          name.title = item.name;
+
+          const meta = document.createElement("div");
+          meta.className = "item-meta";
+
+          const left = document.createElement("span");
+          left.textContent = item.isDirectory ? "Folder" : (item.extension || "").toUpperCase();
+
+          const right = document.createElement("span");
+          right.textContent = item.isDirectory ? "" : formatSize(item.size);
+
+          meta.appendChild(left);
+          meta.appendChild(right);
+
+          infoContainer.appendChild(name);
+          infoContainer.appendChild(meta);
+
+          card.appendChild(checkbox);
+          card.appendChild(thumbContainer);
+          card.appendChild(infoContainer);
+          itemsEl.appendChild(card);
+        });
+      } catch (err) {
+        console.error(err);
+        setError("Failed to load folder: " + err.message);
+        itemsEl.innerHTML = "";
+      }
+    }
+
+    function onItemClick(item) {
+      if (item.isDirectory) {
+        loadFolder(item.path);
+      } else {
+        window.open("/api/files/open?path=" + encodeURIComponent(item.path), "_blank");
+      }
+    }
+
+    // Selection mode
+    let selectionMode = false;
+
+    function toggleSelectionMode() {
+      selectionMode = !selectionMode;
+      const selectBtn = document.getElementById('selectBtn');
+      const deleteBtn = document.getElementById('deleteSelectedBtn');
+      const countLabel = document.getElementById('selectedCountLabel');
+      const items = document.querySelectorAll('.item');
+
+      if (selectionMode) {
+        selectBtn.style.background = '#0ea5e9';
+        selectBtn.style.color = '#081025';
+        deleteBtn.style.display = 'inline-block';
+        countLabel.style.display = 'inline-block';
+        items.forEach(item => item.classList.add('selection-mode'));
+        updateSelectedCount();
+      } else {
+        selectBtn.style.background = '';
+        selectBtn.style.color = '';
+        deleteBtn.style.display = 'none';
+        countLabel.style.display = 'none';
+        items.forEach(item => item.classList.remove('selection-mode'));
+        // Uncheck all
+        document.querySelectorAll('.item input[type="checkbox"]').forEach(cb => cb.checked = false);
+      }
+    }
+
+    function updateSelectedCount() {
+      const selected = document.querySelectorAll('.item input[type="checkbox"]:checked').length;
+      document.getElementById('selectedCountLabel').textContent = selected + ' selected';
+    }
+
+    async function deleteSelected() {
+      const selected = Array.from(document.querySelectorAll('.item input[type="checkbox"]:checked')).map(cb => cb.parentElement.dataset.path);
+      if (selected.length === 0) { alert('No items selected'); return; }
+      if (!confirm('Delete ' + selected.length + ' item(s)? This cannot be undone.')) return;
+
+      let errors = 0;
+      let lastError = '';
+      for (const path of selected) {
+        try {
+          console.log('Deleting:', path);
+          const res = await fetch('/api/files/delete?path=' + encodeURIComponent(path), { method: 'DELETE', credentials: 'include' });
+          if (!res.ok) {
+            if (res.status === 401) { checkAuth(); return; }
+            const errData = await res.json().catch(() => ({ error: 'HTTP ' + res.status }));
+            lastError = errData.error || 'HTTP ' + res.status;
+            console.error('Delete failed for', path, ':', lastError);
+            errors++;
+          }
+        } catch (err) {
+          lastError = err.message;
+          console.error('Delete error for', path, ':', err);
+          errors++;
+        }
+      }
+
+      if (errors > 0) alert('Failed to delete ' + errors + ' item(s). Error: ' + lastError);
+      else alert('Deleted ' + selected.length + ' item(s)');
+      // Refresh folder
+      toggleSelectionMode();
+      loadFolder(currentPath || currentRoot);
+    }
+
+    // Wire up Select button
+    document.getElementById('selectBtn').addEventListener('click', toggleSelectionMode);
+
+    function goUp() {
+      if (!currentPath) return;
+
+      const trimmed = currentPath.replace(/[/\\]+$/, "");
+      const idxBackslash = trimmed.lastIndexOf("\\");
+      const idxSlash = trimmed.lastIndexOf("/");
+      const cut = Math.max(idxBackslash, idxSlash);
+
+      if (cut <= 2) {
+        // Go back to root
+        loadFolder(currentRoot);
+      } else {
+        const parent = trimmed.substring(0, cut + 1);
+        loadFolder(parent);
+      }
+    }
+
+    function formatSize(bytes) {
+      if (bytes == null) return "";
+      const units = ["B","KB","MB","GB","TB"];
+      let i = 0;
+      let v = bytes;
+      while (v >= 1024 && i < units.length - 1) {
+        v /= 1024;
+        i++;
+      }
+      return v.toFixed(1) + " " + units[i];
+    }
+
+    function setError(msg) {
+      document.getElementById("error").textContent = msg || "";
+    }
+
+    async function uploadSelectedFiles(evt) {
+      const input = evt.target;
+      const files = input.files;
+
+      if (!currentPath) {
+        alert("Select a drive / folder first.");
+        input.value = "";
+        return;
+      }
+      if (!files || !files.length) return;
+
+      const form = new FormData();
+      for (const f of files) {
+        const rel = f.webkitRelativePath && f.webkitRelativePath.length > 0
+          ? f.webkitRelativePath
+          : f.name;
+        form.append("files", f, rel);
+      }
+
+      try {
+        const res = await fetch(
+          "/api/files/upload?targetPath=" + encodeURIComponent(currentPath),
+          {
+            method: "POST",
+            body: form,
+            credentials: "include"
+          }
+        );
+        if (!res.ok) {
+          if (res.status === 401) {
+            checkAuth();
+            return;
+          }
+          const text = await res.text();
+          throw new Error("HTTP " + res.status + " – " + text);
+        }
+        await res.json().catch(() => null);
+        alert("Upload complete.");
+        loadFolder(currentPath);
+      } catch (err) {
+        console.error(err);
+        alert("Upload failed: " + err.message);
+      } finally {
+        input.value = "";
+      }
+    }
+
+    // Wire hidden inputs to upload handler
+    document.getElementById("fileInputFiles").addEventListener("change", uploadSelectedFiles);
+    document.getElementById("fileInputFolder").addEventListener("change", uploadSelectedFiles);
+
+    // Upload dropdown/menu logic
+    (function() {
+      const uploadBtn = document.getElementById('uploadBtn');
+      const uploadMenu = document.getElementById('uploadMenu');
+      const filesOpt = document.getElementById('uploadFilesOption');
+      const folderOpt = document.getElementById('uploadFolderOption');
+
+      if (!uploadBtn) return;
+
+      uploadBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        uploadMenu.style.display = uploadMenu.style.display === 'flex' ? 'none' : 'flex';
+        uploadMenu.style.flexDirection = 'column';
+      });
+
+      filesOpt.addEventListener('click', (e) => { e.stopPropagation(); document.getElementById('fileInputFiles').click(); uploadMenu.style.display = 'none'; });
+      folderOpt.addEventListener('click', (e) => { e.stopPropagation(); document.getElementById('fileInputFolder').click(); uploadMenu.style.display = 'none'; });
+
+      // Close menu when clicking outside
+      document.addEventListener('click', (e) => {
+        if (!uploadBtn.contains(e.target) && !uploadMenu.contains(e.target)) uploadMenu.style.display = 'none';
+      });
+    })();
+
+    // Start: check authentication
+    checkAuth();
+  </script>
+</body>
+</html>

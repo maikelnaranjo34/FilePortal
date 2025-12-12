@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>User Management - FilePortal</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background:#020617; color:#e5e7eb; padding:20px }
+    .box { max-width:720px; margin:0 auto }
+    input { width:100%; padding:8px; margin:6px 0; border-radius:6px; border:1px solid #374151; background:#111827; color:#e5e7eb }
+    button { background:#0ea5e9; color:#081025; padding:8px 12px; border-radius:8px; border:none }
+    .user { display:flex; justify-content:space-between; padding:8px; border:1px solid #1f2937; border-radius:6px; margin-bottom:6px }
+    a.back { color:#9ca3af; text-decoration:none; display:inline-block; margin-bottom:12px }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <a class="back" href="/">← Back</a>
+    <h1>User Management</h1>
+
+    <div id="setupForm" style="display:none">
+      <h2>Create Initial Admin</h2>
+      <p style="color:#9ca3af;margin-bottom:16px">No users exist yet. Create the initial admin account to continue.</p>
+      <div>
+        <input id="setupUser" placeholder="admin username" />
+        <input id="setupPass" placeholder="password" type="password" />
+        <button onclick="createInitialAdmin()">Create Admin</button>
+        <div id="setupMsg" style="color:#f97373;margin-top:6px"></div>
+      </div>
+    </div>
+
+    <div id="list"></div>
+
+    <!-- Change Password Modal -->
+    <div id="pwModal" style="display:none;position:fixed;inset:0;align-items:center;justify-content:center;background:rgba(2,6,23,0.6)">
+      <div style="background:#0b1220;padding:16px;border:1px solid #1f2937;border-radius:8px;min-width:320px">
+        <h3 style="margin-top:0">Change password for <span id="pwFor"></span></h3>
+        <div id="pwMsg" style="color:#f97373;margin-bottom:6px"></div>
+        <div id="pwCurrentWrap" style="display:block">
+          <input id="pwCurrent" type="password" placeholder="Current password" />
+        </div>
+        <input id="pwNew" type="password" placeholder="New password" />
+        <input id="pwConfirm" type="password" placeholder="Confirm new password" />
+        <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end">
+          <button onclick="submitChangePassword()">Save</button>
+          <button onclick="closePwModal()" style="background:#374151;color:#e5e7eb">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <h3>Add User</h3>
+    <div>
+      <input id="newUser" placeholder="username" />
+      <input id="newPass" placeholder="password" type="password" />
+      <label style="display:block;margin:6px 0;color:#9ca3af"><input type="checkbox" id="newAdmin" /> Make admin</label>
+      <button onclick="addUser()">Add</button>
+      <div id="msg" style="color:#f97373;margin-top:6px"></div>
+    </div>
+  </div>
+
+  <script>
+    let currentUser = null;
+
+    async function load() {
+      // Check if first-run (no users exist)
+      try {
+        const initCheck = await fetch('/api/users/init', { credentials: 'include' });
+        if (initCheck.ok) {
+          const initData = await initCheck.json();
+          if (initData.isEmpty) {
+            // Show setup form, hide user list and add form
+            document.getElementById('setupForm').style.display = 'block';
+            document.getElementById('list').style.display = 'none';
+            document.querySelector('h3').style.display = 'none';
+            document.querySelector('.box > div:last-child').style.display = 'none';
+            return;
+          }
+        }
+      } catch {}
+
+      // get current user
+      try {
+        const me = await fetch('/api/auth/me', { credentials: 'include' });
+        if (me.ok) {
+          const md = await me.json().catch(() => null);
+          currentUser = md?.user || null;
+        }
+      } catch {}
+
+      const res = await fetch('/api/users', { credentials: 'include' });
+      if (!res.ok) { document.getElementById('list').textContent = 'Failed to load users'; return; }
+      const users = await res.json();
+      const list = document.getElementById('list');
+      list.innerHTML = '';
+      list.style.display = 'block';
+      document.querySelector('h3').style.display = 'block';
+      document.querySelector('.box > div:last-child').style.display = 'block';
+
+      const adminCount = users.filter(u => u.isAdmin).length;
+
+      users.forEach(u => {
+        const div = document.createElement('div');
+        div.className = 'user';
+        const left = document.createElement('div');
+        left.textContent = u.username + (u.isAdmin ? ' (admin)' : '');
+
+        const actions = document.createElement('div');
+
+        // Promote / Demote
+        if (u.isAdmin) {
+          const dem = document.createElement('button');
+          dem.textContent = 'Demote';
+          dem.onclick = () => demoteUser(u.username);
+          // prevent demote if this is current user or last admin
+          if (u.username === currentUser || adminCount <= 1) dem.disabled = true;
+          actions.appendChild(dem);
+        } else {
+          const prom = document.createElement('button');
+          prom.textContent = 'Promote';
+          prom.onclick = () => promoteUser(u.username);
+          actions.appendChild(prom);
+        }
+
+        // Remove
+        const del = document.createElement('button'); del.textContent = 'Remove';
+        del.onclick = () => removeUser(u.username);
+        if (u.username === currentUser) del.disabled = true; // cannot remove self
+        if (u.isAdmin && adminCount <= 1) del.disabled = true; // cannot remove last admin
+        actions.appendChild(del);
+
+        div.appendChild(left);
+        // Change password button
+        const cp = document.createElement('button'); cp.textContent = 'Change Password';
+        cp.style.marginRight = '6px';
+        cp.onclick = () => openPwModal(u.username, u.isAdmin);
+        actions.appendChild(cp);
+
+        div.appendChild(left);
+        div.appendChild(actions);
+        list.appendChild(div);
+      });
+    }
+
+    async function createInitialAdmin() {
+      const u = document.getElementById('setupUser').value.trim();
+      const p = document.getElementById('setupPass').value;
+      const msg = document.getElementById('setupMsg'); msg.textContent = '';
+      if (!u || !p) { msg.textContent = 'username and password required'; return; }
+      const fd = new FormData(); fd.append('username', u); fd.append('password', p);
+      const res = await fetch('/api/users/init', { method:'POST', body: fd, credentials:'include' });
+      if (res.status === 201) {
+        alert('Initial admin created successfully!');
+        window.location.href = '/';
+        return;
+      }
+      const txt = await res.json().catch(() => null);
+      msg.textContent = (txt && txt.error) || 'Failed to create admin';
+    }
+
+    async function addUser() {
+      const u = document.getElementById('newUser').value.trim();
+      const p = document.getElementById('newPass').value;
+      const isAdmin = document.getElementById('newAdmin').checked;
+      const msg = document.getElementById('msg'); msg.textContent = '';
+      if (!u || !p) { msg.textContent = 'username and password required'; return; }
+      const fd = new FormData(); fd.append('username', u); fd.append('password', p); fd.append('isAdmin', isAdmin ? 'true' : 'false');
+      const res = await fetch('/api/users', { method:'POST', body: fd, credentials:'include' });
+      if (res.status === 201) { document.getElementById('newUser').value=''; document.getElementById('newPass').value=''; document.getElementById('newAdmin').checked=false; load(); return; }
+      const text = await res.text(); msg.textContent = text || 'Error';
+    }
+
+    async function removeUser(u) {
+      if (!confirm('Remove user ' + u + '?')) return;
+      const res = await fetch('/api/users/' + encodeURIComponent(u), { method:'DELETE', credentials:'include' });
+      if (res.ok) load(); else {
+        const txt = await res.json().catch(() => null);
+        alert((txt && txt.error) || 'Failed to remove');
+      }
+    }
+
+    async function promoteUser(u) {
+      const res = await fetch('/api/users/' + encodeURIComponent(u) + '/promote', { method: 'POST', credentials: 'include' });
+      if (res.ok) load(); else alert('Failed to promote');
+    }
+
+    async function demoteUser(u) {
+      const res = await fetch('/api/users/' + encodeURIComponent(u) + '/demote', { method: 'POST', credentials: 'include' });
+      if (res.ok) load(); else {
+        const txt = await res.json().catch(() => null);
+        alert((txt && txt.error) || 'Failed to demote');
+      }
+    }
+
+    // Password change modal logic
+    let pwTarget = null;
+    let currentIsAdmin = false;
+    async function openPwModal(username, targetIsAdmin) {
+      pwTarget = username;
+      document.getElementById('pwFor').textContent = username;
+      document.getElementById('pwMsg').textContent = '';
+      document.getElementById('pwNew').value = '';
+      document.getElementById('pwConfirm').value = '';
+      document.getElementById('pwCurrent').value = '';
+      // determine whether current user is admin to hide/show current password
+      try {
+        const dbg = await fetch('/api/users/debug', { credentials: 'include' });
+        if (dbg.ok) {
+          const d = await dbg.json();
+          currentIsAdmin = !!d.currentUserIsAdmin;
+        }
+      } catch { currentIsAdmin = false; }
+
+      if (currentIsAdmin && pwTarget !== null && pwTarget !== (await getCurrentUser())) {
+        document.getElementById('pwCurrentWrap').style.display = 'none';
+      } else {
+        document.getElementById('pwCurrentWrap').style.display = 'block';
+      }
+
+      document.getElementById('pwModal').style.display = 'flex';
+    }
+
+    function closePwModal() { document.getElementById('pwModal').style.display = 'none'; pwTarget = null; }
+
+    async function getCurrentUser() {
+      try {
+        const me = await fetch('/api/auth/me', { credentials: 'include' });
+        if (me.ok) { const md = await me.json(); return md.user || null; }
+      } catch {}
+      return null;
+    }
+
+    async function submitChangePassword() {
+      const newP = document.getElementById('pwNew').value;
+      const conf = document.getElementById('pwConfirm').value;
+      const cur = document.getElementById('pwCurrent').value;
+      const msg = document.getElementById('pwMsg'); msg.textContent = '';
+      if (!pwTarget) return;
+      if (!newP) { msg.textContent = 'New password required'; return; }
+      if (newP !== conf) { msg.textContent = 'Passwords do not match'; return; }
+
+      const body = { newPassword: newP };
+      // include currentPassword when present (non-admin changing own password)
+      if (document.getElementById('pwCurrentWrap').style.display !== 'none') body.currentPassword = cur;
+
+      try {
+        const res = await fetch('/api/users/' + encodeURIComponent(pwTarget) + '/password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), credentials: 'include' });
+        if (res.ok) {
+          alert('Password changed');
+          closePwModal();
+          load();
+        } else if (res.status === 403 || res.status === 401) {
+          const t = await res.json().catch(() => null);
+          msg.textContent = (t && t.error) || 'Not authorized';
+        } else {
+          const t = await res.json().catch(() => null);
+          msg.textContent = (t && t.error) || 'Failed to change password';
+        }
+      } catch (e) { msg.textContent = 'Request failed'; }
+    }
+
+    load();
+  </script>
+</body>
+</html>
