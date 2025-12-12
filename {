@@ -1,0 +1,114 @@
+        // ================== CATEGORY FILTER (NEW) ==================
+        [HttpGet("category")]
+        public ActionResult<IEnumerable<ItemDto>> GetByCategory(
+            [FromQuery] string path, 
+            [FromQuery] string category,
+            [FromQuery] int maxResults = 500)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+                return BadRequest(new { error = "path is required" });
+
+            if (string.IsNullOrWhiteSpace(category))
+                return BadRequest(new { error = "category is required (pictures, videos, documents)" });
+
+            if (!Directory.Exists(path))
+                return NotFound(new { error = "directory not found" });
+
+            HashSet<string> allowedExtensions;
+            switch (category.ToLowerInvariant())
+            {
+                case "pictures":
+                    allowedExtensions = ImageExtensions;
+                    break;
+                case "videos":
+                    allowedExtensions = VideoExtensions;
+                    break;
+                case "documents":
+                    allowedExtensions = DocumentExtensions;
+                    break;
+                default:
+                    return BadRequest(new { error = "Invalid category. Use: pictures, videos, or documents" });
+            }
+
+            var items = new List<ItemDto>();
+
+            try
+            {
+                // Recursively search for files matching the category
+                SearchDirectoryRecursive(path, allowedExtensions, items, maxResults);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { error = "Access denied." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(StatusCodes.Status500InternalServerError, new { error = ex.Message });
+            }
+
+            // Sort by last modified (newest first)
+            items = items
+                .OrderByDescending(i => i.LastModified)
+                .ToList();
+
+            return Ok(items);
+        }
+
+        private void SearchDirectoryRecursive(string path, HashSet<string> allowedExtensions, List<ItemDto> results, int maxResults)
+        {
+            if (results.Count >= maxResults)
+                return;
+
+            try
+            {
+                // Add matching files from current directory
+                foreach (var file in Directory.GetFiles(path))
+                {
+                    if (results.Count >= maxResults)
+                        break;
+
+                    try
+                    {
+                        var fi = new FileInfo(file);
+                        if (allowedExtensions.Contains(fi.Extension))
+                        {
+                            results.Add(new ItemDto
+                            {
+                                Name = fi.Name,
+                                Path = fi.FullName,
+                                IsDirectory = false,
+                                Size = fi.Length,
+                                LastModified = fi.LastWriteTime,
+                                Extension = fi.Extension
+                            });
+                        }
+                    }
+                    catch
+                    {
+                        // Skip files we can't access
+                        continue;
+                    }
+                }
+
+                // Recurse into subdirectories
+                foreach (var dir in Directory.GetDirectories(path))
+                {
+                    if (results.Count >= maxResults)
+                        break;
+
+                    try
+                    {
+                        SearchDirectoryRecursive(dir, allowedExtensions, results, maxResults);
+                    }
+                    catch
+                    {
+                        // Skip directories we can't access
+                        continue;
+                    }
+                }
+            }
+            catch
+            {
+                // Silently skip problematic directories
+            }
+        }

@@ -21,10 +21,21 @@ namespace FilePortal.Controllers
         // 🔵 Phone (Syncthing) root
         private static readonly string PhoneRoot = @"D:\Samsung S20_Cloud\WebsiteBrowser\Files";
 
-        // 🔵 TODO: PUT YOUR REAL UNC PATHS HERE
-        // Example only – REPLACE these with the UNC paths you used before
-        private static readonly string RouterYPath = @"\\192.168.5.1\h";  // <--- CHANGE THIS
-        private static readonly string RouterZPath = @"\\192.168.5.1\g";  // <--- CHANGE THIS
+        // File category extension mappings
+        private static readonly HashSet<string> ImageExtensions = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".svg", ".ico", ".tiff", ".tif"
+        };
+
+        private static readonly HashSet<string> VideoExtensions = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ".mp4", ".mkv", ".avi", ".mov", ".flv", ".wmv", ".webm", ".m4v", ".mpg", ".mpeg"
+        };
+
+        private static readonly HashSet<string> DocumentExtensions = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt", ".rtf", ".odt", ".ods", ".odp"
+        };
 
         public class RootDto
         {
@@ -57,9 +68,17 @@ namespace FilePortal.Controllers
                 if (drive.Name.StartsWith("C:", StringComparison.OrdinalIgnoreCase))
                     continue;
 
+                // Customize drive names
+                string displayName = drive.Name.TrimEnd('\\');
+                
+                if (drive.Name.StartsWith("Y:", StringComparison.OrdinalIgnoreCase))
+                    displayName = "Easystore";
+                else if (drive.Name.StartsWith("Z:", StringComparison.OrdinalIgnoreCase))
+                    displayName = "Data";
+
                 list.Add(new RootDto
                 {
-                    Name = drive.Name.TrimEnd('\\'),
+                    Name = displayName,
                     Path = drive.RootDirectory.FullName
                 });
             }
@@ -71,25 +90,6 @@ namespace FilePortal.Controllers
                 {
                     Name = "Samsung S20",
                     Path = PhoneRoot
-                });
-            }
-
-            // 🔵 Router shares via UNC (these do NOT depend on Z: / Y: mappings)
-            if (Directory.Exists(RouterYPath))
-            {
-                list.Add(new RootDto
-                {
-                    Name = "Easystore",
-                    Path = RouterYPath
-                });
-            }
-
-            if (Directory.Exists(RouterZPath))
-            {
-                list.Add(new RootDto
-                {
-                    Name = "Data",
-                    Path = RouterZPath
                 });
             }
 
@@ -162,6 +162,121 @@ namespace FilePortal.Controllers
                 .ToList();
 
             return Ok(items);
+        }
+
+        // ================== CATEGORY FILTER (NEW) ==================
+        [HttpGet("category")]
+        public ActionResult<IEnumerable<ItemDto>> GetByCategory(
+            [FromQuery] string path, 
+            [FromQuery] string category,
+            [FromQuery] int maxResults = 500)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+                return BadRequest(new { error = "path is required" });
+
+            if (string.IsNullOrWhiteSpace(category))
+                return BadRequest(new { error = "category is required (pictures, videos, documents)" });
+
+            if (!Directory.Exists(path))
+                return NotFound(new { error = "directory not found" });
+
+            HashSet<string> allowedExtensions;
+            switch (category.ToLowerInvariant())
+            {
+                case "pictures":
+                    allowedExtensions = ImageExtensions;
+                    break;
+                case "videos":
+                    allowedExtensions = VideoExtensions;
+                    break;
+                case "documents":
+                    allowedExtensions = DocumentExtensions;
+                    break;
+                default:
+                    return BadRequest(new { error = "Invalid category. Use: pictures, videos, or documents" });
+            }
+
+            var items = new List<ItemDto>();
+
+            try
+            {
+                // Recursively search for files matching the category
+                SearchDirectoryRecursive(path, allowedExtensions, items, maxResults);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { error = "Access denied." });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(StatusCodes.Status500InternalServerError, new { error = ex.Message });
+            }
+
+            // Sort by last modified (newest first)
+            items = items
+                .OrderByDescending(i => i.LastModified)
+                .ToList();
+
+            return Ok(items);
+        }
+
+        private void SearchDirectoryRecursive(string path, HashSet<string> allowedExtensions, List<ItemDto> results, int maxResults)
+        {
+            if (results.Count >= maxResults)
+                return;
+
+            try
+            {
+                // Add matching files from current directory
+                foreach (var file in Directory.GetFiles(path))
+                {
+                    if (results.Count >= maxResults)
+                        break;
+
+                    try
+                    {
+                        var fi = new FileInfo(file);
+                        if (allowedExtensions.Contains(fi.Extension))
+                        {
+                            results.Add(new ItemDto
+                            {
+                                Name = fi.Name,
+                                Path = fi.FullName,
+                                IsDirectory = false,
+                                Size = fi.Length,
+                                LastModified = fi.LastWriteTime,
+                                Extension = fi.Extension
+                            });
+                        }
+                    }
+                    catch
+                    {
+                        // Skip files we can't access
+                        continue;
+                    }
+                }
+
+                // Recurse into subdirectories
+                foreach (var dir in Directory.GetDirectories(path))
+                {
+                    if (results.Count >= maxResults)
+                        break;
+
+                    try
+                    {
+                        SearchDirectoryRecursive(dir, allowedExtensions, results, maxResults);
+                    }
+                    catch
+                    {
+                        // Skip directories we can't access
+                        continue;
+                    }
+                }
+            }
+            catch
+            {
+                // Silently skip problematic directories
+            }
         }
 
         // ================== OPEN FILE ==================
