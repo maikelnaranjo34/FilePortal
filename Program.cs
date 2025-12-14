@@ -81,8 +81,8 @@ app.MapControllers();
 // Fallback to index.html for unknown routes
 app.MapFallbackToFile("/index.html");
 
-// Listen on 0.0.0.0:5251
-app.Run("http://0.0.0.0:5251");
+// Let IIS handle URL binding - don't specify URLs in code
+app.Run();
 
-//app.Run();
+//app.Run("http://0.0.0.0:5251");
 

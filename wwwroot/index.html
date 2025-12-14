@@ -371,6 +371,13 @@
     <img id="imageViewerImg" src="" alt="" />
   </div>
 
+  <!-- Video Viewer Modal -->
+  <div id="videoViewer" class="image-viewer">
+    <button class="image-viewer-close" onclick="closeVideoViewer()">×</button>
+    <button class="image-viewer-delete" onclick="deleteCurrentVideo()">🗑️</button>
+    <video id="videoViewerVideo" controls style="max-width:90%; max-height:90vh;"></video>
+  </div>
+
   <script>
     let currentRoot = null;
     let currentPath = null;
@@ -637,6 +644,7 @@
       } else {
         // Check if it's an image
         const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.heic', '.tiff', '.svg'];
+        const videoExtensions = ['.mp4', '.mkv', '.avi', '.mov', '.flv', '.wmv', '.webm', '.m4v', '.mpg', '.mpeg'];
         const ext = (item.extension || '').toLowerCase();
         if (imageExtensions.includes(ext)) {
           // Build image list from current view
@@ -652,8 +660,10 @@
             }
           });
           showImageViewer(imageList, clickedIndex);
+        } else if (videoExtensions.includes(ext)) {
+          showVideoViewer(item.path);
         } else {
-          window.open("/api/files/open?path=" + encodeURIComponent(item.path), "_blank");
+          window.open("/api/files/file?path=" + encodeURIComponent(item.path), "_blank");
         }
       }
     }
@@ -677,11 +687,18 @@
 
     function updateImageViewer() {
       const img = document.getElementById('imageViewerImg');
-      img.src = '/api/files/open?path=' + encodeURIComponent(currentImageList[currentImageIndex]);
+      img.src = '/api/files/file?path=' + encodeURIComponent(currentImageList[currentImageIndex]);
       img.style.transform = `scale(${imageZoom}) translate(${imagePanX}px, ${imagePanY}px)`;
       img.style.cursor = imageZoom > 1 ? 'grab' : 'default';
       document.getElementById('imagePrevBtn').style.display = currentImageIndex > 0 ? 'flex' : 'none';
       document.getElementById('imageNextBtn').style.display = currentImageIndex < currentImageList.length - 1 ? 'flex' : 'none';
+    }
+
+    function showVideoViewer(videoPath) {
+      const viewer = document.getElementById('videoViewer');
+      const video = document.getElementById('videoViewerVideo');
+      video.src = '/api/files/file?path=' + encodeURIComponent(videoPath);
+      viewer.style.display = 'flex';
     }
 
     function navigateImage(direction) {
@@ -742,6 +759,33 @@
       img.removeEventListener('mousedown', handlePanStart);
       document.removeEventListener('mousemove', handlePanMove);
       document.removeEventListener('mouseup', handlePanEnd);
+    }
+
+    function closeVideoViewer() {
+      const viewer = document.getElementById('videoViewer');
+      const video = document.getElementById('videoViewerVideo');
+      viewer.style.display = 'none';
+      video.src = '';
+      video.pause();
+    }
+
+    async function deleteCurrentVideo() {
+      if (!confirm('Delete this video?')) return;
+      const videoPath = document.getElementById('videoViewerVideo').src.split('path=')[1];
+      if (!videoPath) return;
+      const decodedPath = decodeURIComponent(videoPath);
+      try {
+        const res = await fetch('/api/files/delete?path=' + encodeURIComponent(decodedPath), { method: 'DELETE', credentials: 'include' });
+        if (res.ok) {
+          closeVideoViewer();
+          if (currentFilter) filterByCategory(currentFilter);
+          else loadFolder(currentPath);
+        } else {
+          alert('Failed to delete video');
+        }
+      } catch (err) {
+        alert('Error deleting video: ' + err.message);
+      }
     }
 
     async function deleteCurrentImage() {

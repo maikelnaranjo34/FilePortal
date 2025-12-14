@@ -11,6 +11,7 @@ using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Processing;
 using SixLabors.ImageSharp.Formats.Jpeg;
 using System.IO.Compression;
+using System.ComponentModel.DataAnnotations;
 
 namespace FilePortal.Controllers
 {
@@ -60,7 +61,7 @@ namespace FilePortal.Controllers
         {
             var list = new List<RootDto>();
 
-            // Local / directly visible drives (E, F, H, etc) - exclude C drive
+            // Local / directly visible drives (E, F, H, G, I, etc) - exclude C drive
             foreach (var drive in DriveInfo.GetDrives())
             {
                 if (!drive.IsReady) continue;
@@ -72,10 +73,10 @@ namespace FilePortal.Controllers
                 // Customize drive names
                 string displayName = drive.Name.TrimEnd('\\');
                 
-                if (drive.Name.StartsWith("Y:", StringComparison.OrdinalIgnoreCase))
-                    displayName = "Easystore";
-                else if (drive.Name.StartsWith("Z:", StringComparison.OrdinalIgnoreCase))
+                if (drive.Name.StartsWith("G", StringComparison.OrdinalIgnoreCase))
                     displayName = "Data";
+                else if (drive.Name.StartsWith("I", StringComparison.OrdinalIgnoreCase))
+                    displayName = "Easystore";
 
                 list.Add(new RootDto
                 {
@@ -102,10 +103,34 @@ namespace FilePortal.Controllers
         public ActionResult<IEnumerable<ItemDto>> GetFolder([FromQuery] string path)
         {
             if (string.IsNullOrWhiteSpace(path))
-                return BadRequest(new { error = "path is required" });
+            {
+                ModelState.AddModelError("path", "The path field is required.");
+                return BadRequest(ModelState);
+            }
+
+            // Debug logging
+            Console.WriteLine($"GetFolder called with path: '{path}'");
 
             if (!Directory.Exists(path))
                 return NotFound(new { error = "directory not found" });
+
+            // For UNC paths that fail to access, return a helpful message
+            if (path.StartsWith("\\\\"))
+            {
+                return Ok(new[] 
+                {
+                    new 
+                    {
+                        Name = "Network Share Access",
+                        Path = "",
+                        IsDirectory = false,
+                        Size = (long?)null,
+                        LastModified = (DateTime?)null,
+                        Extension = "",
+                        Message = "This network share is accessible through your mapped drives (Y: for Easystore, Z: for Data). Please use Windows Explorer to browse these locations directly."
+                    }
+                });
+            }
 
             var items = new List<ItemDto>();
 
@@ -149,11 +174,16 @@ namespace FilePortal.Controllers
             }
             catch (UnauthorizedAccessException)
             {
-                return StatusCode(StatusCodes.Status403Forbidden, new { error = "Access denied." });
+                return StatusCode(403, new { error = "Access denied to network share. Please ensure IIS has permissions to access this location." });
             }
-            catch (IOException ex)
+            catch (Exception ex)
             {
-                return StatusCode(StatusCodes.Status500InternalServerError, new { error = ex.Message });
+                // For UNC paths, provide a more user-friendly error
+                if (path.StartsWith("\\\\"))
+                {
+                    return StatusCode(500, new { error = $"Unable to access network share. The share may require different credentials or permissions. Details: {ex.Message}" });
+                }
+                return StatusCode(500, new { error = $"Failed to list directory contents: {ex.Message}" });
             }
 
             // Folders first, then files
@@ -478,6 +508,75 @@ namespace FilePortal.Controllers
             {
                 return BadRequest(new { error = ex.Message });
             }
+        }
+
+        // ================== FILE SERVING ==================
+        [HttpGet("file")]
+        public IActionResult GetFile([FromQuery] string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+                return BadRequest(new { error = "path is required" });
+
+            try
+            {
+                if (!System.IO.File.Exists(path))
+                    return NotFound();
+
+                var fileStream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+                var contentType = GetContentType(path);
+                return File(fileStream, contentType);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { error = ex.Message });
+            }
+        }
+
+        private string GetContentType(string path)
+        {
+            var ext = Path.GetExtension(path).ToLowerInvariant();
+            return ext switch
+            {
+                ".mp4" => "video/mp4",
+                ".mkv" => "video/x-matroska",
+                ".avi" => "video/x-msvideo",
+                ".mov" => "video/quicktime",
+                ".flv" => "video/x-flv",
+                ".wmv" => "video/x-ms-wmv",
+                ".webm" => "video/webm",
+                ".m4v" => "video/mp4",
+                ".mpg" => "video/mpeg",
+                ".mpeg" => "video/mpeg",
+                ".jpg" => "image/jpeg",
+                ".jpeg" => "image/jpeg",
+                ".png" => "image/png",
+                ".gif" => "image/gif",
+                ".bmp" => "image/bmp",
+                ".webp" => "image/webp",
+                ".svg" => "image/svg+xml",
+                ".ico" => "image/x-icon",
+                ".tiff" => "image/tiff",
+                ".tif" => "image/tiff",
+                ".mp3" => "audio/mpeg",
+                ".wav" => "audio/wav",
+                ".flac" => "audio/flac",
+                ".aac" => "audio/aac",
+                ".m4a" => "audio/mp4",
+                ".ogg" => "audio/ogg",
+                ".pdf" => "application/pdf",
+                ".doc" => "application/msword",
+                ".docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                ".xls" => "application/vnd.ms-excel",
+                ".xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                ".ppt" => "application/vnd.ms-powerpoint",
+                ".pptx" => "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                ".txt" => "text/plain",
+                ".rtf" => "application/rtf",
+                ".odt" => "application/vnd.oasis.opendocument.text",
+                ".ods" => "application/vnd.oasis.opendocument.spreadsheet",
+                ".odp" => "application/vnd.oasis.opendocument.presentation",
+                _ => "application/octet-stream"
+            };
         }
 
         [HttpPost("download-zip")]
