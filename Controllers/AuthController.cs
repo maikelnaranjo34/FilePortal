@@ -6,6 +6,7 @@ using System.Security.Claims;
 using System.Net;
 using System.Net.Mail;
 using FilePortal.Services;
+using Microsoft.Extensions.Logging;
 
 namespace FilePortal.Controllers
 {
@@ -17,11 +18,13 @@ namespace FilePortal.Controllers
         private readonly string _validPass;
         private readonly UserStoreService _userStore;
         private readonly IConfiguration _configuration;
+        private readonly ILogger<AuthController> _logger;
 
-        public AuthController(Microsoft.Extensions.Configuration.IConfiguration configuration, UserStoreService userStore)
+        public AuthController(Microsoft.Extensions.Configuration.IConfiguration configuration, UserStoreService userStore, ILogger<AuthController> logger)
         {
             _userStore = userStore;
             _configuration = configuration;
+            _logger = logger;
 
             // Prefer environment variables (typical ASP.NET Core mapping uses __ for nested keys),
             // fall back to configuration values, then to hard-coded defaults.
@@ -94,6 +97,7 @@ namespace FilePortal.Controllers
                 });
 
             // Send email notification
+            _logger.LogInformation("Login successful for user: {Username}, triggering email notification", username);
             _ = Task.Run(() => SendLoginNotificationEmail(username, HttpContext.Connection.RemoteIpAddress?.ToString()));
 
             return Ok(new { message = "Logged in" });
@@ -128,10 +132,15 @@ namespace FilePortal.Controllers
                 var toEmail = _configuration["Email:ToEmail"];
                 var enableSsl = bool.Parse(_configuration["Email:EnableSsl"] ?? "true");
 
+                _logger.LogInformation("Attempting to send login notification email for user: {Username}", username);
+                _logger.LogInformation("SMTP Config - Host: {Host}, Port: {Port}, Username: {Username}, From: {From}, To: {To}, SSL: {Ssl}",
+                    smtpHost, smtpPort, smtpUsername, fromEmail, toEmail, enableSsl);
+
                 if (string.IsNullOrEmpty(smtpHost) || string.IsNullOrEmpty(smtpUsername) || 
                     string.IsNullOrEmpty(smtpPassword) || string.IsNullOrEmpty(toEmail))
                 {
-                    Console.WriteLine("Email configuration incomplete. Skipping notification.");
+                    _logger.LogWarning("Email configuration incomplete. Skipping notification. Missing: Host={Host}, User={User}, Pass={Pass}, To={To}",
+                        string.IsNullOrEmpty(smtpHost), string.IsNullOrEmpty(smtpUsername), string.IsNullOrEmpty(smtpPassword), string.IsNullOrEmpty(toEmail));
                     return;
                 }
 
@@ -166,11 +175,11 @@ This is an automated notification from your FilePortal application.",
                 };
 
                 smtpClient.Send(mailMessage);
-                Console.WriteLine($"Login notification email sent for user: {username}");
+                _logger.LogInformation("Login notification email sent successfully for user: {Username}", username);
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Failed to send login notification email: {ex.Message}");
+                _logger.LogError(ex, "Failed to send login notification email for user: {Username}", username);
                 // Don't throw - email failure shouldn't prevent login
             }
         }
