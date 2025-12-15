@@ -20,6 +20,7 @@ namespace FilePortal.Controllers
     [Authorize]
     public class FilesController : ControllerBase
     {
+        private readonly IConfiguration _configuration;
         // 🔵 Phone (Syncthing) root
         private static readonly string PhoneRoot = @"D:\Samsung S20_Cloud\WebsiteBrowser\Files";
 
@@ -55,44 +56,46 @@ namespace FilePortal.Controllers
             public string? Extension { get; set; }
         }
 
+        public FilesController(IConfiguration configuration)
+        {
+            _configuration = configuration;
+        }
+
         // ================== ROOTS ==================
         [HttpGet("roots")]
         public ActionResult<IEnumerable<RootDto>> GetRoots()
         {
             var list = new List<RootDto>();
 
-            // Local / directly visible drives (E, F, H, G, I, etc) - exclude C drive
-            foreach (var drive in DriveInfo.GetDrives())
+            // CHANGE: use explicit Roots from appsettings, no Directory.Exists filter so every configured drive shows in UI
+            var rootsSection = _configuration.GetSection("Roots");
+            if (rootsSection.Exists())
             {
-                if (!drive.IsReady) continue;
-                
-                // Skip C drive
-                if (drive.Name.StartsWith("C:", StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                // Customize drive names
-                string displayName = drive.Name.TrimEnd('\\');
-                
-                if (drive.Name.StartsWith("G", StringComparison.OrdinalIgnoreCase))
-                    displayName = "Data";
-                else if (drive.Name.StartsWith("I", StringComparison.OrdinalIgnoreCase))
-                    displayName = "Easystore";
-
-                list.Add(new RootDto
+                foreach (var child in rootsSection.GetChildren())
                 {
-                    Name = displayName,
-                    Path = drive.RootDirectory.FullName
-                });
+                    var name = child.Key;
+                    var path = child.Value ?? string.Empty;
+                    if (!string.IsNullOrWhiteSpace(path))
+                    {
+                        list.Add(new RootDto { Name = name, Path = path });
+                    }
+                }
             }
-
-            // Phone (Syncthing) root
-            if (Directory.Exists(PhoneRoot))
+            else
             {
-                list.Add(new RootDto
+                // Fallback to enumerating drives (if config missing)
+                foreach (var drive in DriveInfo.GetDrives())
                 {
-                    Name = "Samsung S20",
-                    Path = PhoneRoot
-                });
+                    if (!drive.IsReady) continue;
+                    if (drive.Name.StartsWith("C:", StringComparison.OrdinalIgnoreCase)) continue;
+
+                    var letter = drive.Name.TrimEnd('\\');
+                    list.Add(new RootDto { Name = letter, Path = drive.RootDirectory.FullName });
+                }
+                if (Directory.Exists(PhoneRoot))
+                {
+                    list.Add(new RootDto { Name = "Samsung S20", Path = PhoneRoot });
+                }
             }
 
             return Ok(list);

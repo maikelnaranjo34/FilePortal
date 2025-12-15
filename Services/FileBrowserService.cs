@@ -8,9 +8,13 @@ public class FileBrowserService
     // Local drive roots you want to show by letter
     private readonly string[] _allowedDriveRoots = new[]
     {
+        "D:",
         "E:",
-        "F:",
-        "H:"
+        "G:",
+        "H:",
+        "I:",
+        "J:",
+        "K:"
     };
 
     // Special roots:
@@ -22,13 +26,12 @@ public class FileBrowserService
     {
         _specialRoots = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
-            // 🔹 UPDATE THESE TWO LINES with your real UNC paths:
-            // Example: @"\\192.168.5.1\USB_DISK1" or @"\\ROUTER\YDrive"
-            { "Easystore", @"\\192.168.5.1\h" },
-            { "Data", @"\\192.168.5.1\g" },
+            // Friendly names mapped to local/mapped drive letters
+            { "Data", @"G:\" },
+            { "Easystore", @"I:\" },
 
             // Samsung S20 Syncthing backup
-            { "Samsung S20", @"D:\Samsung S20_Cloud\WebsiteBrowser\Files" }
+            { "Samsung S20", @"D:\\Samsung S20_Cloud\\WebsiteBrowser\\Files" }
         };
     }
 
