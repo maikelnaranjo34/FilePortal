@@ -75,6 +75,16 @@ public class UserStoreService
         return true;
     }
 
+    public bool SetAllowedFolders(string username, List<string> folderPaths)
+    {
+        var list = LoadAll();
+        var rec = list.FirstOrDefault(u => string.Equals(u.Username, username, StringComparison.OrdinalIgnoreCase));
+        if (rec == null) return false;
+        rec.AllowedFolders = folderPaths ?? new List<string>();
+        SaveAll(list);
+        return true;
+    }
+
     public bool AddUser(string username, string password, bool isAdmin = false, string firstName = "", string lastName = "")
     {
         if (string.IsNullOrWhiteSpace(username) || string.IsNullOrEmpty(password)) return false;

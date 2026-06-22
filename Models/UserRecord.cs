@@ -11,5 +11,10 @@ namespace FilePortal.Models
         public string Hash { get; set; } = string.Empty; // base64
         public DateTime CreatedUtc { get; set; }
         public bool IsAdmin { get; set; }
+        
+        // Folder access control: list of folder paths user can access
+        // If empty, admin users can access all, regular users can access none
+        // If populated, only these paths are accessible
+        public List<string> AllowedFolders { get; set; } = new();
     }
 }

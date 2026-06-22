@@ -167,5 +167,48 @@ namespace FilePortal.Controllers
             if (!ok) return NotFound(new { error = "user not found or update failed" });
             return Ok();
         }
+
+        // POST /api/users/{username}/folders
+        // Admin only: set which folders a user can access
+        [Authorize(Roles = "Admin")]
+        [HttpPost("{username}/folders")]
+        public IActionResult SetFolders(string username, [FromBody] List<string> folderPaths)
+        {
+            if (string.IsNullOrWhiteSpace(username)) return BadRequest();
+            
+            var target = _store.GetUser(username);
+            if (target == null) return NotFound();
+            
+            // Validate folder paths exist
+            var validPaths = new List<string>();
+            if (folderPaths != null)
+            {
+                foreach (var folder in folderPaths)
+                {
+                    if (!string.IsNullOrWhiteSpace(folder) && Directory.Exists(folder))
+                    {
+                        validPaths.Add(Path.GetFullPath(folder));
+                    }
+                }
+            }
+            
+            var ok = _store.SetAllowedFolders(username, validPaths);
+            if (!ok) return StatusCode(500);
+            return Ok(new { message = $"Allowed folders updated for {username}", folders = validPaths });
+        }
+
+        // GET /api/users/{username}/folders
+        // Get folders accessible by a user
+        [Authorize(Roles = "Admin")]
+        [HttpGet("{username}/folders")]
+        public IActionResult GetFolders(string username)
+        {
+            if (string.IsNullOrWhiteSpace(username)) return BadRequest();
+            
+            var target = _store.GetUser(username);
+            if (target == null) return NotFound();
+            
+            return Ok(new { username = username, folders = target.AllowedFolders });
+        }
     }
 }

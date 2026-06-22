@@ -8,9 +8,12 @@
     body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background:#020617; color:#e5e7eb; padding:20px }
     .box { max-width:720px; margin:0 auto }
     input { width:100%; padding:8px; margin:6px 0; border-radius:6px; border:1px solid #374151; background:#111827; color:#e5e7eb }
-    button { background:#0ea5e9; color:#081025; padding:8px 12px; border-radius:8px; border:none }
-    .user { display:flex; justify-content:space-between; padding:8px; border:1px solid #1f2937; border-radius:6px; margin-bottom:6px }
+    button { background:#0ea5e9; color:#081025; padding:8px 12px; border-radius:8px; border:none; cursor:pointer; margin-right:6px }
+    button:disabled { background:#6b7280; cursor:not-allowed }
+    .user { display:flex; justify-content:space-between; align-items:center; padding:8px; border:1px solid #1f2937; border-radius:6px; margin-bottom:6px }
     a.back { color:#9ca3af; text-decoration:none; display:inline-block; margin-bottom:12px }
+    .folder-list { background:#111827; border:1px solid #1f2937; border-radius:6px; padding:10px; margin:10px 0; max-height:200px; overflow-y:auto }
+    .folder-item { padding:6px; background:#0b1220; border-radius:4px; margin:4px 0; font-size:12px; color:#9ca3af; word-break:break-all }
   </style>
 </head>
 <body>
@@ -34,7 +37,7 @@
     <div id="list"></div>
 
     <!-- Change Password Modal -->
-    <div id="pwModal" style="display:none;position:fixed;inset:0;align-items:center;justify-content:center;background:rgba(2,6,23,0.6)">
+    <div id="pwModal" style="display:none;position:fixed;inset:0;align-items:center;justify-content:center;background:rgba(2,6,23,0.6);z-index:1000">
       <div style="background:#0b1220;padding:16px;border:1px solid #1f2937;border-radius:8px;min-width:320px">
         <h3 style="margin-top:0">Change password for <span id="pwFor"></span></h3>
         <div id="pwMsg" style="color:#f97373;margin-bottom:6px"></div>
@@ -46,6 +49,35 @@
         <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end">
           <button onclick="submitChangePassword()">Save</button>
           <button onclick="closePwModal()" style="background:#374151;color:#e5e7eb">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Folder Access Modal -->
+    <div id="folderModal" style="display:none;position:fixed;inset:0;align-items:center;justify-content:center;background:rgba(2,6,23,0.6);z-index:1000;overflow-y:auto">
+      <div style="background:#0b1220;padding:16px;border:1px solid #1f2937;border-radius:8px;min-width:500px;margin:40px auto;max-height:80vh;display:flex;flex-direction:column">
+        <h3 style="margin-top:0;margin-bottom:12px">Set Folder Access for <span id="folderFor"></span></h3>
+        <p style="color:#9ca3af;font-size:12px;margin-bottom:12px">Browse and select folders. Click a folder name to navigate into it.</p>
+        
+        <div id="folderMsg" style="color:#f97373;margin-bottom:6px"></div>
+        
+        <div style="display:flex;gap:6px;margin-bottom:12px">
+          <input id="browsePath" type="text" placeholder="Current path" readonly style="flex:1;padding:8px;border-radius:4px;border:1px solid #374151;background:#111827;color:#9ca3af;font-size:12px" />
+          <button onclick="goToRoots()" style="padding:8px 12px;background:#666;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px">Drives</button>
+        </div>
+
+        <div id="folderBrowser" style="border:1px solid #1f2937;border-radius:4px;padding:8px;background:#111827;margin-bottom:12px;max-height:300px;overflow-y:auto;min-height:150px">
+          <!-- Folders will be populated here -->
+        </div>
+
+        <h4 style="margin-top:12px;margin-bottom:8px;color:#9ca3af">Selected Folders:</h4>
+        <div id="assignedFolders" style="max-height:150px;overflow-y:auto;border:1px solid #1f2937;border-radius:4px;padding:8px;background:#0b1220;margin-bottom:12px">
+          <!-- Will be populated by JS -->
+        </div>
+        
+        <div style="display:flex;gap:8px;justify-content:flex-end">
+          <button onclick="submitFolderAccess()">Save</button>
+          <button onclick="closeFolderModal()" style="background:#374151;color:#e5e7eb;border:none;border-radius:4px;padding:8px 12px;cursor:pointer">Cancel</button>
         </div>
       </div>
     </div>
@@ -110,6 +142,9 @@
         left.textContent = displayName + (u.isAdmin ? ' - admin' : '');
 
         const actions = document.createElement('div');
+        actions.style.display = 'flex';
+        actions.style.gap = '6px';
+        actions.style.flexWrap = 'wrap';
 
         // Promote / Demote
         if (u.isAdmin) {
@@ -126,19 +161,25 @@
           actions.appendChild(prom);
         }
 
+        // Change password button
+        const cp = document.createElement('button'); 
+        cp.textContent = 'Password';
+        cp.onclick = () => openPwModal(u.username, u.isAdmin);
+        actions.appendChild(cp);
+
+        // Manage folders button
+        const folders = document.createElement('button');
+        folders.textContent = 'Folders';
+        folders.onclick = () => openFolderModal(u.username, u.isAdmin);
+        actions.appendChild(folders);
+
         // Remove
-        const del = document.createElement('button'); del.textContent = 'Remove';
+        const del = document.createElement('button'); 
+        del.textContent = 'Remove';
         del.onclick = () => removeUser(u.username);
         if (u.username === currentUser) del.disabled = true; // cannot remove self
         if (u.isAdmin && adminCount <= 1) del.disabled = true; // cannot remove last admin
         actions.appendChild(del);
-
-        div.appendChild(left);
-        // Change password button
-        const cp = document.createElement('button'); cp.textContent = 'Change Password';
-        cp.style.marginRight = '6px';
-        cp.onclick = () => openPwModal(u.username, u.isAdmin);
-        actions.appendChild(cp);
 
         div.appendChild(left);
         div.appendChild(actions);
@@ -249,6 +290,240 @@
 
     function closePwModal() { document.getElementById('pwModal').style.display = 'none'; pwTarget = null; }
 
+    let folderTarget = null;
+    let selectedFolders = [];
+    let currentBrowsePath = null;
+
+    function openFolderModal(username, isAdmin) {
+      folderTarget = username;
+      selectedFolders = [];
+      currentBrowsePath = null;
+      document.getElementById('folderFor').textContent = username;
+      document.getElementById('folderMsg').textContent = '';
+      
+      // Load current folders and show roots
+      loadFoldersForUser(username);
+      goToRoots();
+      document.getElementById('folderModal').style.display = 'flex';
+    }
+
+    function closeFolderModal() { 
+      document.getElementById('folderModal').style.display = 'none'; 
+      folderTarget = null;
+      selectedFolders = [];
+      currentBrowsePath = null;
+    }
+
+    async function loadFoldersForUser(username) {
+      try {
+        // Get currently assigned folders
+        const foldersRes = await fetch('/api/users/' + encodeURIComponent(username) + '/folders', { credentials: 'include' });
+        if (foldersRes.ok) {
+          const data = await foldersRes.json();
+          selectedFolders = data.folders || [];
+        }
+        
+        renderSelectedFolders();
+      } catch (e) {
+        document.getElementById('folderMsg').textContent = 'Failed to load folders';
+      }
+    }
+
+    async function goToRoots() {
+      currentBrowsePath = null;
+      document.getElementById('browsePath').value = 'Drives';
+      await browseFolders(null);
+    }
+
+    async function browseFolders(path) {
+      const msg = document.getElementById('folderMsg');
+      msg.textContent = '';
+      const browser = document.getElementById('folderBrowser');
+      browser.innerHTML = '';
+      
+      if (path === null || path === undefined) {
+        // Show drives (no API call needed)
+        const drives = ['C:\\', 'D:\\', 'E:\\', 'F:\\', 'G:\\', 'H:\\', 'I:\\', 'J:\\', 'K:\\', 'L:\\'];
+        drives.forEach(drive => {
+          const div = document.createElement('div');
+          div.style.padding = '8px';
+          div.style.cursor = 'pointer';
+          div.style.borderRadius = '4px';
+          div.style.marginBottom = '4px';
+          div.style.backgroundColor = '#1f2937';
+          div.style.display = 'flex';
+          div.style.justifyContent = 'space-between';
+          div.style.alignItems = 'center';
+          
+          const nameSpan = document.createElement('span');
+          nameSpan.textContent = drive;
+          nameSpan.style.flex = '1';
+          nameSpan.style.cursor = 'pointer';
+          nameSpan.onclick = () => browseFolders(drive);
+          
+          const selectBtn = document.createElement('button');
+          selectBtn.textContent = '+';
+          selectBtn.style.padding = '4px 8px';
+          selectBtn.style.background = '#0ea5e9';
+          selectBtn.style.color = '#081025';
+          selectBtn.style.border = 'none';
+          selectBtn.style.borderRadius = '4px';
+          selectBtn.style.cursor = 'pointer';
+          selectBtn.onclick = () => {
+            if (!selectedFolders.some(f => f.toLowerCase() === drive.toLowerCase())) {
+              selectedFolders.push(drive);
+              renderSelectedFolders();
+            }
+          };
+          
+          div.appendChild(nameSpan);
+          div.appendChild(selectBtn);
+          browser.appendChild(div);
+        });
+        return;
+      }
+
+      // For actual paths, fetch subfolders from API
+      try {
+        const url = '/api/files/browse?path=' + encodeURIComponent(path);
+        console.log('Browsing path:', path, 'URL:', url);
+        const res = await fetch(url, { credentials: 'include' });
+        
+        if (!res.ok) {
+          const errText = await res.text();
+          console.error('Browse error:', res.status, errText);
+          msg.textContent = 'Failed to load folder contents: ' + res.status;
+          return;
+        }
+        
+        const folders = await res.json();
+        console.log('Folders loaded:', folders.length);
+        
+        if (folders.length === 0) {
+          const empty = document.createElement('div');
+          empty.textContent = 'No subfolders';
+          empty.style.padding = '8px';
+          empty.style.color = '#6b7280';
+          browser.appendChild(empty);
+        } else {
+          folders.forEach(folder => {
+            const div = document.createElement('div');
+            div.style.padding = '8px';
+            div.style.cursor = 'pointer';
+            div.style.borderRadius = '4px';
+            div.style.marginBottom = '4px';
+            div.style.backgroundColor = '#1f2937';
+            div.style.display = 'flex';
+            div.style.justifyContent = 'space-between';
+            div.style.alignItems = 'center';
+            
+            const nameSpan = document.createElement('span');
+            nameSpan.textContent = folder.name;
+            nameSpan.style.flex = '1';
+            nameSpan.style.cursor = 'pointer';
+            nameSpan.onclick = () => browseFolders(folder.path);
+            
+            const selectBtn = document.createElement('button');
+            selectBtn.textContent = '+';
+            selectBtn.style.padding = '4px 8px';
+            selectBtn.style.background = '#0ea5e9';
+            selectBtn.style.color = '#081025';
+            selectBtn.style.border = 'none';
+            selectBtn.style.borderRadius = '4px';
+            selectBtn.style.cursor = 'pointer';
+            selectBtn.onclick = () => {
+              if (!selectedFolders.some(f => f.toLowerCase() === folder.path.toLowerCase())) {
+                selectedFolders.push(folder.path);
+                renderSelectedFolders();
+              }
+            };
+            
+            div.appendChild(nameSpan);
+            div.appendChild(selectBtn);
+            browser.appendChild(div);
+          });
+        }
+        
+        currentBrowsePath = path;
+        document.getElementById('browsePath').value = path;
+      } catch (e) {
+        console.error('Exception in browseFolders:', e);
+        msg.textContent = 'Error loading folders: ' + e.message;
+      }
+    }
+
+    function renderSelectedFolders() {
+      const assignedDiv = document.getElementById('assignedFolders');
+      if (selectedFolders.length === 0) {
+        assignedDiv.textContent = 'No folders selected';
+        assignedDiv.style.color = '#6b7280';
+      } else {
+        assignedDiv.innerHTML = '';
+        selectedFolders.forEach(folder => {
+          const div = document.createElement('div');
+          div.style.padding = '6px';
+          div.style.backgroundColor = '#1f2937';
+          div.style.borderRadius = '4px';
+          div.style.marginBottom = '4px';
+          div.style.fontSize = '12px';
+          div.style.display = 'flex';
+          div.style.justifyContent = 'space-between';
+          div.style.alignItems = 'center';
+          
+          const path = document.createElement('span');
+          path.textContent = folder;
+          path.style.wordBreak = 'break-all';
+          path.style.flex = '1';
+          
+          const btn = document.createElement('button');
+          btn.textContent = '✕';
+          btn.style.padding = '2px 6px';
+          btn.style.fontSize = '10px';
+          btn.style.marginLeft = '8px';
+          btn.style.flexShrink = '0';
+          btn.style.background = '#ef4444';
+          btn.style.color = '#fff';
+          btn.style.border = 'none';
+          btn.style.borderRadius = '4px';
+          btn.style.cursor = 'pointer';
+          btn.onclick = () => {
+            selectedFolders = selectedFolders.filter(f => f !== folder);
+            renderSelectedFolders();
+          };
+          
+          div.appendChild(path);
+          div.appendChild(btn);
+          assignedDiv.appendChild(div);
+        });
+      }
+    }
+
+    async function submitFolderAccess() {
+      if (!folderTarget) return;
+      const msg = document.getElementById('folderMsg');
+      msg.textContent = '';
+      
+      try {
+        const res = await fetch('/api/users/' + encodeURIComponent(folderTarget) + '/folders', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(selectedFolders),
+          credentials: 'include'
+        });
+        
+        if (res.ok) {
+          alert('Folder access updated');
+          closeFolderModal();
+          load();
+        } else {
+          const t = await res.json().catch(() => null);
+          msg.textContent = (t && t.error) || 'Failed to update folder access';
+        }
+      } catch (e) {
+        msg.textContent = 'Request failed';
+      }
+    }
+
     async function getCurrentUser() {
       try {
         const me = await fetch('/api/auth/me', { credentials: 'include' });
@@ -288,5 +563,8 @@
 
     load();
   </script>
+    <div style="margin: 24px 0 0 0; text-align:center;">
+      <button onclick="window.location.href='/LicensingServerPackage/admin.html'" style="background:#0ea5e9;color:#fff;border:none;border-radius:999px;padding:10px 28px;font-size:15px;cursor:pointer;box-shadow:0 2px 8px rgba(14,165,233,0.08);transition:background 0.2s;">Licenses</button>
+    </div>
 </body>
 </html>

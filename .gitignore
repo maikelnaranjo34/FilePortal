@@ -361,3 +361,9 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# Backup files
+*.backup
+
+# Runtime data (users.json lives inside bin/ which is already ignored)
+data/

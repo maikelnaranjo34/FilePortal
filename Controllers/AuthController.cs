@@ -117,7 +117,16 @@ namespace FilePortal.Controllers
         [HttpGet("me")]
         public IActionResult Me()
         {
-            return Ok(new { user = User.Identity?.Name });
+            var username = User.Identity?.Name ?? string.Empty;
+            var isAdmin = User.IsInRole("Admin");
+            var user = _userStore.GetUser(username);
+            var allowedFolders = user?.AllowedFolders ?? new List<string>();
+            
+            return Ok(new { 
+                user = username,
+                isAdmin = isAdmin,
+                allowedFolders = allowedFolders
+            });
         }
 
         private void SendLoginNotificationEmail(string username, string? ipAddress)

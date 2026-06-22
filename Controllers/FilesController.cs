@@ -12,6 +12,7 @@ using SixLabors.ImageSharp.Processing;
 using SixLabors.ImageSharp.Formats.Jpeg;
 using System.IO.Compression;
 using System.ComponentModel.DataAnnotations;
+using FilePortal.Services;
 
 namespace FilePortal.Controllers
 {
@@ -21,6 +22,7 @@ namespace FilePortal.Controllers
     public class FilesController : ControllerBase
     {
         private readonly IConfiguration _configuration;
+        private readonly UserStoreService _userStore;
         // 🔵 Phone (Syncthing) root
         private static readonly string PhoneRoot = @"D:\Samsung S20_Cloud\WebsiteBrowser\Files";
 
@@ -56,9 +58,38 @@ namespace FilePortal.Controllers
             public string? Extension { get; set; }
         }
 
-        public FilesController(IConfiguration configuration)
+        public FilesController(IConfiguration configuration, UserStoreService userStore)
         {
             _configuration = configuration;
+            _userStore = userStore;
+        }
+
+        // Helper: Check if user has access to a path
+        private bool HasAccessToPath(string requestedPath)
+        {
+            var username = User.Identity?.Name ?? string.Empty;
+            var isAdmin = User.IsInRole("Admin");
+            
+            if (isAdmin) return true; // Admins can access everything
+            
+            var user = _userStore.GetUser(username);
+            if (user == null) return false;
+            
+            // If AllowedFolders is empty, non-admins have no access
+            if (user.AllowedFolders.Count == 0) return false;
+            
+            // Check if requested path is within any allowed folder
+            var normalizedPath = Path.GetFullPath(requestedPath);
+            foreach (var allowedFolder in user.AllowedFolders)
+            {
+                var normalizedAllowed = Path.GetFullPath(allowedFolder);
+                if (normalizedPath == normalizedAllowed || normalizedPath.StartsWith(normalizedAllowed + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+            
+            return false;
         }
 
         // ================== ROOTS ==================
@@ -66,8 +97,30 @@ namespace FilePortal.Controllers
         public ActionResult<IEnumerable<RootDto>> GetRoots()
         {
             var list = new List<RootDto>();
+            var username = User.Identity?.Name ?? string.Empty;
+            var isAdmin = User.IsInRole("Admin");
 
-            // CHANGE: use explicit Roots from appsettings, no Directory.Exists filter so every configured drive shows in UI
+            // For non-admins with AllowedFolders, show ONLY their allowed folders as roots
+            if (!isAdmin)
+            {
+                var user = _userStore.GetUser(username);
+                if (user?.AllowedFolders.Count > 0)
+                {
+                    foreach (var folder in user.AllowedFolders)
+                    {
+                        if (Directory.Exists(folder))
+                        {
+                            var folderName = Path.GetFileName(folder) ?? folder;
+                            list.Add(new RootDto { Name = folderName, Path = folder });
+                        }
+                    }
+                    return Ok(list);
+                }
+                // If no allowed folders, return empty list (user has no access)
+                return Ok(list);
+            }
+
+            // For admins, show configured roots
             var rootsSection = _configuration.GetSection("Roots");
             if (rootsSection.Exists())
             {
@@ -109,6 +162,12 @@ namespace FilePortal.Controllers
             {
                 ModelState.AddModelError("path", "The path field is required.");
                 return BadRequest(ModelState);
+            }
+
+            // Check folder access permission
+            if (!HasAccessToPath(path))
+            {
+                return StatusCode(403, new { error = "You do not have access to this folder" });
             }
 
             // Debug logging
@@ -193,6 +252,60 @@ namespace FilePortal.Controllers
             items = items
                 .OrderByDescending(i => i.IsDirectory)
                 .ThenBy(i => i.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            return Ok(items);
+        }
+
+        // ================== BROWSE FOLDERS (for folder picker) ==================
+        [HttpGet("browse")]
+        public ActionResult<IEnumerable<ItemDto>> BrowseFolders([FromQuery] string path)
+        {
+            // Allow browsing any path for admin (no permission check for browsing)
+            // Regular users still need to be authenticated
+            
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                path = "C:\\";
+            }
+
+            if (!Directory.Exists(path))
+                return NotFound(new { error = "directory not found" });
+
+            var items = new List<ItemDto>();
+
+            try
+            {
+                // Return only directories (for folder selection)
+                foreach (var dir in Directory.GetDirectories(path))
+                {
+                    DirectoryInfo di;
+                    try { di = new DirectoryInfo(dir); }
+                    catch { continue; }
+
+                    items.Add(new ItemDto
+                    {
+                        Name = di.Name,
+                        Path = di.FullName,
+                        IsDirectory = true,
+                        Size = null,
+                        LastModified = di.LastWriteTime,
+                        Extension = null
+                    });
+                }
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return StatusCode(403, new { error = "Access denied to this folder" });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { error = ex.Message });
+            }
+
+            // Sort by name
+            items = items
+                .OrderBy(i => i.Name, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
             return Ok(items);
