@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Caching.Memory;
 using SkiaSharp;
 
 namespace FilePortal.Services;
@@ -43,6 +43,15 @@ public sealed class ThumbnailService : IDisposable
         var result = jpeg.ToArray();
         _cache.Set(key, result, new MemoryCacheEntryOptions { Size = result.Length, SlidingExpiration = TimeSpan.FromHours(1) });
         return result;
+    }
+
+    public static string GetMediaPlaceholder(bool isVideo)
+    {
+        var shape = isVideo
+            ? "<path d='M10 8l6 4-6 4V8z' fill='#a78bfa'/>"
+            : "<path d='M3 19l6-8 4 5 3-4 5 7z' fill='#9ca3af'/>";
+        return "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><rect width='24' height='24' fill='#1f2937'/>"
+            + shape + "</svg>";
     }
 
     public void Dispose() => _cache.Dispose();

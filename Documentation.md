@@ -21,11 +21,17 @@ Run the provisioning command only when the user store has no administrator. It p
 | [Program.cs](Program.cs) | Startup, local administrator provisioning, authentication cookie validation, and routing |
 | [Controllers/AuthController.cs](Controllers/AuthController.cs) | Sign-in, sign-out, account details, and optional login notifications |
 | [Controllers/FilesController.cs](Controllers/FilesController.cs) | Folder listings, previews, file downloads, uploads, deletion, and ZIP archives |
+| [Controllers/PhotosController.cs](Controllers/PhotosController.cs) | Photo timeline, favorites, previews, and library scans |
+| [Controllers/AlbumsController.cs](Controllers/AlbumsController.cs) | Album creation and editing |
+| [Controllers/SearchController.cs](Controllers/SearchController.cs) | Photo search and camera filters |
+| [Controllers/SharingController.cs](Controllers/SharingController.cs) | Public photo and album links checked against the owner's current folder access |
 | [Controllers/UsersController.cs](Controllers/UsersController.cs) | User administration, folder assignment, and password changes |
 | [Services/FileBrowserService.cs](Services/FileBrowserService.cs) | Configured roots and filesystem authorization shared by file endpoints |
 | [Services/UserStoreService.cs](Services/UserStoreService.cs) | JSON persistence, password hashing, and atomic updates |
 | [Services/ThumbnailService.cs](Services/ThumbnailService.cs) | SkiaSharp thumbnail generation and a bounded in-memory cache |
-| [wwwroot/index.html](wwwroot/index.html) | File browser and sign-in |
+| [wwwroot/index.html](wwwroot/index.html) | Photos landing page with Albums, Favorites, and Search |
+| [wwwroot/files.html](wwwroot/files.html) | File Manager |
+| [wwwroot/login.html](wwwroot/login.html) | Gallery sign-in |
 | [wwwroot/users.html](wwwroot/users.html) | Account settings and administrator controls |
 | [tests/fileportal.test.mjs](tests/fileportal.test.mjs) | Integration tests against the published application |
 
@@ -82,7 +88,9 @@ File endpoints require sign-in and enforce the caller's folder access.
 
 ## Frontend and media
 
-`index.html` is the main portal. The former `portal.html` and `login.html` URLs redirect to it. The UI checks `/api/auth/me` on load and clears the file listing after sign-out. Letter keys cycle through matching items. API responses use camelCase.
+`index.html` is the Photos landing page. It serves Photos, Albums, Favorites, and Search after sign-in. File Manager remains available at `/files.html`, and `/portal.html` redirects to the landing page. The frontend checks `/api/auth/me` on load. Letter keys cycle through matching items in File Manager. API responses use camelCase.
+
+The gallery uses the same folder access policy as File Manager. Its metadata cache, albums, favorites, and share records are stored in the application data directory. Set `PhotoLibrary__ScanRoots__0` and subsequent entries to narrow the scanned folders to paths within configured roots. An empty scan list uses all configured roots.
 
 Videos support byte-range responses for seeking. ZIP archives are prepared in the protected data directory, then downloaded by the browser and removed when the response closes. Thumbnails for JPEG, PNG, GIF, BMP, and WebP are generated with SkiaSharp at up to 240 pixels per side and cached in memory.
 

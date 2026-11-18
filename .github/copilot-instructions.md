@@ -1,6 +1,6 @@
 # FilePortal
 
-FilePortal targets .NET 10 and serves a vanilla JavaScript frontend from `wwwroot`. `index.html` is the main browser and `users.html` handles account management.
+FilePortal targets .NET 10 and serves a vanilla JavaScript frontend from `wwwroot`. `index.html` is the Photos landing page, `files.html` is the File Manager, and `users.html` handles account management.
 
 `FilesController` uses `FileBrowserService` for path authorization. Keep every new file endpoint within that service's scope. User records and updates go through `UserStoreService`. Login and the cookie validator use the account's current security stamp.
 

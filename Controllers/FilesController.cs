@@ -1,9 +1,7 @@
-﻿using System.IO.Compression;
 using FilePortal.Models;
 using FilePortal.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.StaticFiles;
 
 namespace FilePortal.Controllers;
 
@@ -11,7 +9,7 @@ namespace FilePortal.Controllers;
 [Route("api/[controller]")]
 [Authorize]
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
-public class FilesController(FileBrowserService browser, ThumbnailService thumbnails) : ControllerBase
+public class FilesController(FileBrowserService browser, ThumbnailService thumbnails, FileArchiveService archives) : ControllerBase
 {
     private static readonly Dictionary<string, HashSet<string>> Categories = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -21,17 +19,6 @@ public class FilesController(FileBrowserService browser, ThumbnailService thumbn
             { ".mp4", ".mkv", ".avi", ".mov", ".flv", ".wmv", ".webm", ".m4v", ".mpg", ".mpeg" },
         ["documents"] = new(StringComparer.OrdinalIgnoreCase)
             { ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt", ".rtf", ".odt", ".ods", ".odp" }
-    };
-
-    private static readonly FileExtensionContentTypeProvider ContentTypes = new()
-    {
-        Mappings =
-        {
-            [".flv"] = "video/x-flv",
-            [".m4v"] = "video/mp4",
-            [".mkv"] = "video/x-matroska",
-            [".webp"] = "image/webp"
-        }
     };
 
     private List<RootItem>? _roots;
@@ -118,7 +105,7 @@ public class FilesController(FileBrowserService browser, ThumbnailService thumbn
         if (!System.IO.File.Exists(file))
             return NotFound();
 
-        var type = ContentTypes.TryGetContentType(file, out var contentType) ? contentType : "application/octet-stream";
+        var type = FileBrowserService.GetContentType(file);
         if (type == "text/html" || type == "application/xhtml+xml" || type == "text/xml" || type == "application/xml")
             type = "application/octet-stream";
 
@@ -236,7 +223,7 @@ public class FilesController(FileBrowserService browser, ThumbnailService thumbn
             return File(image, "image/jpeg");
         if (Categories["videos"].Contains(file.Extension))
             return Icon("#a78bfa", "M16 10h32v44H16z M27 21v22l15-11z");
-        if (ContentTypes.TryGetContentType(target, out var type) && type.StartsWith("audio/", StringComparison.Ordinal))
+        if (FileBrowserService.GetContentType(target).StartsWith("audio/", StringComparison.Ordinal))
             return Icon("#60a5fa", "M25 14v25a7 7 0 1 0 5 7V25l15-5v13a7 7 0 1 0 5 7V7z");
         if (string.Equals(file.Extension, ".pdf", StringComparison.OrdinalIgnoreCase))
             return Icon("#ef4444", "M16 10h21l11 11v33H16z M21 31h22v3H21z M21 39h15v3H21z");
@@ -271,63 +258,8 @@ public class FilesController(FileBrowserService browser, ThumbnailService thumbn
             sources.Add(source);
         }
 
-        Directory.CreateDirectory(browser.WorkingDirectory);
-        var temporaryPath = Path.Combine(browser.WorkingDirectory, Guid.NewGuid().ToString("N") + ".zip");
-        var stream = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.Read, 65536,
-            FileOptions.Asynchronous | FileOptions.DeleteOnClose);
-        try
-        {
-            using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
-            {
-                var entries = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                foreach (var source in sources)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    var name = Path.GetFileName(source);
-                    if (string.IsNullOrEmpty(name))
-                        name = "Drive";
-
-                    var uniqueName = name;
-                    for (var suffix = 1; !entries.Add(uniqueName); suffix++)
-                        uniqueName = Path.GetFileNameWithoutExtension(name) + "_" + suffix + Path.GetExtension(name);
-
-                    await AddToZip(archive, source, uniqueName, cancellationToken);
-                }
-            }
-
-            stream.Position = 0;
-            return File(stream, "application/zip", "files.zip");
-        }
-        catch
-        {
-            await stream.DisposeAsync();
-            throw;
-        }
-    }
-
-    private async Task AddToZip(ZipArchive archive, string source, string name, CancellationToken cancellationToken)
-    {
-        var pending = new Stack<(string Path, string EntryName)>();
-        pending.Push((source, name));
-        while (pending.TryPop(out var item))
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (!Resolve(item.Path, out var path, allowMissing: false))
-                continue;
-
-            if (Directory.Exists(path))
-            {
-                archive.CreateEntry(item.EntryName + "/");
-                foreach (var entry in new DirectoryInfo(path).EnumerateFileSystemInfos().Where(browser.CanList))
-                    pending.Push((entry.FullName, item.EntryName + "/" + entry.Name));
-                continue;
-            }
-
-            var entryStream = archive.CreateEntry(item.EntryName, CompressionLevel.Fastest).Open();
-            await using (entryStream)
-            await using (var input = System.IO.File.OpenRead(path))
-                await input.CopyToAsync(entryStream, cancellationToken);
-        }
+        var archive = await archives.CreateAsync(sources, Roots, cancellationToken);
+        return File(archive, "application/zip", "files.zip");
     }
 
     private bool Resolve(string path, out string fullPath, bool allowMissing = true) =>

@@ -1,6 +1,6 @@
 # FilePortal
 
-FilePortal is an ASP.NET Core 10 file browser for Windows drives and UNC shares. It provides account management, folder assignments, previews, uploads, deletion, and ZIP downloads.
+FilePortal is an ASP.NET Core 10 photo gallery and file browser for Windows drives and UNC shares. The landing page provides Photos, Albums, Favorites, and Search. File Manager provides previews, uploads, deletion, and ZIP downloads.
 
 ## Run locally
 

@@ -15,6 +15,11 @@ builder.Services.AddControllers().AddJsonOptions(options =>
 builder.Services.AddSingleton<FileBrowserService>();
 builder.Services.AddSingleton<UserStoreService>();
 builder.Services.AddSingleton<ThumbnailService>();
+builder.Services.AddSingleton<PhotoLibraryService>();
+builder.Services.AddSingleton<AlbumStoreService>();
+builder.Services.AddSingleton<FavoriteStoreService>();
+builder.Services.AddSingleton<ShareStoreService>();
+builder.Services.AddSingleton<FileArchiveService>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 var dataDirectory = UserStoreService.GetDirectoryPath(builder.Configuration);
@@ -123,7 +128,7 @@ app.UseAuthorization();
 
 app.MapControllers();
 app.MapGet("/portal.html", () => Results.Redirect("/"));
-app.MapGet("/login.html", () => Results.Redirect("/"));
+app.MapGet("/FileManager", () => Results.Redirect("/files.html"));
 app.MapFallback("/api/{**path}", () => Results.NotFound(new { error = "API route not found" }));
 app.MapFallbackToFile("index.html");
 

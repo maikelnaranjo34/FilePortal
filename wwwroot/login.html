@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>Photos — Sign in</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="/theme.js"></script>
+    <style>
+        :root { --bg:#0f172a; --card:#0b1220; --line:#1f2937; --accent:#6366f1; --text:#e5e7eb; --muted:#9ca3af;
+            --grad:#1e293b; --inputbg:#060b16; }
+        html[data-theme="light"]{ --bg:#eef1f7; --card:#ffffff; --line:#dde2ec; --accent:#6366f1; --text:#1a2230; --muted:#5b6677;
+            --grad:#dbe3f0; --inputbg:#f4f6fb; }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+            background: radial-gradient(1200px 600px at 50% -10%, var(--grad), var(--bg));
+            color: var(--text); display: flex; align-items: center; justify-content: center; height: 100vh;
+        }
+        .card {
+            background: var(--card); border-radius: 16px; padding: 30px 28px; width: 360px;
+            border: 1px solid var(--line); box-shadow: 0 24px 60px rgba(0,0,0,0.55);
+        }
+        .logo { display:flex; align-items:center; gap:10px; margin-bottom:18px; }
+        .logo .dot { width:34px;height:34px;border-radius:50%;
+            background: conic-gradient(#ef4444,#f59e0b,#10b981,#3b82f6,#a855f7,#ef4444); }
+        .logo h1 { margin:0; font-size:20px; font-weight:600; }
+        p.desc { margin: 0 0 20px; font-size: 13px; color: var(--muted); }
+        label { display: block; font-size: 12px; margin-bottom: 6px; color: var(--muted); }
+        input { width: 100%; padding: 11px 12px; border-radius: 10px; border: 1px solid var(--line);
+            background: var(--inputbg); color: var(--text); font-size: 14px; margin-bottom: 14px; outline: none; }
+        input:focus { border-color: var(--accent); }
+        button { width: 100%; padding: 11px; border-radius: 999px; border: none;
+            background: var(--accent); color: #fff; font-size: 15px; font-weight: 600; cursor: pointer; }
+        button:hover { background: #4f46e5; }
+        .error { background:#3f1d1d;border:1px solid #7f1d1d;color:#fecaca;padding:9px 12px;border-radius:8px;
+            font-size:12px;margin-bottom:14px;display:none; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="logo"><div class="dot"></div><h1>Photos</h1></div>
+        <p class="desc" id="desc">Sign in to your personal photo gallery.</p>
+        <div id="errorBox" class="error"></div>
+        <form id="loginForm">
+            <label for="username">Username</label>
+            <input id="username" name="username" type="text" autocomplete="username" autofocus />
+            <label for="password">Password</label>
+            <input id="password" name="password" type="password" autocomplete="current-password" />
+            <button type="submit" id="submitBtn">Sign in</button>
+        </form>
+    </div>
+
+    <script>
+        const errorBox = document.getElementById("errorBox");
+        function showError(msg){ errorBox.textContent = msg; errorBox.style.display = "block"; }
+
+        document.getElementById("loginForm").addEventListener("submit", async (e) => {
+            e.preventDefault();
+            errorBox.style.display = "none";
+            const username = document.getElementById("username").value.trim();
+            const password = document.getElementById("password").value;
+            if (!username || !password) { showError("Username and password are required."); return; }
+
+            const body = new URLSearchParams();
+            body.set("username", username);
+            body.set("password", password);
+
+            try {
+                const res = await fetch("/api/auth/login", { method: "POST", body, credentials: "include" });
+                if (res.ok) { window.location.replace("/"); }
+                else { showError("Invalid username or password."); }
+            } catch (err) {
+                showError("Network error. Please try again.");
+            }
+        });
+    </script>
+</body>
+</html>

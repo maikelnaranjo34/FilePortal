@@ -42,11 +42,13 @@ test('FilePortal release integration', { timeout: 90_000 }, async t => {
   assert.equal(build.status, 0, build.stdout + build.stderr);
   const webConfig = readFileSync(path.join(publish, 'web.config'), 'utf8');
   assert.equal(webConfig.match(/arguments="([^"]*)"/)?.[1], '.\\FilePortal.dll');
-  for (const name of ['index.html', 'users.html']) {
+  for (const name of ['index.html', 'files.html', 'login.html', 'users.html', 'share.html']) {
     const html = readFileSync(path.join(publish, 'wwwroot', name), 'utf8');
     for (const script of html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi))
       new Script(script[1], { filename: name });
   }
+  for (const name of ['app.js', 'theme.js'])
+    new Script(readFileSync(path.join(publish, 'wwwroot', name), 'utf8'), { filename: name });
 
   writeFileSync(path.join(publish, 'appsettings.json'), JSON.stringify({
     FilePortal: { DataDirectory: data },
@@ -114,12 +116,26 @@ test('FilePortal release integration', { timeout: 90_000 }, async t => {
       return response.headers.get('set-cookie').split(';')[0];
     }
 
-    await request('/', 200);
+    const landing = await request('/', 200);
+    const landingHtml = await landing.text();
+    for (const view of ['photos', 'albums', 'favorites', 'search'])
+      assert.match(landingHtml, new RegExp('href="#' + view + '"'));
+    assert.match(landingHtml, /src="\/app\.js(?:\?[^"]+)?"/);
+    const galleryScript = await request('/app.js', 200);
+    assert.match(galleryScript.headers.get('content-type'), /javascript/);
+    await request('/theme.js', 200);
+    await request('/login.html', 200);
+    const fileManager = await request('/files.html', 200);
+    assert.match(await fileManager.text(), /archiveDownload/);
     assert.equal((await request('/portal.html', 302)).headers.get('location'), '/');
+    assert.equal((await request('/FileManager', 302)).headers.get('location'), '/files.html');
     await request('/api/unknown', 404);
     await request('/api/users/init', 404);
     await request('/api/auth/login', 401, null, form({ username: 'unknown', password }));
     await request('/api/files/roots', 401);
+    await request('/api/photos/timeline', 401);
+    await request('/api/albums', 401);
+    await request('/api/search', 401);
     const admin = await login('administrator');
     const legacy = await login('legacy');
     const assigned = await request('/api/files/roots', 200, legacy);
@@ -154,6 +170,28 @@ test('FilePortal release integration', { timeout: 90_000 }, async t => {
     assert.equal(Buffer.from(await thumbnail.arrayBuffer()).subarray(0, 2).toString('hex'), 'ffd8');
     const category = await request(at('/api/files/category', allowed) + '&category=documents', 200, legacy);
     assert.deepEqual((await category.json()).map(item => item.name), ['note.txt']);
+
+    await request('/api/photos/scan', 200, admin, { method: 'POST' });
+    const timeline = await request('/api/photos/timeline', 200, legacy);
+    const photoItems = (await timeline.json()).sections.flatMap(section => section.photos);
+    assert.deepEqual(photoItems.map(item => item.fileName).sort(), ['photo.png', 'video.mp4']);
+    const photoId = photoItems.find(item => item.fileName === 'photo.png').id;
+    await request('/api/photos/' + photoId + '/thumbnail', 200, legacy);
+    await request('/api/photos/' + photoId + '/favorite', 200, legacy, json({ favorite: true }));
+    const favorites = await request('/api/photos/timeline?favorites=true', 200, legacy);
+    assert.deepEqual((await favorites.json()).sections.flatMap(section => section.photos).map(item => item.id), [photoId]);
+    const album = await request('/api/albums', 200, legacy, json({ name: 'Fixture album', photoIds: [photoId] }));
+    const albumId = (await album.json()).id;
+    const albums = await request('/api/albums/' + albumId, 200, legacy);
+    assert.deepEqual((await albums.json()).photos.map(item => item.id), [photoId]);
+    const search = await request('/api/search?q=photo.png', 200, legacy);
+    assert.deepEqual((await search.json()).results.map(item => item.id), [photoId]);
+    const addedShare = await request('/api/sharing', 200, legacy, json({ type: 'photo', targetId: photoId }));
+    const token = (await addedShare.json()).token;
+    await request('/api/sharing/public/' + token + '/photo/' + photoId + '/file', 200);
+    const photoZip = await request('/api/photos/batch/download-form', 200, legacy, form({ ids: photoId }));
+    assert.equal(photoZip.headers.get('content-type'), 'application/zip');
+    assert.ok(Buffer.from(await photoZip.arrayBuffer()).includes('photo.png'));
 
     const upload = new FormData();
     upload.append('files', new Blob(['new file']), 'Nested/new.txt');
@@ -201,6 +239,9 @@ test('FilePortal release integration', { timeout: 90_000 }, async t => {
     await request('/api/users/legacy/password', 200, admin, form({ newPassword: password }));
     await request('/api/auth/me', 401, changed);
     const reset = await login('legacy');
+    await request('/api/users/legacy/folders', 200, admin, json([]));
+    await request('/api/photos/' + photoId + '/file', 404, reset);
+    await request('/api/sharing/public/' + token + '/photo/' + photoId + '/file', 404);
     await request('/api/users/legacy', 204, admin, { method: 'DELETE' });
     await request('/api/auth/me', 401, reset);
 

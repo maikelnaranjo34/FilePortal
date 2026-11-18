@@ -1,1240 +1,200 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <title>File Portal</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <style>
-    body {
-      margin: 0;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #020617;
-      color: #e5e7eb;
-    }
-    .item.selected { box-shadow: 0 0 0 2px rgba(14,165,233,0.18); border:1px solid #0ea5e9 }
-    .item.keyboard-selected { box-shadow: 0 0 0 3px #0ea5e9; background: rgba(14,165,233,0.15); }
-    .item input[type="checkbox"] { display:none }
-    .item.selection-mode input[type="checkbox"] { display:inline-block }
-    /* Image viewer modal */
-    .image-viewer { display:none; position:fixed; inset:0; background:rgba(2,6,23,0.95); z-index:9999; align-items:center; justify-content:center; }
-    .image-viewer img { max-width:90%; max-height:90vh; object-fit:contain; }
-    .image-viewer-close { position:absolute; top:20px; right:20px; background:#ef4444; color:#fff; border:none; border-radius:50%; width:40px; height:40px; font-size:24px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
-    .image-viewer-close:hover { background:#dc2626; }
-    .image-viewer-delete { position:absolute; top:20px; right:70px; background:#f59e0b; color:#fff; border:none; border-radius:50%; width:40px; height:40px; font-size:20px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
-    .image-viewer-delete:hover { background:#d97706; }
-    .image-viewer-nav { position:absolute; top:50%; transform:translateY(-50%); background:#0ea5e9; color:#fff; border:none; border-radius:50%; width:50px; height:50px; font-size:24px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
-    .image-viewer-nav:hover { background:#0284c7; }
-    .image-viewer-nav.prev { left:20px; }
-    .image-viewer-nav.next { right:20px; }
-    .app {
-      display: flex;
-      height: 100vh;
-    }
-    .sidebar {
-      width: 260px;
-      background: #020617;
-      border-right: 1px solid #1f2937;
-      display: flex;
-      flex-direction: column;
-    }
-    .sidebar-header {
-      padding: 16px;
-      border-bottom: 1px solid #1f2937;
-      font-weight: 600;
-      font-size: 18px;
-    }
-    .drive-list {
-      overflow: auto;
-      padding: 8px;
-    }
-    .drive-item {
-      padding: 8px 10px;
-      border-radius: 999px;
-      margin-bottom: 6px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      cursor: pointer;
-      font-size: 14px;
-    }
-    .drive-item span.icon {
-      font-size: 16px;
-    }
-    .drive-item.active {
-      background: #0ea5e9;
-      color: #0b1120;
-    }
-    .drive-item:not(.active):hover {
-      background: #111827;
-    }
-    .main {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-    }
-    .toolbar {
-      padding: 10px 16px;
-      border-bottom: 1px solid #1f2937;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-    }
-    .path {
-      font-size: 13px;
-      color: #9ca3af;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .buttons {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    button, .btn-like {
-      border: none;
-      border-radius: 999px;
-      padding: 6px 12px;
-      font-size: 13px;
-      cursor: pointer;
-      background: #0ea5e9;
-      color: #0b1120;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-    }
-    button.secondary {
-      background: #111827;
-      color: #e5e7eb;
-      border: 1px solid #374151;
-    }
-    button:hover, .btn-like:hover {
-      opacity: 0.9;
-    }
-    .content {
-      flex: 1;
-      overflow: auto;
-      padding: 12px 16px;
-    }
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-      gap: 12px;
-    }
-    .grid.list-view {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-    .grid.list-view .item {
-      flex-direction: row;
-      height: 48px;
-      align-items: center;
-      padding: 0 12px;
-    }
-    .grid.list-view .item-thumbnail {
-      width: 32px;
-      height: 32px;
-      flex-shrink: 0;
-    }
-    .grid.list-view .item-info {
-      flex: 1;
-      flex-direction: row;
-      align-items: center;
-      justify-content: space-between;
-    }
-    .grid.list-view .item-name {
-      flex: 1;
-    }
-    .grid.list-view .item-meta {
-      flex-direction: row;
-      gap: 16px;
-    }
-    .grid.details-view {
-      display: flex;
-      flex-direction: column;
-      gap: 0;
-    }
-    .grid.details-view .item {
-      flex-direction: row;
-      height: 40px;
-      align-items: center;
-      padding: 0 12px;
-      border-radius: 0;
-      border-left: none;
-      border-right: none;
-      border-top: none;
-    }
-    .grid.details-view .item-thumbnail {
-      width: 24px;
-      height: 24px;
-      flex-shrink: 0;
-      margin-right: 8px;
-    }
-    .grid.details-view .item-info {
-      flex: 1;
-      flex-direction: row;
-      align-items: center;
-      gap: 16px;
-    }
-    .grid.details-view .item-name {
-      flex: 1;
-      min-width: 200px;
-    }
-    .grid.details-view .item-meta {
-      flex-direction: row;
-      gap: 24px;
-      min-width: 200px;
-    }
-    .item {
-      background: #020617;
-      border-radius: 12px;
-      padding: 0;
-      border: 1px solid #1f2937;
-      cursor: pointer;
-      display: flex;
-      flex-direction: column;
-      gap: 0;
-      overflow: hidden;
-      transition: all 0.2s ease;
-    }
-    .item:hover {
-      border-color: #0ea5e9;
-      box-shadow: 0 0 12px rgba(14, 165, 233, 0.3);
-    }
-    .item-thumbnail {
-      width: 100%;
-      height: 120px;
-      background: #111827;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      overflow: hidden;
-    }
-    .item-thumbnail img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
-    .item-thumbnail svg {
-      width: 60%;
-      height: 60%;
-      filter: drop-shadow(0 0 2px rgba(0,0,0,0.5));
-    }
-    .item-info {
-      padding: 8px;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-    .item-name {
-      font-size: 12px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      color: #e5e7eb;
-    }
-    .item-meta {
-      font-size: 10px;
-      color: #9ca3af;
-      display: flex;
-      justify-content: space-between;
-    }
-    .empty {
-      font-size: 13px;
-      color: #6b7280;
-    }
-    .error {
-      font-size: 12px;
-      color: #f97373;
-      margin-top: 8px;
-    }
-    #fileInput {
-      display: none;
-    }
-    .login-overlay {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(0,0,0,0.8);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 1000;
-    }
-    .login-box {
-      background: #1f2937;
-      border: 1px solid #374151;
-      border-radius: 12px;
-      padding: 32px;
-      width: 100%;
-      max-width: 320px;
-      box-shadow: 0 20px 25px rgba(0,0,0,0.5);
-    }
-    .login-box h1 {
-      margin: 0 0 24px 0;
-      font-size: 24px;
-      color: #e5e7eb;
-    }
-    .login-box input {
-      width: 100%;
-      padding: 8px 12px;
-      margin-bottom: 12px;
-      background: #111827;
-      border: 1px solid #374151;
-      border-radius: 6px;
-      color: #e5e7eb;
-      font-size: 13px;
-      box-sizing: border-box;
-    }
-    .login-box input::placeholder {
-      color: #9ca3af;
-    }
-    .login-box button {
-      width: 100%;
-      margin-top: 8px;
-    }
-    .login-error {
-      color: #f97373;
-      font-size: 12px;
-      margin-bottom: 12px;
-    }
-  </style>
+<meta charset="utf-8" />
+<title>Photos</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<script src="/theme.js"></script>
+<style>
+:root{
+  --bg:#0b0f17; --panel:#11161f; --panel2:#0d1219; --line:#1f2733; --text:#e7eaf0;
+  --muted:#9aa4b2; --accent:#6366f1; --accent2:#8b5cf6; --danger:#ef4444; --star:#fbbf24;
+  --navactive-bg:rgba(99,102,241,.16); --navactive-text:#c7d2fe; --toast-bg:#1f2937;
+}
+html[data-theme="light"]{
+  --bg:#f4f6fb; --panel:#ffffff; --panel2:#eef1f7; --line:#dde2ec; --text:#1a2230;
+  --muted:#5b6677; --accent:#6366f1; --accent2:#8b5cf6; --danger:#ef4444; --star:#f59e0b;
+  --navactive-bg:rgba(99,102,241,.12); --navactive-text:#4f46e5; --toast-bg:#1f2937;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--text);overflow:hidden}
+button{font-family:inherit}
+a{color:inherit;text-decoration:none}
+
+/* Layout */
+.app{display:grid;grid-template-rows:60px 1fr;height:100vh}
+.topbar{display:flex;align-items:center;gap:16px;padding:0 18px;border-bottom:1px solid var(--line);background:var(--panel)}
+.brand{display:flex;align-items:center;gap:10px;font-weight:600;font-size:18px;min-width:160px}
+.brand .dot{width:28px;height:28px;border-radius:50%;background:conic-gradient(#ef4444,#f59e0b,#10b981,#3b82f6,#a855f7,#ef4444)}
+.search{flex:1;max-width:640px;position:relative}
+.search input{width:100%;padding:10px 14px 10px 38px;border-radius:999px;border:1px solid var(--line);background:var(--panel2);color:var(--text);font-size:14px;outline:none}
+.search input:focus{border-color:var(--accent)}
+.search .icon{position:absolute;left:13px;top:9px;color:var(--muted)}
+.topbar .spacer{flex:1}
+.iconbtn{background:transparent;border:1px solid transparent;color:var(--text);width:40px;height:40px;border-radius:50%;cursor:pointer;font-size:16px}
+.iconbtn:hover{background:var(--panel2)}
+.avatar{width:36px;height:36px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-weight:600;cursor:pointer}
+
+.body{display:grid;grid-template-columns:220px 1fr;min-height:0}
+.nav{border-right:1px solid var(--line);background:var(--panel);padding:14px 10px;display:flex;flex-direction:column;gap:4px}
+.nav a{display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:999px;color:var(--muted);cursor:pointer;font-size:14px}
+.nav a:hover{background:var(--panel2);color:var(--text)}
+.nav a.active{background:var(--navactive-bg);color:var(--navactive-text)}
+.nav .sep{height:1px;background:var(--line);margin:10px 6px}
+.main{min-height:0;overflow-y:auto;position:relative;padding:18px 22px 60px}
+
+.viewhead{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.viewhead h2{margin:0;font-size:22px;font-weight:600}
+.viewhead .sub{color:var(--muted);font-size:13px;margin-top:2px}
+
+/* Timeline */
+.section{margin-bottom:26px}
+.section h3{font-size:15px;font-weight:600;margin:0 0 10px;color:var(--text)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:6px}
+.tile{position:relative;aspect-ratio:1/1;background:var(--panel2);border-radius:8px;overflow:hidden;cursor:pointer}
+.tile img{width:100%;height:100%;object-fit:cover;display:block;opacity:0;transition:opacity .3s}
+.tile img.loaded{opacity:1}
+.tile .vbadge{position:absolute;left:8px;bottom:8px;background:rgba(0,0,0,.6);border-radius:4px;padding:1px 6px;font-size:11px}
+.tile .star{position:absolute;right:8px;bottom:8px;color:var(--star);font-size:15px;text-shadow:0 1px 3px rgba(0,0,0,.7);display:none}
+.tile.fav .star{display:block}
+.tile .check{position:absolute;left:8px;top:8px;width:22px;height:22px;border-radius:50%;border:2px solid #fff;background:rgba(0,0,0,.35);display:none;align-items:center;justify-content:center;font-size:13px}
+.tile:hover .check{display:flex}
+.tile.selected .check{display:flex;background:var(--accent);border-color:var(--accent)}
+.tile.selected{outline:3px solid var(--accent);outline-offset:-3px}
+.tile.selected img{transform:scale(.86);transition:transform .12s}
+
+/* Albums */
+.albumgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px}
+.albumcard{cursor:pointer}
+.albumcard .cover{aspect-ratio:1/1;border-radius:12px;overflow:hidden;background:var(--panel2);display:flex;align-items:center;justify-content:center}
+.albumcard .cover img{width:100%;height:100%;object-fit:cover}
+.albumcard .nm{margin-top:8px;font-weight:600;font-size:14px}
+.albumcard .ct{color:var(--muted);font-size:12px}
+
+/* Buttons */
+.btn{display:inline-flex;align-items:center;gap:8px;padding:9px 16px;border-radius:999px;border:1px solid var(--line);background:var(--panel2);color:var(--text);cursor:pointer;font-size:14px}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent)}
+.btn.primary:hover{background:#4f46e5}
+.btn.danger{background:var(--danger);border-color:var(--danger)}
+
+/* Empty / loading */
+.empty{color:var(--muted);text-align:center;padding:60px 0;font-size:14px}
+.spinner{width:30px;height:30px;border:3px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:spin 1s linear infinite;margin:40px auto}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Selection bar */
+.selbar{position:sticky;top:-18px;z-index:5;background:var(--panel);border:1px solid var(--line);border-radius:12px;
+  padding:10px 14px;display:none;align-items:center;gap:10px;margin-bottom:14px}
+.selbar.show{display:flex}
+.selbar .cnt{font-weight:600;margin-right:auto}
+
+/* Search filters */
+.filters{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:16px;align-items:end}
+.filters .f{display:flex;flex-direction:column;gap:4px}
+.filters label{font-size:11px;color:var(--muted)}
+.filters input,.filters select{padding:8px 10px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:var(--text);font-size:13px}
+
+/* Lightbox */
+.lb{position:fixed;inset:0;background:rgba(0,0,0,.94);z-index:50;display:none;flex-direction:column}
+.lb.show{display:flex}
+.lb .lbtop{display:flex;align-items:center;gap:8px;padding:12px 16px;color:#fff}
+.lb .lbtop .ttl{font-size:14px;max-width:40vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.lb .lbtop .spacer{flex:1}
+.lb .stage{flex:1;display:flex;align-items:center;justify-content:center;position:relative;min-height:0}
+.lb .stage img,.lb .stage video{max-width:92vw;max-height:82vh;object-fit:contain}
+.lb .navbtn{position:absolute;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.1);border:none;color:#fff;
+  width:48px;height:48px;border-radius:50%;font-size:22px;cursor:pointer}
+.lb .navbtn:hover{background:rgba(255,255,255,.22)}
+.lb .prev{left:18px}.lb .next{right:18px}
+.lb .info{position:absolute;right:0;top:0;bottom:0;width:330px;background:var(--panel);border-left:1px solid var(--line);
+  padding:18px;overflow-y:auto;transform:translateX(100%);transition:transform .25s}
+.lb .info.show{transform:translateX(0)}
+.lb .info h4{margin:0 0 14px;font-size:16px}
+.lb .info .row{display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);font-size:13px}
+.lb .info .row .k{color:var(--muted);min-width:96px}
+.lb .info .row .v{flex:1;word-break:break-word}
+
+/* Modal */
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:60;display:none;align-items:center;justify-content:center}
+.modal.show{display:flex}
+.modal .box{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:22px;width:420px;max-width:92vw}
+.modal h3{margin:0 0 14px}
+.modal label{display:block;font-size:12px;color:var(--muted);margin:10px 0 5px}
+.modal input,.modal textarea,.modal select{width:100%;padding:10px;border-radius:8px;border:1px solid var(--line);background:var(--panel2);color:var(--text);font-size:14px}
+.modal .actions{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}
+.modal .albumlist{max-height:240px;overflow-y:auto;margin-top:8px}
+.modal .albumlist .it{display:flex;align-items:center;gap:10px;padding:9px;border-radius:8px;cursor:pointer}
+.modal .albumlist .it:hover{background:var(--panel2)}
+
+/* Toast */
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--toast-bg);border:1px solid var(--line);
+  color:#fff;padding:11px 18px;border-radius:10px;font-size:13px;z-index:80;opacity:0;transition:opacity .25s;pointer-events:none}
+.toast.show{opacity:1}
+</style>
 </head>
 <body>
-  <!-- Login Modal -->
-  <div id="loginOverlay" class="login-overlay">
-    <div class="login-box">
-      <h1>FilePortal</h1>
-      <div id="loginError" class="login-error"></div>
-      <input id="username" type="text" placeholder="Username" autocomplete="off" />
-      <input id="password" type="password" placeholder="Password" autocomplete="off" />
-      <button onclick="performLogin()">Sign In</button>
+<div class="app">
+  <div class="topbar">
+    <div class="brand"><div class="dot"></div><span>Photos</span></div>
+    <div class="search">
+      <span class="icon">🔍</span>
+      <input id="globalSearch" placeholder="Search by name, camera, folder…" />
+    </div>
+    <div class="spacer"></div>
+    <button class="iconbtn" id="scanBtn" title="Rescan library" style="display:none">🔄</button>
+    <a class="iconbtn" href="/files.html" title="File manager">🗂️</a>
+    <div class="avatar" id="avatar" title="Account">U</div>
+  </div>
+
+  <div class="body">
+    <nav class="nav">
+      <a href="#photos" data-view="photos" class="active"><span>🖼️</span> Photos</a>
+      <a href="#albums" data-view="albums"><span>📚</span> Albums</a>
+      <a href="#favorites" data-view="favorites"><span>⭐</span> Favorites</a>
+      <a href="#search" data-view="search"><span>🔎</span> Search</a>
+      <div class="sep"></div>
+      <a href="/files.html"><span>🗂️</span> File manager</a>
+      <a href="/users.html" id="navUsers" style="display:none"><span>👥</span> Manage users</a>
+      <div class="sep"></div>
+      <a href="/login.html" id="navLogout"><span>🚪</span> Sign out</a>
+    </nav>
+
+    <main class="main" id="main">
+      <!-- views injected here -->
+    </main>
+  </div>
+</div>
+
+<!-- Lightbox -->
+<div class="lb" id="lightbox">
+  <div class="lbtop">
+    <button class="iconbtn" id="lbClose">✕</button>
+    <span class="ttl" id="lbTitle"></span>
+    <span class="spacer"></span>
+    <button class="iconbtn" id="lbFav" title="Favorite">☆</button>
+    <button class="iconbtn" id="lbSlideshow" title="Slideshow">▶️</button>
+    <button class="iconbtn" id="lbShare" title="Share">🔗</button>
+    <button class="iconbtn" id="lbDownload" title="Download">⬇️</button>
+    <button class="iconbtn" id="lbFull" title="Fullscreen">⛶</button>
+    <button class="iconbtn" id="lbInfoBtn" title="Info">ℹ️</button>
+  </div>
+  <div class="stage" id="lbStage">
+    <button class="navbtn prev" id="lbPrev">‹</button>
+    <div id="lbMedia"></div>
+    <button class="navbtn next" id="lbNext">›</button>
+    <div class="info" id="lbInfo">
+      <h4>Details</h4>
+      <div id="lbInfoBody"></div>
     </div>
   </div>
+</div>
 
-  <div class="app" style="display:none;" id="mainApp">
-    <div class="sidebar">
-      <div class="sidebar-header">Drives & Sources</div>
-      <div id="driveList" class="drive-list"></div>
-      <div style="margin-top:16px;padding-top:16px;border-top:1px solid #1f2937">
-        <div style="font-size:12px;color:#9ca3af;margin-bottom:8px;font-weight:600">FILTERS</div>
-        <button id="filterPictures" class="secondary" style="width:100%;margin-bottom:6px;justify-content:flex-start" onclick="filterByCategory('pictures')">🖼️ Pictures</button>
-        <button id="filterVideos" class="secondary" style="width:100%;margin-bottom:6px;justify-content:flex-start" onclick="filterByCategory('videos')">🎬 Videos</button>
-        <button id="filterDocuments" class="secondary" style="width:100%;justify-content:flex-start" onclick="filterByCategory('documents')">📄 Documents</button>
-      </div>
-    </div>
-    <div class="main">
-      <div class="toolbar">
-        <div class="path" id="currentPathLabel">Select a drive…</div>
-        <div class="buttons">
-          <div style="position:relative;display:inline-block">
-            <button id="uploadBtn" class="btn-like" type="button">⬆️ Upload</button>
-            <div id="uploadMenu" style="display:none;position:absolute;right:0;margin-top:6px;background:#0b1220;border:1px solid #1f2937;border-radius:6px;padding:6px;z-index:50;min-width:140px">
-              <div id="uploadFilesOption" style="padding:8px;cursor:pointer;color:#e5e7eb">⬆️ Upload Files</div>
-              <div id="uploadFolderOption" style="padding:8px;cursor:pointer;color:#e5e7eb">📁 Upload Folder</div>
-            </div>
-          </div>
-          <button id="selectBtn" class="btn-like" type="button" style="margin-left:8px">☑️ Select</button>
-          <button id="selectAllBtn" class="btn-like" type="button" style="margin-left:8px;display:none" onclick="selectAll()">☑️ Select All</button>
-          <button id="downloadSelectedBtn" class="btn-like" type="button" style="margin-left:8px;background:#10b981;display:none" onclick="downloadSelected()">⬇️ Download</button>
-          <button id="deleteSelectedBtn" class="btn-like" type="button" style="margin-left:8px;background:#ef4444;display:none" onclick="deleteSelected()">🗑️ Delete Selected</button>
-          <span id="selectedCountLabel" style="color:#9ca3af;font-size:13px;margin-left:8px;display:none"></span>
-          <button class="secondary" type="button" onclick="goUp()">⬆️ Up</button>
-          <button id="viewTypeBtn" class="secondary" type="button" onclick="toggleViewType()">📋 View</button>
-          <a id="accountLink" href="/users.html" class="btn-like" style="background:#111827;color:#e5e7eb;padding:6px 10px;">👥 Manage Users</a>
-          <span id="currentUser" style="color:#9ca3af; font-size:13px; margin-left:8px; display:none;"></span>
-          <button id="logoutBtn" class="secondary" style="margin-left:8px; display:none;" type="button" onclick="performLogout()">Logout</button>
-        </div>
-      </div>
-      <div class="content">
-        <div id="error" class="error"></div>
-        <div id="items" class="grid"></div>
-        <div id="emptyMsg" class="empty" style="display:none;">This folder is empty.</div>
-      </div>
-    </div>
-  </div>
+<div class="modal" id="modal"><div class="box" id="modalBox"></div></div>
+<div class="toast" id="toast"></div>
 
-  <!-- Hidden inputs for files and folders -->
-  <input id="fileInputFiles" type="file" multiple style="display:none" />
-  <input id="fileInputFolder" type="file" multiple webkitdirectory style="display:none" />
-
-  <!-- Image Viewer Modal -->
-  <div id="imageViewer" class="image-viewer">
-    <button class="image-viewer-close" onclick="closeImageViewer()">×</button>
-    <button class="image-viewer-delete" onclick="deleteCurrentImage()">🗑️</button>
-    <button class="image-viewer-nav prev" id="imagePrevBtn" onclick="navigateImage(-1)">‹</button>
-    <button class="image-viewer-nav next" id="imageNextBtn" onclick="navigateImage(1)">›</button>
-    <img id="imageViewerImg" src="" alt="" />
-  </div>
-
-  <!-- Video Viewer Modal -->
-  <div id="videoViewer" class="image-viewer">
-    <button class="image-viewer-close" onclick="closeVideoViewer()">×</button>
-    <button class="image-viewer-delete" onclick="deleteCurrentVideo()">🗑️</button>
-    <video id="videoViewerVideo" controls style="max-width:90%; max-height:90vh;"></video>
-  </div>
-
-  <iframe id="archiveDownload" name="archiveDownload" title="Archive download" hidden></iframe>
-  <script>
-    let currentRoot = null;
-    let currentPath = null;
-    let currentFilter = null;
-    let currentImageList = [];
-    let currentImageIndex = 0;
-    let imageZoom = 1;
-    let imagePanX = 0;
-    let imagePanY = 0;
-    let isPanning = false;
-    let panStartX = 0;
-    let panStartY = 0;
-    let lastSearchLetter = '';
-    let searchLetterIndex = 0;
-
-    let rootRequest = 0;
-    let fileRequest = 0;
-
-    function showLogin() {
-      rootRequest++;
-      fileRequest++;
-      currentRoot = null;
-      currentPath = null;
-      currentFilter = null;
-      currentImageList = [];
-      if (selectionMode) toggleSelectionMode();
-      closeImageViewer();
-      closeVideoViewer();
-      document.getElementById("items").replaceChildren();
-      document.getElementById("driveList").replaceChildren();
-      document.getElementById("currentPathLabel").textContent = "Choose a folder";
-      document.getElementById("currentUser").textContent = "";
-      document.getElementById("loginOverlay").style.display = "flex";
-      document.getElementById("mainApp").style.display = "none";
-      document.getElementById("currentUser").style.display = "none";
-      document.getElementById("logoutBtn").style.display = "none";
-    }
-
-    // Check if user is authenticated on page load
-    async function checkAuth() {
-      try {
-        const res = await fetch("/api/auth/me", { credentials: "include" });
-        if (res.ok) {
-          const data = await res.json().catch(() => null);
-          const user = data?.user || '';
-          document.getElementById('accountLink').textContent = data?.isAdmin ? 'Manage Users' : 'My Account';
-          // User is authenticated, show main app
-          document.getElementById("loginOverlay").style.display = "none";
-          document.getElementById("mainApp").style.display = "flex";
-          if (user) {
-            const cu = document.getElementById("currentUser");
-            cu.textContent = `Hi, ${user}`;
-            cu.style.display = "inline-block";
-            document.getElementById("logoutBtn").style.display = "inline-flex";
-          }
-          loadDrives();
-        } else {
-          showLogin();
-        }
-      } catch (err) {
-        console.error("Auth check failed:", err);
-        showLogin();
-      }
-    }
-
-    async function performLogout() {
-      try {
-        await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
-      } catch (err) {
-        console.error('Logout failed', err);
-      }
-      showLogin();
-    }
-
-    async function performLogin() {
-      const username = document.getElementById("username").value.trim();
-      const password = document.getElementById("password").value;
-      const errorEl = document.getElementById("loginError");
-
-      if (!username || !password) {
-        errorEl.textContent = "Enter username and password.";
-        return;
-      }
-
-      errorEl.textContent = "";
-
-      const formData = new FormData();
-      formData.append("username", username);
-      formData.append("password", password);
-
-      try {
-        const res = await fetch("/api/auth/login", {
-          method: "POST",
-          body: formData,
-          credentials: "include"
-        });
-
-        if (!res.ok) {
-          const data = await res.json();
-          errorEl.textContent = data.message || "Login failed.";
-          return;
-        }
-
-        // Login successful
-        document.getElementById("username").value = "";
-        document.getElementById("password").value = "";
-        checkAuth(); // Re-check auth to set up user display and load drives
-      } catch (err) {
-        console.error(err);
-        errorEl.textContent = "Network error: " + err.message;
-      }
-    }
-
-    // Allow Enter key to submit login
-    document.addEventListener("DOMContentLoaded", () => {
-      document.getElementById("password").addEventListener("keypress", (e) => {
-        if (e.key === "Enter") performLogin();
-      });
-    });
-
-    async function loadDrives() {
-      const request = ++rootRequest;
-      setError("");
-      const listEl = document.getElementById("driveList");
-      listEl.innerHTML = "Loading…";
-
-      try {
-        const res = await fetch("/api/files/roots", { credentials: "include" });
-        if (!res.ok) {
-          if (res.status === 401) {
-            // Unauthorized - go back to login
-            checkAuth();
-            return;
-          }
-          throw new Error("HTTP " + res.status);
-        }
-        const roots = await res.json();
-        if (request !== rootRequest) return;
-
-        listEl.textContent = roots.length ? "" : "No folders available";
-        roots.forEach((root, idx) => {
-          const div = document.createElement("div");
-          div.className = "drive-item";
-          div.dataset.path = root.path;
-          div.onclick = () => {
-            document.querySelectorAll(".drive-item").forEach(d => d.classList.remove("active"));
-            div.classList.add("active");
-            currentRoot = root.path;
-            loadFolder(root.path);
-          };
-
-          const icon = document.createElement("span");
-          icon.className = "icon";
-          icon.textContent = "💽";
-
-          const label = document.createElement("span");
-          label.textContent = root.name;
-
-          div.appendChild(icon);
-          div.appendChild(label);
-          listEl.appendChild(div);
-
-          if (idx === 0) {
-            div.classList.add("active");
-            currentRoot = root.path;
-            loadFolder(root.path);
-          }
-        });
-      } catch (err) {
-        if (request !== rootRequest) return;
-        console.error(err);
-        listEl.innerHTML = "Failed to load drives.";
-        setError("Error loading drives: " + err.message);
-      }
-    }
-
-    async function loadFolder(path) {
-      if (!path) return;
-      const request = ++fileRequest;
-      currentPath = path;
-      currentFilter = null;
-      document.getElementById("currentPathLabel").textContent = path;
-      setError("");
-
-      const itemsEl = document.getElementById("items");
-      const emptyMsgEl = document.getElementById("emptyMsg");
-      itemsEl.innerHTML = "Loading…";
-      emptyMsgEl.textContent = "This folder is empty.";
-      emptyMsgEl.style.display = "none";
-
-      try {
-        const res = await fetch("/api/files/folder?path=" + encodeURIComponent(path), { credentials: "include" });
-        if (!res.ok) {
-          if (res.status === 401) {
-            checkAuth();
-            return;
-          }
-          const text = await res.text();
-          throw new Error("HTTP " + res.status + " – " + text);
-        }
-        const items = await res.json();
-        if (request !== fileRequest) return;
-        itemsEl.replaceChildren();
-
-        if (!items.length) {
-          emptyMsgEl.style.display = "block";
-          return;
-        }
-
-        items.forEach(item => {
-          const card = document.createElement("div");
-          card.className = "item";
-          card.dataset.path = item.path;
-          card.dataset.item = JSON.stringify(item);
-          card.onclick = () => {
-            if (selectionMode) {
-              // Toggle checkbox
-              const cb = card.querySelector('input[type="checkbox"]');
-              if (cb) cb.checked = !cb.checked;
-              updateSelectedCount();
-            } else {
-              onItemClick(item);
-            }
-          };
-
-          // Checkbox (only visible in selection mode)
-          const checkbox = document.createElement('input');
-          checkbox.type = 'checkbox';
-          checkbox.style.marginRight = '8px';
-          checkbox.style.cursor = 'pointer';
-          checkbox.onclick = (ev) => { ev.stopPropagation(); updateSelectedCount(); };
-
-          // Thumbnail container
-          const thumbContainer = document.createElement("div");
-          thumbContainer.className = "item-thumbnail";
-
-          const thumbImg = document.createElement("img");
-          thumbImg.src = "/api/files/thumbnail?path=" + encodeURIComponent(item.path);
-          thumbImg.alt = item.name;
-          thumbImg.onerror = () => {
-            thumbImg.style.display = "none";
-          };
-
-          thumbContainer.appendChild(thumbImg);
-
-          // Info container
-          const infoContainer = document.createElement("div");
-          infoContainer.className = "item-info";
-
-          const name = document.createElement("div");
-          name.className = "item-name";
-          name.textContent = item.name;
-          name.title = item.name;
-
-          const meta = document.createElement("div");
-          meta.className = "item-meta";
-
-          const left = document.createElement("span");
-          left.textContent = item.isDirectory ? "Folder" : (item.extension || "").toUpperCase();
-
-          const right = document.createElement("span");
-          right.textContent = item.isDirectory ? "" : formatSize(item.size);
-
-          meta.appendChild(left);
-          meta.appendChild(right);
-
-          infoContainer.appendChild(name);
-          infoContainer.appendChild(meta);
-
-          card.appendChild(checkbox);
-          card.appendChild(thumbContainer);
-          card.appendChild(infoContainer);
-          itemsEl.appendChild(card);
-        });
-      } catch (err) {
-        console.error(err);
-        if (request !== fileRequest) return;
-        setError("Failed to load folder: " + err.message);
-        itemsEl.innerHTML = "";
-      }
-    }
-
-    function onItemClick(item) {
-      if (item.isDirectory) {
-        loadFolder(item.path);
-      } else {
-        // Check if it's an image
-        const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.heic', '.tiff', '.svg'];
-        const videoExtensions = ['.mp4', '.mkv', '.avi', '.mov', '.flv', '.wmv', '.webm', '.m4v', '.mpg', '.mpeg'];
-        const ext = (item.extension || '').toLowerCase();
-        if (imageExtensions.includes(ext)) {
-          // Build image list from current view
-          const items = Array.from(document.querySelectorAll('.item'));
-          const imageList = [];
-          let clickedIndex = 0;
-          items.forEach((el) => {
-            const itemData = JSON.parse(el.getAttribute('data-item') || '{}');
-            const itemExt = (itemData.extension || '').toLowerCase();
-            if (imageExtensions.includes(itemExt)) {
-              if (itemData.path === item.path) clickedIndex = imageList.length;
-              imageList.push(itemData.path);
-            }
-          });
-          showImageViewer(imageList, clickedIndex);
-        } else if (videoExtensions.includes(ext)) {
-          showVideoViewer(item.path);
-        } else {
-          window.open("/api/files/file?path=" + encodeURIComponent(item.path), "_blank", "noopener");
-        }
-      }
-    }
-
-    function showImageViewer(imageList, index) {
-      currentImageList = imageList;
-      currentImageIndex = index;
-      imageZoom = 1;
-      imagePanX = 0;
-      imagePanY = 0;
-      updateImageViewer();
-      const viewer = document.getElementById('imageViewer');
-      const img = document.getElementById('imageViewerImg');
-      viewer.style.display = 'flex';
-      document.addEventListener('keydown', handleImageViewerKeys);
-      img.addEventListener('wheel', handleImageZoom, { passive: false });
-      img.addEventListener('mousedown', handlePanStart);
-      document.addEventListener('mousemove', handlePanMove);
-      document.addEventListener('mouseup', handlePanEnd);
-    }
-
-    function updateImageViewer() {
-      const img = document.getElementById('imageViewerImg');
-      img.src = '/api/files/file?path=' + encodeURIComponent(currentImageList[currentImageIndex]);
-      img.style.transform = `scale(${imageZoom}) translate(${imagePanX}px, ${imagePanY}px)`;
-      img.style.cursor = imageZoom > 1 ? 'grab' : 'default';
-      document.getElementById('imagePrevBtn').style.display = currentImageIndex > 0 ? 'flex' : 'none';
-      document.getElementById('imageNextBtn').style.display = currentImageIndex < currentImageList.length - 1 ? 'flex' : 'none';
-    }
-
-    function showVideoViewer(videoPath) {
-      const viewer = document.getElementById('videoViewer');
-      const video = document.getElementById('videoViewerVideo');
-      video.src = '/api/files/file?path=' + encodeURIComponent(videoPath);
-      viewer.style.display = 'flex';
-    }
-
-    function navigateImage(direction) {
-      currentImageIndex += direction;
-      if (currentImageIndex < 0) currentImageIndex = 0;
-      if (currentImageIndex >= currentImageList.length) currentImageIndex = currentImageList.length - 1;
-      imageZoom = 1;
-      imagePanX = 0;
-      imagePanY = 0;
-      updateImageViewer();
-    }
-
-    function handleImageViewerKeys(e) {
-      if (e.key === 'ArrowLeft') navigateImage(-1);
-      else if (e.key === 'ArrowRight') navigateImage(1);
-      else if (e.key === 'Escape') closeImageViewer();
-    }
-
-    function handleImageZoom(e) {
-      e.preventDefault();
-      const delta = e.deltaY > 0 ? -0.1 : 0.1;
-      imageZoom = Math.max(0.5, Math.min(5, imageZoom + delta));
-      updateImageViewer();
-    }
-
-    function handlePanStart(e) {
-      if (imageZoom > 1) {
-        isPanning = true;
-        panStartX = e.clientX - imagePanX;
-        panStartY = e.clientY - imagePanY;
-        e.target.style.cursor = 'grabbing';
-      }
-    }
-
-    function handlePanMove(e) {
-      if (isPanning) {
-        imagePanX = e.clientX - panStartX;
-        imagePanY = e.clientY - panStartY;
-        updateImageViewer();
-      }
-    }
-
-    function handlePanEnd(e) {
-      if (isPanning) {
-        isPanning = false;
-        const img = document.getElementById('imageViewerImg');
-        img.style.cursor = imageZoom > 1 ? 'grab' : 'default';
-      }
-    }
-
-    function closeImageViewer() {
-      const viewer = document.getElementById('imageViewer');
-      const img = document.getElementById('imageViewerImg');
-      viewer.style.display = 'none';
-      img.src = '';
-      document.removeEventListener('keydown', handleImageViewerKeys);
-      img.removeEventListener('wheel', handleImageZoom);
-      img.removeEventListener('mousedown', handlePanStart);
-      document.removeEventListener('mousemove', handlePanMove);
-      document.removeEventListener('mouseup', handlePanEnd);
-    }
-
-    function closeVideoViewer() {
-      const viewer = document.getElementById('videoViewer');
-      const video = document.getElementById('videoViewerVideo');
-      viewer.style.display = 'none';
-      video.pause();
-      video.removeAttribute('src');
-      video.load();
-    }
-
-    async function deleteCurrentVideo() {
-      if (!confirm('Delete this video?')) return;
-      const videoPath = document.getElementById('videoViewerVideo').src.split('path=')[1];
-      if (!videoPath) return;
-      const decodedPath = decodeURIComponent(videoPath);
-      try {
-        const res = await fetch('/api/files/delete?path=' + encodeURIComponent(decodedPath), { method: 'DELETE', credentials: 'include' });
-        if (res.ok) {
-          closeVideoViewer();
-          if (currentFilter) filterByCategory(currentFilter);
-          else loadFolder(currentPath);
-        } else {
-          alert('Failed to delete video');
-        }
-      } catch (err) {
-        alert('Error deleting video: ' + err.message);
-      }
-    }
-
-    async function deleteCurrentImage() {
-      if (!confirm('Delete this image?')) return;
-      const imagePath = currentImageList[currentImageIndex];
-      try {
-        const res = await fetch('/api/files/delete?path=' + encodeURIComponent(imagePath), { method: 'DELETE', credentials: 'include' });
-        if (res.ok) {
-          currentImageList.splice(currentImageIndex, 1);
-          if (currentImageList.length === 0) {
-            closeImageViewer();
-            if (currentFilter) filterByCategory(currentFilter);
-            else loadFolder(currentPath);
-          } else {
-            if (currentImageIndex >= currentImageList.length) currentImageIndex = currentImageList.length - 1;
-            updateImageViewer();
-          }
-        } else {
-          alert('Failed to delete image');
-        }
-      } catch (err) {
-        alert('Error deleting image: ' + err.message);
-      }
-    }
-
-    // Selection mode
-    let selectionMode = false;
-    let viewType = 'tiles'; // 'tiles', 'list', 'details'
-
-    function toggleSelectionMode() {
-      selectionMode = !selectionMode;
-      const selectBtn = document.getElementById('selectBtn');
-      const selectAllBtn = document.getElementById('selectAllBtn');
-      const downloadBtn = document.getElementById('downloadSelectedBtn');
-      const deleteBtn = document.getElementById('deleteSelectedBtn');
-      const countLabel = document.getElementById('selectedCountLabel');
-      const items = document.querySelectorAll('.item');
-
-      if (selectionMode) {
-        selectBtn.style.background = '#0ea5e9';
-        selectBtn.style.color = '#081025';
-        selectAllBtn.style.display = 'inline-block';
-        downloadBtn.style.display = 'inline-block';
-        deleteBtn.style.display = 'inline-block';
-        countLabel.style.display = 'inline-block';
-        items.forEach(item => item.classList.add('selection-mode'));
-        updateSelectedCount();
-      } else {
-        selectBtn.style.background = '';
-        selectBtn.style.color = '';
-        selectAllBtn.style.display = 'none';
-        downloadBtn.style.display = 'none';
-        deleteBtn.style.display = 'none';
-        countLabel.style.display = 'none';
-        items.forEach(item => item.classList.remove('selection-mode'));
-        // Uncheck all
-        document.querySelectorAll('.item input[type="checkbox"]').forEach(cb => cb.checked = false);
-      }
-    }
-
-    function updateSelectedCount() {
-      const selected = document.querySelectorAll('.item input[type="checkbox"]:checked').length;
-      document.getElementById('selectedCountLabel').textContent = selected + ' selected';
-    }
-
-    function selectAll() {
-      const checkboxes = document.querySelectorAll('.item input[type="checkbox"]');
-      const allChecked = Array.from(checkboxes).every(cb => cb.checked);
-      checkboxes.forEach(cb => cb.checked = !allChecked);
-      updateSelectedCount();
-      document.getElementById('selectAllBtn').textContent = allChecked ? '☑️ Select All' : '◻️ Deselect All';
-    }
-
-    function toggleViewType() {
-      const views = ['tiles', 'list', 'details'];
-      const currentIndex = views.indexOf(viewType);
-      viewType = views[(currentIndex + 1) % views.length];
-      
-      const grid = document.getElementById('items');
-      grid.classList.remove('list-view', 'details-view');
-      
-      if (viewType === 'list') {
-        grid.classList.add('list-view');
-        document.getElementById('viewTypeBtn').textContent = '📝 List';
-      } else if (viewType === 'details') {
-        grid.classList.add('details-view');
-        document.getElementById('viewTypeBtn').textContent = '📊 Details';
-      } else {
-        document.getElementById('viewTypeBtn').textContent = '📋 Tiles';
-      }
-    }
-
-    function downloadSelected() {
-      const selected = Array.from(document.querySelectorAll('.item input[type="checkbox"]:checked'))
-        .map(checkbox => checkbox.closest('.item'));
-      if (!selected.length) { alert('No items selected'); return; }
-
-      if (selected.length === 1 && !JSON.parse(selected[0].dataset.item).isDirectory) {
-        const link = document.createElement('a');
-        link.href = '/api/files/open?path=' + encodeURIComponent(selected[0].dataset.path);
-        link.download = '';
-        link.click();
-        return;
-      }
-
-      const form = document.createElement('form');
-      form.method = 'POST';
-      form.action = '/api/files/download-zip-form';
-      form.target = 'archiveDownload';
-      form.hidden = true;
-      for (const item of selected) {
-        const input = document.createElement('input');
-        input.type = 'hidden';
-        input.name = 'paths';
-        input.value = item.dataset.path;
-        form.appendChild(input);
-      }
-      document.body.appendChild(form);
-      form.submit();
-      form.remove();
-    }
-
-    document.getElementById('archiveDownload').addEventListener('load', event => {
-      const text = event.currentTarget.contentDocument?.body?.textContent;
-      if (!text) return;
-      try {
-        const error = JSON.parse(text)?.error;
-        if (error) setError(error);
-      } catch {}
-    });
-
-    async function deleteSelected() {
-      const selected = Array.from(document.querySelectorAll('.item input[type="checkbox"]:checked')).map(cb => cb.parentElement.dataset.path);
-      if (selected.length === 0) { alert('No items selected'); return; }
-      if (!confirm('Delete ' + selected.length + ' item(s)? This cannot be undone.')) return;
-
-      let errors = 0;
-      let lastError = '';
-      for (const path of selected) {
-        try {
-          console.log('Deleting:', path);
-          const res = await fetch('/api/files/delete?path=' + encodeURIComponent(path), { method: 'DELETE', credentials: 'include' });
-          if (!res.ok) {
-            if (res.status === 401) { checkAuth(); return; }
-            const errData = await res.json().catch(() => ({ error: 'HTTP ' + res.status }));
-            lastError = errData.error || 'HTTP ' + res.status;
-            console.error('Delete failed for', path, ':', lastError);
-            errors++;
-          }
-        } catch (err) {
-          lastError = err.message;
-          console.error('Delete error for', path, ':', err);
-          errors++;
-        }
-      }
-
-      if (errors > 0) alert('Failed to delete ' + errors + ' item(s). Error: ' + lastError);
-      else alert('Deleted ' + selected.length + ' item(s)');
-      // Refresh current view (filter or folder)
-      toggleSelectionMode();
-      if (currentFilter) {
-        filterByCategory(currentFilter);
-      } else {
-        loadFolder(currentPath || currentRoot);
-      }
-    }
-
-    // Wire up Select button
-    document.getElementById('selectBtn').addEventListener('click', toggleSelectionMode);
-
-    function goUp() {
-      if (!currentPath || !currentRoot) return;
-
-      const root = currentRoot.replace(/[/\\]+$/, "");
-      const path = currentPath.replace(/[/\\]+$/, "");
-      if (path === root) return;
-
-      const cut = Math.max(path.lastIndexOf("\\"), path.lastIndexOf("/"));
-      loadFolder(cut <= root.length ? currentRoot : path.substring(0, cut));
-    }
-
-    function formatSize(bytes) {
-      if (bytes == null) return "";
-      const units = ["B","KB","MB","GB","TB"];
-      let i = 0;
-      let v = bytes;
-      while (v >= 1024 && i < units.length - 1) {
-        v /= 1024;
-        i++;
-      }
-      return v.toFixed(1) + " " + units[i];
-    }
-
-    function setError(msg) {
-      document.getElementById("error").textContent = msg || "";
-    }
-
-    async function uploadSelectedFiles(evt) {
-      const input = evt.target;
-      const files = input.files;
-
-      if (!currentPath) {
-        alert("Select a drive / folder first.");
-        input.value = "";
-        return;
-      }
-      if (!files || !files.length) return;
-
-      const form = new FormData();
-      for (const f of files) {
-        const rel = f.webkitRelativePath && f.webkitRelativePath.length > 0
-          ? f.webkitRelativePath
-          : f.name;
-        form.append("files", f, rel);
-      }
-
-      try {
-        const res = await fetch(
-          "/api/files/upload?targetPath=" + encodeURIComponent(currentPath),
-          {
-            method: "POST",
-            body: form,
-            credentials: "include"
-          }
-        );
-        if (!res.ok) {
-          if (res.status === 401) {
-            checkAuth();
-            return;
-          }
-          const text = await res.text();
-          throw new Error("HTTP " + res.status + " – " + text);
-        }
-        await res.json().catch(() => null);
-        alert("Upload complete.");
-        loadFolder(currentPath);
-      } catch (err) {
-        console.error(err);
-        alert("Upload failed: " + err.message);
-      } finally {
-        input.value = "";
-      }
-    }
-
-    // Wire hidden inputs to upload handler
-    document.getElementById("fileInputFiles").addEventListener("change", uploadSelectedFiles);
-    document.getElementById("fileInputFolder").addEventListener("change", uploadSelectedFiles);
-
-    // Upload dropdown/menu logic
-    (function() {
-      const uploadBtn = document.getElementById('uploadBtn');
-      const uploadMenu = document.getElementById('uploadMenu');
-      const filesOpt = document.getElementById('uploadFilesOption');
-      const folderOpt = document.getElementById('uploadFolderOption');
-
-      if (!uploadBtn) return;
-
-      uploadBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        uploadMenu.style.display = uploadMenu.style.display === 'flex' ? 'none' : 'flex';
-        uploadMenu.style.flexDirection = 'column';
-      });
-
-      filesOpt.addEventListener('click', (e) => { e.stopPropagation(); document.getElementById('fileInputFiles').click(); uploadMenu.style.display = 'none'; });
-      folderOpt.addEventListener('click', (e) => { e.stopPropagation(); document.getElementById('fileInputFolder').click(); uploadMenu.style.display = 'none'; });
-
-      // Close menu when clicking outside
-      document.addEventListener('click', (e) => {
-        if (!uploadBtn.contains(e.target) && !uploadMenu.contains(e.target)) uploadMenu.style.display = 'none';
-      });
-    })();
-
-    // Filter by category (Pictures, Videos, Documents)
-    async function filterByCategory(category) {
-      if (!currentRoot) {
-        alert('Please select a drive first');
-        return;
-      }
-
-      const request = ++fileRequest;
-      currentFilter = category;
-
-      document.getElementById("currentPathLabel").textContent = currentRoot + ' - ' + category.charAt(0).toUpperCase() + category.slice(1);
-      setError("");
-
-      const itemsEl = document.getElementById("items");
-      const emptyMsgEl = document.getElementById("emptyMsg");
-      itemsEl.textContent = "Searching for " + category + "...";
-      emptyMsgEl.style.display = "none";
-
-      try {
-        const res = await fetch("/api/files/category?path=" + encodeURIComponent(currentRoot) + "&category=" + encodeURIComponent(category), { credentials: "include" });
-        if (!res.ok) {
-          if (res.status === 401) {
-            checkAuth();
-            return;
-          }
-          const text = await res.text();
-          throw new Error("HTTP " + res.status + " – " + text);
-        }
-        const items = await res.json();
-        if (request !== fileRequest) return;
-        itemsEl.replaceChildren();
-
-        if (!items.length) {
-          emptyMsgEl.textContent = "No " + category + " found in this drive.";
-          emptyMsgEl.style.display = "block";
-          return;
-        }
-
-        items.forEach(item => {
-          const card = document.createElement("div");
-          card.className = "item";
-          card.dataset.path = item.path;
-          card.dataset.item = JSON.stringify(item);
-          card.onclick = () => {
-            if (selectionMode) {
-              const cb = card.querySelector('input[type="checkbox"]');
-              if (cb) cb.checked = !cb.checked;
-              updateSelectedCount();
-            } else {
-              onItemClick(item);
-            }
-          };
-
-          const checkbox = document.createElement('input');
-          checkbox.type = 'checkbox';
-          checkbox.style.marginRight = '8px';
-          checkbox.style.cursor = 'pointer';
-          checkbox.onclick = (ev) => { ev.stopPropagation(); updateSelectedCount(); };
-
-          const thumbContainer = document.createElement("div");
-          thumbContainer.className = "item-thumbnail";
-
-          const thumbImg = document.createElement("img");
-          thumbImg.src = "/api/files/thumbnail?path=" + encodeURIComponent(item.path);
-          thumbImg.alt = item.name;
-          thumbImg.onerror = () => {
-            thumbImg.style.display = "none";
-          };
-
-          thumbContainer.appendChild(thumbImg);
-
-          const infoContainer = document.createElement("div");
-          infoContainer.className = "item-info";
-
-          const name = document.createElement("div");
-          name.className = "item-name";
-          name.textContent = item.name;
-          name.title = item.name;
-
-          const meta = document.createElement("div");
-          meta.className = "item-meta";
-
-          const left = document.createElement("span");
-          left.textContent = (item.extension || "").toUpperCase();
-
-          const right = document.createElement("span");
-          right.textContent = formatSize(item.size);
-
-          meta.appendChild(left);
-          meta.appendChild(right);
-
-          infoContainer.appendChild(name);
-          infoContainer.appendChild(meta);
-
-          card.appendChild(checkbox);
-          card.appendChild(thumbContainer);
-          card.appendChild(infoContainer);
-          itemsEl.appendChild(card);
-        });
-      } catch (err) {
-        console.error(err);
-        if (request !== fileRequest) return;
-        setError("Failed to search: " + err.message);
-        itemsEl.innerHTML = "";
-      }
-    }
-
-    // Keyboard letter navigation
-    document.addEventListener('keydown', (e) => {
-      // Ignore if typing in input fields, or if modifier keys pressed
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.ctrlKey || e.altKey || e.metaKey) return;
-      
-      // Only handle letter keys (a-z)
-      if (e.key.length === 1 && /[a-zA-Z]/.test(e.key)) {
-        e.preventDefault();
-        const letter = e.key.toLowerCase();
-        
-        // Get all visible items
-        const items = Array.from(document.querySelectorAll('.item'));
-        if (items.length === 0) return;
-        
-        // Filter items that start with this letter
-        const matchingItems = items.filter(item => {
-          const itemData = JSON.parse(item.getAttribute('data-item') || '{}');
-          const name = (itemData.name || '').toLowerCase();
-          return name.startsWith(letter);
-        });
-        
-        if (matchingItems.length === 0) return;
-        
-        // If same letter pressed, cycle to next match
-        if (letter === lastSearchLetter) {
-          searchLetterIndex = (searchLetterIndex + 1) % matchingItems.length;
-        } else {
-          // New letter, start at first match
-          lastSearchLetter = letter;
-          searchLetterIndex = 0;
-        }
-        
-        // Clear previous highlight
-        items.forEach(item => item.classList.remove('keyboard-selected'));
-        
-        // Highlight current match
-        const selectedItem = matchingItems[searchLetterIndex];
-        selectedItem.classList.add('keyboard-selected');
-        
-        // Scroll into view
-        selectedItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      }
-    });
-
-    // Start: check authentication
-    checkAuth();
-  </script>
+<iframe id="galleryDownload" name="galleryDownload" title="Photo archive download" hidden></iframe>
+<script src="/app.js?v=gallery"></script>
 </body>
 </html>

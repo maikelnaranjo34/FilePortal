@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.StaticFiles;
 ﻿using FilePortal.Models;
 
 using System.Runtime.InteropServices;
@@ -14,6 +15,22 @@ public sealed class FileBrowserService
     public static readonly StringComparer PathComparer = OperatingSystem.IsWindows()
         ? StringComparer.OrdinalIgnoreCase
         : StringComparer.Ordinal;
+
+    private static readonly FileExtensionContentTypeProvider ContentTypes = new()
+    {
+        Mappings =
+        {
+            [".flv"] = "video/x-flv",
+            [".m4v"] = "video/mp4",
+            [".mkv"] = "video/x-matroska",
+            [".heic"] = "image/heic",
+            [".heif"] = "image/heic",
+            [".webp"] = "image/webp"
+        }
+    };
+
+    public static string GetContentType(string file) =>
+        ContentTypes.TryGetContentType(file, out var type) ? type : "application/octet-stream";
 
     private readonly IConfiguration _configuration;
     private readonly string[] _privateDirectories;
@@ -64,9 +81,11 @@ public sealed class FileBrowserService
             return false;
 
         var candidate = fullPath;
-        return roots.Any(root => IsWithin(candidate, root.Path)) &&
-            !IsPrivate(candidate) && HasSafeComponents(candidate, allowMissing);
+        return IsPathInScope(candidate, roots) && HasSafeComponents(candidate, allowMissing);
     }
+
+    public bool IsPathInScope(string canonicalPath, IReadOnlyList<RootItem> roots) =>
+        roots.Any(root => IsWithin(canonicalPath, root.Path)) && !IsPrivate(canonicalPath);
 
     public bool TryGetUploadDestination(string target, string fileName, IReadOnlyList<RootItem> roots, out string destination)
     {

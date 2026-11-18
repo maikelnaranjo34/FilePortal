@@ -1,4 +1,4 @@
-﻿using System.Security.Cryptography;
+using System.Security.Cryptography;
 using System.Text.Json;
 using FilePortal.Models;
 
@@ -77,25 +77,9 @@ public class UserStoreService
         }
     }
 
-    private FileStream AcquireWriteLock()
-    {
-        // The same lock also protects overlapping worker processes during a deployment.
-        for (var attempt = 0; ; attempt++)
-        {
-            try
-            {
-                return new FileStream(_lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
-            }
-            catch (IOException) when (attempt < 20)
-            {
-                Thread.Sleep(50);
-            }
-        }
-    }
-
     private UserChange Update(Func<List<UserRecord>, UserChange> change)
     {
-        using var writeLock = AcquireWriteLock();
+        using var writeLock = FileStateLock.Acquire(_lockPath);
         var users = LoadAll();
         var result = change(users);
         if (result == UserChange.Updated)
