@@ -114,4 +114,6 @@ The Windows build and Release integration suite passed. The suite covered legacy
 
 The .NET 10 release is deployed to IIS with Hosting Bundle 10.0.15. Live checks confirmed localhost HTTPS against the bound certificate, administrator sign-in, six available roots, and delivery of a login notification to the configured Gmail mailbox. The migration preserved three accounts and reset the account that used the retired password. The replacement SMTP credential is configured through the IIS application pool environment.
 
+The gallery deployment restored Photos, Albums, Favorites, and Search on the LAN landing page and retained File Manager at `/files.html`. IIS reused the active application data directory and imported the existing photo index. Chrome verified the signed-in navigation on the published build, and the live IIS checks confirmed the pages, scripts, and protected API routes on both bindings.
+
 HTTPS remains limited to localhost by request. The existing LAN binding uses HTTP. This deployment has no configured UNC roots.
