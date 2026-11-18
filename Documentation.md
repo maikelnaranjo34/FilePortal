@@ -104,4 +104,6 @@ dotnet list FilePortal.csproj package --vulnerable --include-transitive
 
 The Windows build and Release integration suite passed. The suite covered legacy users, concurrent account updates, permission enforcement, session revocation, password changes, uploads, ZIP downloads, thumbnails, and video byte ranges. Chrome verified sign-in, native folder ZIP downloads, password changes, and logout. The NuGet audit reported no vulnerable packages. The integration suite also runs in [GitHub Actions](.github/workflows/test.yml).
 
-Deployment is pending. Live IIS, network shares, and SMTP delivery still need verification.
+The .NET 10 release is deployed to IIS with Hosting Bundle 10.0.15. Live checks confirmed localhost HTTPS against the bound certificate, administrator sign-in, six available roots, and delivery of a login notification to the configured Gmail mailbox. The migration preserved three accounts and reset the account that used the retired password. The replacement SMTP credential is configured through the IIS application pool environment.
+
+HTTPS remains limited to localhost by request. The existing LAN binding uses HTTP. This deployment has no configured UNC roots.
