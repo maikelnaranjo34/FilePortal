@@ -2,16 +2,17 @@ import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { pbkdf2Sync, randomBytes } from 'node:crypto';
 import { once } from 'node:events';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import { Script } from 'node:vm';
 
 test('FilePortal release integration', { timeout: 90_000 }, async t => {
-  const temp = mkdtempSync(path.join(tmpdir(), 'FilePortal-test-'));
+  const tempParent = realpathSync.native(tmpdir());
+  const temp = realpathSync.native(mkdtempSync(path.join(tempParent, 'FilePortal-test-')));
   t.after(() => {
-    assert.equal(path.dirname(path.resolve(temp)), path.resolve(tmpdir()));
+    assert.equal(path.dirname(temp), tempParent);
     assert.match(path.basename(temp), /^FilePortal-test-/);
     rmSync(temp, { recursive: true, force: true, maxRetries: 3 });
   });
