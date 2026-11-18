@@ -1,3 +1,5 @@
+> Historical project notes. For current setup and behavior, use the [FilePortal documentation](README.md).
+
 # FilePortal - Session Complete Summary
 
 ## 🎯 Objective Achieved

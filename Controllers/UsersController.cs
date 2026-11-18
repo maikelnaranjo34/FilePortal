@@ -1,214 +1,119 @@
+﻿using FilePortal.Models;
+using FilePortal.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using FilePortal.Services;
 
-namespace FilePortal.Controllers
+namespace FilePortal.Controllers;
+
+[ApiController]
+[Route("api/[controller]")]
+[Authorize]
+public class UsersController(UserStoreService store, FileBrowserService browser) : ControllerBase
 {
-    [ApiController]
-    [Route("api/[controller]")]
-    public class UsersController : ControllerBase
+    private UserRecord CurrentUser => (UserRecord)HttpContext.Items[typeof(UserRecord)]!;
+
+    [Authorize(Roles = "Admin")]
+    [HttpGet]
+    public IActionResult Get() =>
+        Ok(store.GetUsers().Select(user => new { user.Username, user.FirstName, user.LastName, user.IsAdmin }));
+
+    [Authorize(Roles = "Admin")]
+    [HttpPost]
+    public IActionResult Post([FromForm] string username, [FromForm] string password, [FromForm] bool isAdmin = false,
+        [FromForm] string? firstName = null, [FromForm] string? lastName = null)
     {
-        private readonly UserStoreService _store;
+        if (string.IsNullOrWhiteSpace(username) || string.IsNullOrEmpty(password) ||
+            string.IsNullOrWhiteSpace(firstName) || string.IsNullOrWhiteSpace(lastName))
+            return BadRequest(new { error = "Username, password, first name, and last name are required." });
 
-        public UsersController(UserStoreService store)
-        {
-            _store = store;
-        }
-
-        [AllowAnonymous]
-        [HttpGet("init")]
-        public IActionResult GetInit()
-        {
-            var isEmpty = _store.IsEmpty();
-            return Ok(new { isEmpty });
-        }
-
-        [Authorize]
-        [HttpGet("debug")]
-        public IActionResult GetDebug()
-        {
-            var username = User.Identity?.Name ?? "unknown";
-            var isAdmin = User.IsInRole("Admin");
-            var allUsers = _store.GetUsers().Select(u => new { u.Username, u.IsAdmin }).ToList();
-            return Ok(new { currentUser = username, currentUserIsAdmin = isAdmin, allUsers });
-        }
-
-        [AllowAnonymous]
-        [HttpPost("init")]
-        public IActionResult PostInit([FromForm] string username, [FromForm] string password, [FromForm] string? firstName, [FromForm] string? lastName)
-        {
-            if (!_store.IsEmpty())
-                return BadRequest(new { error = "Users already exist." });
-
-            if (string.IsNullOrWhiteSpace(username) || string.IsNullOrEmpty(password))
-                return BadRequest(new { error = "username and password are required" });
-
-            if (string.IsNullOrWhiteSpace(firstName) || string.IsNullOrWhiteSpace(lastName))
-                return BadRequest(new { error = "first name and last name are required" });
-
-            var ok = _store.AddUser(username, password, isAdmin: true, firstName: firstName ?? "", lastName: lastName ?? "");
-            if (!ok) return StatusCode(500, new { error = "Failed to create admin." });
-            return CreatedAtAction(null, null);
-        }
-
-        [Authorize(Roles = "Admin")]
-        [HttpGet]
-        public IActionResult Get()
-        {
-            var users = _store.GetUsers().Select(u => new { u.Username, u.FirstName, u.LastName, u.IsAdmin });
-            return Ok(users);
-        }
-
-        [Authorize(Roles = "Admin")]
-        [HttpPost]
-        public IActionResult Post([FromForm] string username, [FromForm] string password, [FromForm] bool isAdmin = false, [FromForm] string? firstName = null, [FromForm] string? lastName = null)
-        {
-            if (string.IsNullOrWhiteSpace(username) || string.IsNullOrEmpty(password))
-                return BadRequest(new { error = "username and password are required" });
-
-            if (string.IsNullOrWhiteSpace(firstName) || string.IsNullOrWhiteSpace(lastName))
-                return BadRequest(new { error = "first name and last name are required" });
-
-            var ok = _store.AddUser(username, password, isAdmin, firstName ?? "", lastName ?? "");
-            if (!ok) return Conflict(new { error = "user exists or invalid input" });
-            return CreatedAtAction(nameof(Get), null);
-        }
-
-        [Authorize(Roles = "Admin")]
-        [HttpDelete("{username}")]
-        public IActionResult Delete(string username)
-        {
-            if (string.IsNullOrWhiteSpace(username)) return BadRequest();
-
-            var current = User.Identity?.Name ?? string.Empty;
-            if (string.Equals(current, username, StringComparison.OrdinalIgnoreCase))
-            {
-                return BadRequest(new { error = "Cannot delete yourself." });
-            }
-
-            var target = _store.GetUser(username);
-            if (target == null) return NotFound();
-
-            if (target.IsAdmin)
-            {
-                var adminCount = _store.CountAdmins();
-                if (adminCount <= 1)
-                {
-                    return BadRequest(new { error = "Cannot remove the last admin." });
-                }
-            }
-
-            var ok = _store.RemoveUser(username);
-            if (!ok) return NotFound();
-            return NoContent();
-        }
-
-        [Authorize(Roles = "Admin")]
-        [HttpPost("{username}/promote")]
-        public IActionResult Promote(string username)
-        {
-            if (string.IsNullOrWhiteSpace(username)) return BadRequest();
-            var target = _store.GetUser(username);
-            if (target == null) return NotFound();
-            if (target.IsAdmin) return BadRequest(new { error = "User is already an admin." });
-            var ok = _store.SetAdmin(username, true);
-            if (!ok) return StatusCode(500);
-            return Ok();
-        }
-
-        [Authorize(Roles = "Admin")]
-        [HttpPost("{username}/demote")]
-        public IActionResult Demote(string username)
-        {
-            if (string.IsNullOrWhiteSpace(username)) return BadRequest();
-            var current = User.Identity?.Name ?? string.Empty;
-            if (string.Equals(current, username, StringComparison.OrdinalIgnoreCase))
-            {
-                return BadRequest(new { error = "Cannot demote yourself." });
-            }
-
-            var target = _store.GetUser(username);
-            if (target == null) return NotFound();
-            if (!target.IsAdmin) return BadRequest(new { error = "User is not an admin." });
-
-            var adminCount = _store.CountAdmins();
-            if (adminCount <= 1)
-            {
-                return BadRequest(new { error = "Cannot demote the last admin." });
-            }
-
-            var ok = _store.SetAdmin(username, false);
-            if (!ok) return StatusCode(500);
-            return Ok();
-        }
-
-        // POST /api/users/{username}/password
-        // Allows an admin to set any user's password, or a user to change their own password
-        [Authorize]
-        [HttpPost("{username}/password")]
-        public IActionResult ChangePassword(string username, [FromForm] string currentPassword, [FromForm] string newPassword)
-        {
-            if (string.IsNullOrWhiteSpace(username) || string.IsNullOrEmpty(newPassword)) return BadRequest(new { error = "username and newPassword are required" });
-
-            var current = User.Identity?.Name ?? string.Empty;
-            var isAdmin = User.IsInRole("Admin");
-
-            // If not admin, only allow changing own password and require currentPassword
-            if (!isAdmin)
-            {
-                if (!string.Equals(current, username, StringComparison.OrdinalIgnoreCase))
-                    return Forbid();
-
-                if (string.IsNullOrEmpty(currentPassword) || !_store.ValidateCredentials(username, currentPassword))
-                    return BadRequest(new { error = "current password invalid" });
-            }
-
-            var ok = _store.UpdatePassword(username, newPassword);
-            if (!ok) return NotFound(new { error = "user not found or update failed" });
-            return Ok();
-        }
-
-        // POST /api/users/{username}/folders
-        // Admin only: set which folders a user can access
-        [Authorize(Roles = "Admin")]
-        [HttpPost("{username}/folders")]
-        public IActionResult SetFolders(string username, [FromBody] List<string> folderPaths)
-        {
-            if (string.IsNullOrWhiteSpace(username)) return BadRequest();
-            
-            var target = _store.GetUser(username);
-            if (target == null) return NotFound();
-            
-            // Validate folder paths exist
-            var validPaths = new List<string>();
-            if (folderPaths != null)
-            {
-                foreach (var folder in folderPaths)
-                {
-                    if (!string.IsNullOrWhiteSpace(folder) && Directory.Exists(folder))
-                    {
-                        validPaths.Add(Path.GetFullPath(folder));
-                    }
-                }
-            }
-            
-            var ok = _store.SetAllowedFolders(username, validPaths);
-            if (!ok) return StatusCode(500);
-            return Ok(new { message = $"Allowed folders updated for {username}", folders = validPaths });
-        }
-
-        // GET /api/users/{username}/folders
-        // Get folders accessible by a user
-        [Authorize(Roles = "Admin")]
-        [HttpGet("{username}/folders")]
-        public IActionResult GetFolders(string username)
-        {
-            if (string.IsNullOrWhiteSpace(username)) return BadRequest();
-            
-            var target = _store.GetUser(username);
-            if (target == null) return NotFound();
-            
-            return Ok(new { username = username, folders = target.AllowedFolders });
-        }
+        return store.AddUser(username, password, isAdmin, firstName, lastName) == UserChange.Updated
+            ? CreatedAtAction(nameof(Get), null)
+            : Conflict(new { error = "Username already exists." });
     }
+
+    [Authorize(Roles = "Admin")]
+    [HttpDelete("{username}")]
+    public IActionResult Delete(string username)
+    {
+        if (IsCurrentUser(username))
+            return BadRequest(new { error = "Cannot delete yourself." });
+
+        return store.RemoveUser(username) switch
+        {
+            UserChange.Updated => NoContent(),
+            UserChange.LastAdmin => BadRequest(new { error = "Cannot remove the last admin." }),
+            _ => NotFound()
+        };
+    }
+
+    [Authorize(Roles = "Admin")]
+    [HttpPost("{username}/promote")]
+    public IActionResult Promote(string username) => ChangeRole(username, isAdmin: true);
+
+    [Authorize(Roles = "Admin")]
+    [HttpPost("{username}/demote")]
+    public IActionResult Demote(string username)
+    {
+        if (IsCurrentUser(username))
+            return BadRequest(new { error = "Cannot demote yourself." });
+
+        return ChangeRole(username, isAdmin: false);
+    }
+
+    private IActionResult ChangeRole(string username, bool isAdmin) => store.SetAdmin(username, isAdmin) switch
+    {
+        UserChange.Updated => Ok(),
+        UserChange.Conflict => Conflict(new { error = "User already has that role." }),
+        UserChange.LastAdmin => BadRequest(new { error = "Cannot demote the last admin." }),
+        _ => NotFound()
+    };
+
+    [HttpPost("{username}/password")]
+    public IActionResult ChangePassword(string username, [FromForm] string? currentPassword, [FromForm] string newPassword)
+    {
+        var isSelf = IsCurrentUser(username);
+        if (!isSelf && !CurrentUser.IsAdmin)
+            return Forbid();
+
+        if (string.IsNullOrEmpty(newPassword) || (isSelf && string.IsNullOrEmpty(currentPassword)))
+            return BadRequest(new { error = isSelf ? "Current and new passwords are required." : "New password is required." });
+
+        return store.UpdatePassword(username, newPassword, isSelf ? currentPassword : null) switch
+        {
+            UserChange.Updated => Ok(),
+            UserChange.InvalidPassword => BadRequest(new { error = "Current password is incorrect." }),
+            _ => NotFound()
+        };
+    }
+
+    [Authorize(Roles = "Admin")]
+    [HttpPost("{username}/folders")]
+    public IActionResult SetFolders(string username, [FromBody] List<string> folderPaths)
+    {
+        var roots = browser.GetRoots(CurrentUser);
+        var folders = new HashSet<string>(FileBrowserService.PathComparer);
+        foreach (var folder in folderPaths)
+        {
+            if (folder is null || !browser.TryResolve(folder, roots, out var canonicalPath) || !Directory.Exists(canonicalPath))
+                return BadRequest(new { error = "Choose existing folders from the configured roots." });
+
+            folders.Add(canonicalPath);
+        }
+
+        var assignedFolders = folders.ToList();
+        return store.SetAllowedFolders(username, assignedFolders) == UserChange.Updated
+            ? Ok(new { folders = assignedFolders })
+            : NotFound();
+    }
+
+    [Authorize(Roles = "Admin")]
+    [HttpGet("{username}/folders")]
+    public IActionResult GetFolders(string username)
+    {
+        var target = store.GetUser(username);
+        return target is null ? NotFound() : Ok(new { username = target.Username, folders = target.AllowedFolders });
+    }
+
+    private bool IsCurrentUser(string username) =>
+        string.Equals(CurrentUser.Username, username, StringComparison.OrdinalIgnoreCase);
 }

@@ -345,7 +345,7 @@
           <span id="selectedCountLabel" style="color:#9ca3af;font-size:13px;margin-left:8px;display:none"></span>
           <button class="secondary" type="button" onclick="goUp()">⬆️ Up</button>
           <button id="viewTypeBtn" class="secondary" type="button" onclick="toggleViewType()">📋 View</button>
-          <a href="/users.html" class="btn-like" style="background:#111827;color:#e5e7eb;padding:6px 10px;">👥 Manage Users</a>
+          <a id="accountLink" href="/users.html" class="btn-like" style="background:#111827;color:#e5e7eb;padding:6px 10px;">👥 Manage Users</a>
           <span id="currentUser" style="color:#9ca3af; font-size:13px; margin-left:8px; display:none;"></span>
           <button id="logoutBtn" class="secondary" style="margin-left:8px; display:none;" type="button" onclick="performLogout()">Logout</button>
         </div>
@@ -378,6 +378,7 @@
     <video id="videoViewerVideo" controls style="max-width:90%; max-height:90vh;"></video>
   </div>
 
+  <iframe id="archiveDownload" name="archiveDownload" title="Archive download" hidden></iframe>
   <script>
     let currentRoot = null;
     let currentPath = null;
@@ -393,6 +394,29 @@
     let lastSearchLetter = '';
     let searchLetterIndex = 0;
 
+    let rootRequest = 0;
+    let fileRequest = 0;
+
+    function showLogin() {
+      rootRequest++;
+      fileRequest++;
+      currentRoot = null;
+      currentPath = null;
+      currentFilter = null;
+      currentImageList = [];
+      if (selectionMode) toggleSelectionMode();
+      closeImageViewer();
+      closeVideoViewer();
+      document.getElementById("items").replaceChildren();
+      document.getElementById("driveList").replaceChildren();
+      document.getElementById("currentPathLabel").textContent = "Choose a folder";
+      document.getElementById("currentUser").textContent = "";
+      document.getElementById("loginOverlay").style.display = "flex";
+      document.getElementById("mainApp").style.display = "none";
+      document.getElementById("currentUser").style.display = "none";
+      document.getElementById("logoutBtn").style.display = "none";
+    }
+
     // Check if user is authenticated on page load
     async function checkAuth() {
       try {
@@ -400,6 +424,7 @@
         if (res.ok) {
           const data = await res.json().catch(() => null);
           const user = data?.user || '';
+          document.getElementById('accountLink').textContent = data?.isAdmin ? 'Manage Users' : 'My Account';
           // User is authenticated, show main app
           document.getElementById("loginOverlay").style.display = "none";
           document.getElementById("mainApp").style.display = "flex";
@@ -411,17 +436,11 @@
           }
           loadDrives();
         } else {
-          // Not authenticated, show login
-          document.getElementById("loginOverlay").style.display = "flex";
-          document.getElementById("mainApp").style.display = "none";
-          document.getElementById("currentUser").style.display = "none";
-          document.getElementById("logoutBtn").style.display = "none";
+          showLogin();
         }
       } catch (err) {
         console.error("Auth check failed:", err);
-        // Default to login
-        document.getElementById("loginOverlay").style.display = "flex";
-        document.getElementById("mainApp").style.display = "none";
+        showLogin();
       }
     }
 
@@ -431,15 +450,12 @@
       } catch (err) {
         console.error('Logout failed', err);
       }
-      document.getElementById("loginOverlay").style.display = "flex";
-      document.getElementById("mainApp").style.display = "none";
-      document.getElementById("currentUser").style.display = "none";
-      document.getElementById("logoutBtn").style.display = "none";
+      showLogin();
     }
 
     async function performLogin() {
       const username = document.getElementById("username").value.trim();
-      const password = document.getElementById("password").value.trim();
+      const password = document.getElementById("password").value;
       const errorEl = document.getElementById("loginError");
 
       if (!username || !password) {
@@ -484,6 +500,7 @@
     });
 
     async function loadDrives() {
+      const request = ++rootRequest;
       setError("");
       const listEl = document.getElementById("driveList");
       listEl.innerHTML = "Loading…";
@@ -499,8 +516,9 @@
           throw new Error("HTTP " + res.status);
         }
         const roots = await res.json();
+        if (request !== rootRequest) return;
 
-        listEl.innerHTML = "";
+        listEl.textContent = roots.length ? "" : "No folders available";
         roots.forEach((root, idx) => {
           const div = document.createElement("div");
           div.className = "drive-item";
@@ -530,6 +548,7 @@
           }
         });
       } catch (err) {
+        if (request !== rootRequest) return;
         console.error(err);
         listEl.innerHTML = "Failed to load drives.";
         setError("Error loading drives: " + err.message);
@@ -538,6 +557,7 @@
 
     async function loadFolder(path) {
       if (!path) return;
+      const request = ++fileRequest;
       currentPath = path;
       currentFilter = null;
       document.getElementById("currentPathLabel").textContent = path;
@@ -546,6 +566,7 @@
       const itemsEl = document.getElementById("items");
       const emptyMsgEl = document.getElementById("emptyMsg");
       itemsEl.innerHTML = "Loading…";
+      emptyMsgEl.textContent = "This folder is empty.";
       emptyMsgEl.style.display = "none";
 
       try {
@@ -559,7 +580,8 @@
           throw new Error("HTTP " + res.status + " – " + text);
         }
         const items = await res.json();
-        itemsEl.innerHTML = "";
+        if (request !== fileRequest) return;
+        itemsEl.replaceChildren();
 
         if (!items.length) {
           emptyMsgEl.style.display = "block";
@@ -633,6 +655,7 @@
         });
       } catch (err) {
         console.error(err);
+        if (request !== fileRequest) return;
         setError("Failed to load folder: " + err.message);
         itemsEl.innerHTML = "";
       }
@@ -663,7 +686,7 @@
         } else if (videoExtensions.includes(ext)) {
           showVideoViewer(item.path);
         } else {
-          window.open("/api/files/file?path=" + encodeURIComponent(item.path), "_blank");
+          window.open("/api/files/file?path=" + encodeURIComponent(item.path), "_blank", "noopener");
         }
       }
     }
@@ -765,8 +788,9 @@
       const viewer = document.getElementById('videoViewer');
       const video = document.getElementById('videoViewerVideo');
       viewer.style.display = 'none';
-      video.src = '';
       video.pause();
+      video.removeAttribute('src');
+      video.load();
     }
 
     async function deleteCurrentVideo() {
@@ -878,53 +902,44 @@
       }
     }
 
-    async function downloadSelected() {
-      const selected = Array.from(document.querySelectorAll('.item input[type="checkbox"]:checked')).map(cb => cb.parentElement.dataset.path);
-      if (selected.length === 0) { alert('No items selected'); return; }
-      
-      if (selected.length === 1) {
-        // Single file - direct download
+    function downloadSelected() {
+      const selected = Array.from(document.querySelectorAll('.item input[type="checkbox"]:checked'))
+        .map(checkbox => checkbox.closest('.item'));
+      if (!selected.length) { alert('No items selected'); return; }
+
+      if (selected.length === 1 && !JSON.parse(selected[0].dataset.item).isDirectory) {
         const link = document.createElement('a');
-        link.href = '/api/files/open?path=' + encodeURIComponent(selected[0]);
-        link.download = selected[0].split(/[\\\/]/).pop();
-        document.body.appendChild(link);
+        link.href = '/api/files/open?path=' + encodeURIComponent(selected[0].dataset.path);
+        link.download = '';
         link.click();
-        document.body.removeChild(link);
-      } else {
-        // Multiple files - create zip
-        try {
-          console.log('Creating ZIP with paths:', selected);
-          const response = await fetch('/api/files/download-zip', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({ paths: selected })
-          });
-          
-          if (!response.ok) {
-            const errorText = await response.text();
-            console.error('ZIP creation failed:', response.status, errorText);
-            alert('Failed to create zip file: ' + response.status + ' - ' + errorText);
-            return;
-          }
-          
-          const blob = await response.blob();
-          console.log('ZIP blob received:', blob.size, 'bytes');
-          const url = window.URL.createObjectURL(blob);
-          const link = document.createElement('a');
-          link.href = url;
-          link.download = 'files.zip';
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-          window.URL.revokeObjectURL(url);
-          alert('Download started!');
-        } catch (err) {
-          console.error('Download error:', err);
-          alert('Error downloading files: ' + err.message);
-        }
+        return;
       }
+
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = '/api/files/download-zip-form';
+      form.target = 'archiveDownload';
+      form.hidden = true;
+      for (const item of selected) {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'paths';
+        input.value = item.dataset.path;
+        form.appendChild(input);
+      }
+      document.body.appendChild(form);
+      form.submit();
+      form.remove();
     }
+
+    document.getElementById('archiveDownload').addEventListener('load', event => {
+      const text = event.currentTarget.contentDocument?.body?.textContent;
+      if (!text) return;
+      try {
+        const error = JSON.parse(text)?.error;
+        if (error) setError(error);
+      } catch {}
+    });
 
     async function deleteSelected() {
       const selected = Array.from(document.querySelectorAll('.item input[type="checkbox"]:checked')).map(cb => cb.parentElement.dataset.path);
@@ -966,20 +981,14 @@
     document.getElementById('selectBtn').addEventListener('click', toggleSelectionMode);
 
     function goUp() {
-      if (!currentPath) return;
+      if (!currentPath || !currentRoot) return;
 
-      const trimmed = currentPath.replace(/[/\\]+$/, "");
-      const idxBackslash = trimmed.lastIndexOf("\\");
-      const idxSlash = trimmed.lastIndexOf("/");
-      const cut = Math.max(idxBackslash, idxSlash);
+      const root = currentRoot.replace(/[/\\]+$/, "");
+      const path = currentPath.replace(/[/\\]+$/, "");
+      if (path === root) return;
 
-      if (cut <= 2) {
-        // Go back to root
-        loadFolder(currentRoot);
-      } else {
-        const parent = trimmed.substring(0, cut + 1);
-        loadFolder(parent);
-      }
+      const cut = Math.max(path.lastIndexOf("\\"), path.lastIndexOf("/"));
+      loadFolder(cut <= root.length ? currentRoot : path.substring(0, cut));
     }
 
     function formatSize(bytes) {
@@ -1080,6 +1089,7 @@
         return;
       }
 
+      const request = ++fileRequest;
       currentFilter = category;
 
       document.getElementById("currentPathLabel").textContent = currentRoot + ' - ' + category.charAt(0).toUpperCase() + category.slice(1);
@@ -1087,7 +1097,7 @@
 
       const itemsEl = document.getElementById("items");
       const emptyMsgEl = document.getElementById("emptyMsg");
-      itemsEl.innerHTML = "Searching for " + category + "...";
+      itemsEl.textContent = "Searching for " + category + "...";
       emptyMsgEl.style.display = "none";
 
       try {
@@ -1101,7 +1111,8 @@
           throw new Error("HTTP " + res.status + " – " + text);
         }
         const items = await res.json();
-        itemsEl.innerHTML = "";
+        if (request !== fileRequest) return;
+        itemsEl.replaceChildren();
 
         if (!items.length) {
           emptyMsgEl.textContent = "No " + category + " found in this drive.";
@@ -1113,7 +1124,6 @@
           const card = document.createElement("div");
           card.className = "item";
           card.dataset.path = item.path;
-          card.dataset.item = JSON.stringify(item);
           card.dataset.item = JSON.stringify(item);
           card.onclick = () => {
             if (selectionMode) {
@@ -1173,6 +1183,7 @@
         });
       } catch (err) {
         console.error(err);
+        if (request !== fileRequest) return;
         setError("Failed to search: " + err.message);
         itemsEl.innerHTML = "";
       }

@@ -21,27 +21,17 @@
     <a class="back" href="/">← Back</a>
     <h1>User Management</h1>
 
-    <div id="setupForm" style="display:none">
-      <h2>Create Initial Admin</h2>
-      <p style="color:#9ca3af;margin-bottom:16px">No users exist yet. Create the initial admin account to continue.</p>
-      <div>
-        <input id="setupUser" placeholder="username" />
-        <input id="setupFirstName" placeholder="first name" />
-        <input id="setupLastName" placeholder="last name" />
-        <input id="setupPass" placeholder="password" type="password" />
-        <button onclick="createInitialAdmin()">Create Admin</button>
-        <div id="setupMsg" style="color:#f97373;margin-top:6px"></div>
-      </div>
-    </div>
+    <p id="accountStatus" role="status"></p>
+    <button id="changeOwnPassword" hidden onclick="openPwModal(currentUser)">Change my password</button>
 
-    <div id="list"></div>
+    <div id="list" hidden></div>
 
     <!-- Change Password Modal -->
     <div id="pwModal" style="display:none;position:fixed;inset:0;align-items:center;justify-content:center;background:rgba(2,6,23,0.6);z-index:1000">
       <div style="background:#0b1220;padding:16px;border:1px solid #1f2937;border-radius:8px;min-width:320px">
         <h3 style="margin-top:0">Change password for <span id="pwFor"></span></h3>
         <div id="pwMsg" style="color:#f97373;margin-bottom:6px"></div>
-        <div id="pwCurrentWrap" style="display:block">
+        <div id="pwCurrentWrap">
           <input id="pwCurrent" type="password" placeholder="Current password" />
         </div>
         <input id="pwNew" type="password" placeholder="New password" />
@@ -63,7 +53,7 @@
         
         <div style="display:flex;gap:6px;margin-bottom:12px">
           <input id="browsePath" type="text" placeholder="Current path" readonly style="flex:1;padding:8px;border-radius:4px;border:1px solid #374151;background:#111827;color:#9ca3af;font-size:12px" />
-          <button onclick="goToRoots()" style="padding:8px 12px;background:#666;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px">Drives</button>
+          <button onclick="goToRoots()" style="padding:8px 12px;background:#666;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px">Roots</button>
         </div>
 
         <div id="folderBrowser" style="border:1px solid #1f2937;border-radius:4px;padding:8px;background:#111827;margin-bottom:12px;max-height:300px;overflow-y:auto;min-height:150px">
@@ -82,8 +72,8 @@
       </div>
     </div>
 
-    <h3>Add User</h3>
-    <div>
+    <section id="addUserPanel" hidden>
+      <h3>Add User</h3>
       <input id="newUser" placeholder="username" />
       <input id="newFirstName" placeholder="first name" />
       <input id="newLastName" placeholder="last name" />
@@ -91,46 +81,39 @@
       <label style="display:block;margin:6px 0;color:#9ca3af"><input type="checkbox" id="newAdmin" /> Make admin</label>
       <button onclick="addUser()">Add</button>
       <div id="msg" style="color:#f97373;margin-top:6px"></div>
-    </div>
+    </section>
   </div>
 
   <script>
     let currentUser = null;
+    let currentIsAdmin = false;
 
     async function load() {
-      // Check if first-run (no users exist)
-      try {
-        const initCheck = await fetch('/api/users/init', { credentials: 'include' });
-        if (initCheck.ok) {
-          const initData = await initCheck.json();
-          if (initData.isEmpty) {
-            // Show setup form, hide user list and add form
-            document.getElementById('setupForm').style.display = 'block';
-            document.getElementById('list').style.display = 'none';
-            document.querySelector('h3').style.display = 'none';
-            document.querySelector('.box > div:last-child').style.display = 'none';
-            return;
-          }
-        }
-      } catch {}
+      const account = document.getElementById('accountStatus');
+      const me = await fetch('/api/auth/me');
+      if (me.status === 401) {
+        window.location.replace('/');
+        return;
+      }
+      if (!me.ok) {
+        account.textContent = 'Failed to load your account.';
+        return;
+      }
 
-      // get current user
-      try {
-        const me = await fetch('/api/auth/me', { credentials: 'include' });
-        if (me.ok) {
-          const md = await me.json().catch(() => null);
-          currentUser = md?.user || null;
-        }
-      } catch {}
-
-      const res = await fetch('/api/users', { credentials: 'include' });
-      if (!res.ok) { document.getElementById('list').textContent = 'Failed to load users'; return; }
-      const users = await res.json();
+      const profile = await me.json();
+      currentUser = profile.user;
+      currentIsAdmin = profile.isAdmin;
+      account.textContent = 'Signed in as ' + currentUser;
+      document.getElementById('changeOwnPassword').hidden = false;
+      document.getElementById('addUserPanel').hidden = !currentIsAdmin;
       const list = document.getElementById('list');
-      list.innerHTML = '';
-      list.style.display = 'block';
-      document.querySelector('h3').style.display = 'block';
-      document.querySelector('.box > div:last-child').style.display = 'block';
+      list.hidden = !currentIsAdmin;
+      if (!currentIsAdmin) return;
+
+      const res = await fetch('/api/users');
+      if (!res.ok) { list.textContent = 'Failed to load users'; return; }
+      const users = await res.json();
+      list.replaceChildren();
 
       const adminCount = users.filter(u => u.isAdmin).length;
 
@@ -164,13 +147,14 @@
         // Change password button
         const cp = document.createElement('button'); 
         cp.textContent = 'Password';
-        cp.onclick = () => openPwModal(u.username, u.isAdmin);
+        cp.onclick = () => openPwModal(u.username);
         actions.appendChild(cp);
 
         // Manage folders button
         const folders = document.createElement('button');
         folders.textContent = 'Folders';
-        folders.onclick = () => openFolderModal(u.username, u.isAdmin);
+        folders.onclick = () => openFolderModal(u.username);
+        folders.disabled = u.isAdmin;
         actions.appendChild(folders);
 
         // Remove
@@ -185,29 +169,6 @@
         div.appendChild(actions);
         list.appendChild(div);
       });
-    }
-
-    async function createInitialAdmin() {
-      const u = document.getElementById('setupUser').value.trim();
-      const fn = document.getElementById('setupFirstName').value.trim();
-      const ln = document.getElementById('setupLastName').value.trim();
-      const p = document.getElementById('setupPass').value;
-      const msg = document.getElementById('setupMsg'); msg.textContent = '';
-      if (!u || !p) { msg.textContent = 'username and password required'; return; }
-      if (!fn || !ln) { msg.textContent = 'first name and last name required'; return; }
-      const fd = new FormData(); 
-      fd.append('username', u); 
-      fd.append('firstName', fn);
-      fd.append('lastName', ln);
-      fd.append('password', p);
-      const res = await fetch('/api/users/init', { method:'POST', body: fd, credentials:'include' });
-      if (res.status === 201) {
-        alert('Initial admin created successfully!');
-        window.location.href = '/';
-        return;
-      }
-      const txt = await res.json().catch(() => null);
-      msg.textContent = (txt && txt.error) || 'Failed to create admin';
     }
 
     async function addUser() {
@@ -262,29 +223,15 @@
 
     // Password change modal logic
     let pwTarget = null;
-    let currentIsAdmin = false;
-    async function openPwModal(username, targetIsAdmin) {
+
+    function openPwModal(username) {
       pwTarget = username;
       document.getElementById('pwFor').textContent = username;
       document.getElementById('pwMsg').textContent = '';
       document.getElementById('pwNew').value = '';
       document.getElementById('pwConfirm').value = '';
       document.getElementById('pwCurrent').value = '';
-      // determine whether current user is admin to hide/show current password
-      try {
-        const dbg = await fetch('/api/users/debug', { credentials: 'include' });
-        if (dbg.ok) {
-          const d = await dbg.json();
-          currentIsAdmin = !!d.currentUserIsAdmin;
-        }
-      } catch { currentIsAdmin = false; }
-
-      if (currentIsAdmin && pwTarget !== null && pwTarget !== (await getCurrentUser())) {
-        document.getElementById('pwCurrentWrap').style.display = 'none';
-      } else {
-        document.getElementById('pwCurrentWrap').style.display = 'block';
-      }
-
+      document.getElementById('pwCurrentWrap').hidden = currentIsAdmin && username !== currentUser;
       document.getElementById('pwModal').style.display = 'flex';
     }
 
@@ -292,12 +239,10 @@
 
     let folderTarget = null;
     let selectedFolders = [];
-    let currentBrowsePath = null;
 
-    function openFolderModal(username, isAdmin) {
+    function openFolderModal(username) {
       folderTarget = username;
       selectedFolders = [];
-      currentBrowsePath = null;
       document.getElementById('folderFor').textContent = username;
       document.getElementById('folderMsg').textContent = '';
       
@@ -307,21 +252,21 @@
       document.getElementById('folderModal').style.display = 'flex';
     }
 
-    function closeFolderModal() { 
+    function closeFolderModal() {
+      browseRequest++;
       document.getElementById('folderModal').style.display = 'none'; 
       folderTarget = null;
       selectedFolders = [];
-      currentBrowsePath = null;
     }
 
     async function loadFoldersForUser(username) {
       try {
         // Get currently assigned folders
         const foldersRes = await fetch('/api/users/' + encodeURIComponent(username) + '/folders', { credentials: 'include' });
-        if (foldersRes.ok) {
-          const data = await foldersRes.json();
-          selectedFolders = data.folders || [];
-        }
+        if (!foldersRes.ok) throw new Error('Failed to load folder assignments');
+        const data = await foldersRes.json();
+        if (folderTarget !== username) return;
+        selectedFolders = data.folders || [];
         
         renderSelectedFolders();
       } catch (e) {
@@ -329,126 +274,49 @@
       }
     }
 
-    async function goToRoots() {
-      currentBrowsePath = null;
-      document.getElementById('browsePath').value = 'Drives';
-      await browseFolders(null);
+    function goToRoots() {
+      return browseFolders(null);
     }
 
+    let browseRequest = 0;
     async function browseFolders(path) {
+      const request = ++browseRequest;
       const msg = document.getElementById('folderMsg');
-      msg.textContent = '';
       const browser = document.getElementById('folderBrowser');
-      browser.innerHTML = '';
-      
-      if (path === null || path === undefined) {
-        // Show drives (no API call needed)
-        const drives = ['C:\\', 'D:\\', 'E:\\', 'F:\\', 'G:\\', 'H:\\', 'I:\\', 'J:\\', 'K:\\', 'L:\\'];
-        drives.forEach(drive => {
-          const div = document.createElement('div');
-          div.style.padding = '8px';
-          div.style.cursor = 'pointer';
-          div.style.borderRadius = '4px';
-          div.style.marginBottom = '4px';
-          div.style.backgroundColor = '#1f2937';
-          div.style.display = 'flex';
-          div.style.justifyContent = 'space-between';
-          div.style.alignItems = 'center';
-          
-          const nameSpan = document.createElement('span');
-          nameSpan.textContent = drive;
-          nameSpan.style.flex = '1';
-          nameSpan.style.cursor = 'pointer';
-          nameSpan.onclick = () => browseFolders(drive);
-          
-          const selectBtn = document.createElement('button');
-          selectBtn.textContent = '+';
-          selectBtn.style.padding = '4px 8px';
-          selectBtn.style.background = '#0ea5e9';
-          selectBtn.style.color = '#081025';
-          selectBtn.style.border = 'none';
-          selectBtn.style.borderRadius = '4px';
-          selectBtn.style.cursor = 'pointer';
-          selectBtn.onclick = () => {
-            if (!selectedFolders.some(f => f.toLowerCase() === drive.toLowerCase())) {
-              selectedFolders.push(drive);
+      msg.textContent = '';
+      browser.replaceChildren();
+
+      try {
+        const url = path ? '/api/files/browse?path=' + encodeURIComponent(path) : '/api/files/roots';
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const folders = await res.json();
+        if (request !== browseRequest) return;
+        document.getElementById('browsePath').value = path || 'Configured roots';
+        if (!folders.length) browser.textContent = path ? 'No subfolders' : 'No folders are configured';
+
+        for (const folder of folders) {
+          const row = document.createElement('div');
+          row.className = 'user';
+          const name = document.createElement('button');
+          name.textContent = folder.name;
+          name.onclick = () => browseFolders(folder.path);
+
+          const select = document.createElement('button');
+          select.textContent = 'Add';
+          select.onclick = () => {
+            if (!selectedFolders.includes(folder.path)) {
+              selectedFolders.push(folder.path);
               renderSelectedFolders();
             }
           };
-          
-          div.appendChild(nameSpan);
-          div.appendChild(selectBtn);
-          browser.appendChild(div);
-        });
-        return;
-      }
 
-      // For actual paths, fetch subfolders from API
-      try {
-        const url = '/api/files/browse?path=' + encodeURIComponent(path);
-        console.log('Browsing path:', path, 'URL:', url);
-        const res = await fetch(url, { credentials: 'include' });
-        
-        if (!res.ok) {
-          const errText = await res.text();
-          console.error('Browse error:', res.status, errText);
-          msg.textContent = 'Failed to load folder contents: ' + res.status;
-          return;
+          row.append(name, select);
+          browser.append(row);
         }
-        
-        const folders = await res.json();
-        console.log('Folders loaded:', folders.length);
-        
-        if (folders.length === 0) {
-          const empty = document.createElement('div');
-          empty.textContent = 'No subfolders';
-          empty.style.padding = '8px';
-          empty.style.color = '#6b7280';
-          browser.appendChild(empty);
-        } else {
-          folders.forEach(folder => {
-            const div = document.createElement('div');
-            div.style.padding = '8px';
-            div.style.cursor = 'pointer';
-            div.style.borderRadius = '4px';
-            div.style.marginBottom = '4px';
-            div.style.backgroundColor = '#1f2937';
-            div.style.display = 'flex';
-            div.style.justifyContent = 'space-between';
-            div.style.alignItems = 'center';
-            
-            const nameSpan = document.createElement('span');
-            nameSpan.textContent = folder.name;
-            nameSpan.style.flex = '1';
-            nameSpan.style.cursor = 'pointer';
-            nameSpan.onclick = () => browseFolders(folder.path);
-            
-            const selectBtn = document.createElement('button');
-            selectBtn.textContent = '+';
-            selectBtn.style.padding = '4px 8px';
-            selectBtn.style.background = '#0ea5e9';
-            selectBtn.style.color = '#081025';
-            selectBtn.style.border = 'none';
-            selectBtn.style.borderRadius = '4px';
-            selectBtn.style.cursor = 'pointer';
-            selectBtn.onclick = () => {
-              if (!selectedFolders.some(f => f.toLowerCase() === folder.path.toLowerCase())) {
-                selectedFolders.push(folder.path);
-                renderSelectedFolders();
-              }
-            };
-            
-            div.appendChild(nameSpan);
-            div.appendChild(selectBtn);
-            browser.appendChild(div);
-          });
-        }
-        
-        currentBrowsePath = path;
-        document.getElementById('browsePath').value = path;
-      } catch (e) {
-        console.error('Exception in browseFolders:', e);
-        msg.textContent = 'Error loading folders: ' + e.message;
+      } catch (error) {
+        if (request === browseRequest)
+          msg.textContent = 'Failed to load folders. ' + error.message;
       }
     }
 
@@ -524,14 +392,6 @@
       }
     }
 
-    async function getCurrentUser() {
-      try {
-        const me = await fetch('/api/auth/me', { credentials: 'include' });
-        if (me.ok) { const md = await me.json(); return md.user || null; }
-      } catch {}
-      return null;
-    }
-
     async function submitChangePassword() {
       const newP = document.getElementById('pwNew').value;
       const conf = document.getElementById('pwConfirm').value;
@@ -541,16 +401,20 @@
       if (!newP) { msg.textContent = 'New password required'; return; }
       if (newP !== conf) { msg.textContent = 'Passwords do not match'; return; }
 
-      const body = { newPassword: newP };
-      // include currentPassword when present (non-admin changing own password)
-      if (document.getElementById('pwCurrentWrap').style.display !== 'none') body.currentPassword = cur;
+      const body = new FormData();
+      body.append('newPassword', newP);
+      if (pwTarget === currentUser) body.append('currentPassword', cur);
 
       try {
-        const res = await fetch('/api/users/' + encodeURIComponent(pwTarget) + '/password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), credentials: 'include' });
+        const res = await fetch('/api/users/' + encodeURIComponent(pwTarget) + '/password', { method: 'POST', body });
         if (res.ok) {
-          alert('Password changed');
+          if (pwTarget === currentUser) {
+            alert('Password changed. Sign in with your new password.');
+            window.location.replace('/');
+            return;
+          }
+          document.getElementById('accountStatus').textContent = 'Password updated for ' + pwTarget;
           closePwModal();
-          load();
         } else if (res.status === 403 || res.status === 401) {
           const t = await res.json().catch(() => null);
           msg.textContent = (t && t.error) || 'Not authorized';
@@ -561,7 +425,7 @@
       } catch (e) { msg.textContent = 'Request failed'; }
     }
 
-    load();
+    load().catch(() => { document.getElementById('accountStatus').textContent = 'Failed to load your account.'; });
   </script>
     <div style="margin: 24px 0 0 0; text-align:center;">
       <button onclick="window.location.href='/LicensingServerPackage/admin.html'" style="background:#0ea5e9;color:#fff;border:none;border-radius:999px;padding:10px 28px;font-size:15px;cursor:pointer;box-shadow:0 2px 8px rgba(14,165,233,0.08);transition:background 0.2s;">Licenses</button>

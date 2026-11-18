@@ -1,47 +1,42 @@
-FilePortal
-=========
+# FilePortal
 
-Quick notes for running and configuring authentication and thumbnails.
+FilePortal is an ASP.NET Core 10 file browser for Windows drives and UNC shares. It provides account management, folder assignments, previews, uploads, deletion, and ZIP downloads.
 
-Run (development):
+## Run locally
 
-```powershell
-cd d:\Dev\Fileportal
-dotnet restore
-dotnet run
-```
+1. Install the current .NET 10 SDK.
+2. Set the paths under `Roots` in `appsettings.json` to folders you want the portal to expose. Use dedicated shared directories when possible.
+3. If the user store has no administrator, provision one locally. The command prompts for the password and confirmation.
 
-Auth configuration
-------------------
-- The app reads credentials from the following environment variables (preferred):
-  - `Auth__Username` (or `AUTH__USERNAME`)
-  - `Auth__Password` (or `AUTH__PASSWORD`)
+   ```powershell
+   dotnet run -- --provision-admin your-admin-name
+   ```
 
-- If those are not set, the app will fall back to values in `appsettings.json` under the `Auth` section.
-- For security, `appsettings.json` should not contain production secrets; prefer environment variables or a secret manager.
+4. Start the application and open the URL printed by the host.
 
-Example (PowerShell) to set creds for local dev session:
+   ```powershell
+   dotnet run
+   ```
 
-```powershell
-$env:Auth__Username = "maikel"
-$env:Auth__Password = "your-secret-here"
-dotnet run
-```
+Use **Manage Users** to add accounts and assign folders. Administrators can manage files within configured roots. Regular users can work within their assigned folders inside those roots. Application directories, the user store, and filesystem links are excluded. **My Account** provides self-service password changes.
 
-Thumbnails
-----------
-- Image thumbnails are generated and cached under the system temp directory (`Path.GetTempPath()`) in a `FilePortalThumbnails` folder.
-- The app uses ImageSharp to resize images and cache them as JPG files for faster subsequent requests.
+## Configuration and upgrades
 
-Notes about committing changes
------------------------------
-- This workspace was modified by the assistant to add thumbnail caching (ImageSharp) and to prefer env vars for auth.
-- Git may not be available in the environment where these edits were applied; run the following locally to commit:
+| Setting | Purpose |
+| --- | --- |
+| `Roots` | Maps a display name to a fully qualified directory. UNC shares must be reachable by the account running FilePortal. |
+| `FilePortal__DataDirectory` | Optional absolute path for users, authentication keys, and temporary ZIP files. Defaults to `data` beside the application assembly. |
+| `Email__SmtpUsername` and `Email__SmtpPassword` | Optional SMTP credentials managed outside the repository. Configure `Email__FromEmail` and `Email__ToEmail` to enable delivery. |
+
+If you're upgrading from .NET 8, point the new deployment at the existing data directory or copy `users.json` into the new data directory before starting it. Existing user passwords and folder assignments remain compatible. Review existing assignments against the new deployment's configured roots. Users must sign in again after upgrading.
+
+Rotate any administrator or SMTP credential previously used by the project or published in repository history. See [Secrets](SECRETS.md), [IIS deployment](IIS-DEPLOYMENT-README.md), and [Windows service deployment](SERVICE-README.md).
+
+## Verification
+
+Run the Release integration suite with Node.js 22 or later and the .NET 10 SDK.
 
 ```powershell
-cd d:\Dev\Fileportal
-git add -A
-git commit -m "Auth: prefer env vars; add thumbnail caching; add logout UI"
+node --test tests/fileportal.test.mjs
+dotnet list FilePortal.csproj package --vulnerable --include-transitive
 ```
-
-If you want, I can update this README with deployment examples (Docker, systemd, IIS) — tell me which target you need.

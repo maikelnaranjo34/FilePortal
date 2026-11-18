@@ -1,197 +1,181 @@
-using System.IO;
-using FilePortal.Models;
+﻿using FilePortal.Models;
+
+using System.Runtime.InteropServices;
+using System.Text;
 
 namespace FilePortal.Services;
 
-public class FileBrowserService
+public sealed class FileBrowserService
 {
-    // Local drive roots you want to show by letter
-    private readonly string[] _allowedDriveRoots = new[]
+    private static readonly StringComparison PathComparison = OperatingSystem.IsWindows()
+        ? StringComparison.OrdinalIgnoreCase
+        : StringComparison.Ordinal;
+
+    public static readonly StringComparer PathComparer = OperatingSystem.IsWindows()
+        ? StringComparer.OrdinalIgnoreCase
+        : StringComparer.Ordinal;
+
+    private readonly IConfiguration _configuration;
+    private readonly string[] _privateDirectories;
+
+    public FileBrowserService(IConfiguration configuration, IWebHostEnvironment environment, UserStoreService users)
     {
-        "D:",
-        "E:",
-        "G:",
-        "H:",
-        "I:",
-        "J:",
-        "K:"
-    };
-
-    // Special roots:
-    //  - Network shares for Y: and Z: (UNC paths)
-    //  - Samsung S20 Syncthing folder
-    private readonly Dictionary<string, string> _specialRoots;
-
-    public FileBrowserService(IConfiguration configuration)
-    {
-        _specialRoots = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-        {
-            // Friendly names mapped to local/mapped drive letters
-            { "Data", @"G:\" },
-            { "Easystore", @"I:\" },
-
-            // Samsung S20 Syncthing backup
-            { "Samsung S20", @"D:\\Samsung S20_Cloud\\WebsiteBrowser\\Files" }
-        };
+        _configuration = configuration;
+        WorkingDirectory = Path.Combine(users.DirectoryPath, "archives");
+        _privateDirectories =
+        [
+            Path.GetFullPath(environment.ContentRootPath),
+            Path.GetFullPath(AppContext.BaseDirectory),
+            users.DirectoryPath
+        ];
     }
 
-    // This is what the UI calls to populate the left list (roots).
-    public IEnumerable<string> GetRoots()
-    {
-        var roots = new List<string>();
+    public string WorkingDirectory { get; }
 
-        // Local drives: E:, F:, H:
-        foreach (var root in _allowedDriveRoots)
+    public List<RootItem> GetRoots(UserRecord user)
+    {
+        var configured = new List<RootItem>();
+        foreach (var entry in _configuration.GetSection("Roots").GetChildren())
         {
-            var drivePath = root + Path.DirectorySeparatorChar; // e.g. "E:\"
-            if (Directory.Exists(drivePath))
-            {
-                roots.Add(root);
-            }
+            if (entry.Value is not null && TryNormalize(entry.Value, out var path) && IsAvailableDirectory(path))
+                configured.Add(new RootItem { Name = entry.Key, Path = path });
         }
 
-        // Special roots (UNC + Samsung folder)
-        foreach (var kvp in _specialRoots)
+        if (user.IsAdmin)
+            return configured;
+
+        var roots = new List<RootItem>();
+        foreach (var folder in user.AllowedFolders)
         {
-            if (Directory.Exists(kvp.Value))
-            {
-                roots.Add(kvp.Key);
-            }
+            if (!TryNormalize(folder, out var path) || !IsAvailableDirectory(path) ||
+                !configured.Any(root => IsWithin(path, root.Path)))
+                continue;
+
+            var label = configured.Find(root => PathsEqual(path, root.Path))?.Name ?? Path.GetFileName(path);
+            roots.Add(new RootItem { Name = label, Path = path });
         }
 
         return roots;
     }
 
-    // Map a logical root name (E:, F:, H:, Y:, Z:, Samsung S20) to a real base path.
-    private string GetBasePathForRoot(string root)
+    public bool TryResolve(string path, IReadOnlyList<RootItem> roots, out string fullPath, bool allowMissing = false)
     {
-        // First: special roots (Y:, Z:, Samsung S20)
-        if (_specialRoots.TryGetValue(root, out var specialPath))
-        {
-            return specialPath;
-        }
+        if (!TryNormalize(path, out fullPath))
+            return false;
 
-        // Then: local drive letters (E:, F:, H:)
-        if (_allowedDriveRoots.Contains(root, StringComparer.OrdinalIgnoreCase))
-        {
-            return root + Path.DirectorySeparatorChar;
-        }
-
-        // Fallback (shouldn't really happen)
-        return root;
+        var candidate = fullPath;
+        return roots.Any(root => IsWithin(candidate, root.Path)) &&
+            !IsPrivate(candidate) && HasSafeComponents(candidate, allowMissing);
     }
 
-    // Get folders/files inside a root + relative path
-    public IEnumerable<FileItem> GetItems(string root, string? relativePath)
+    public bool TryGetUploadDestination(string target, string fileName, IReadOnlyList<RootItem> roots, out string destination)
     {
-        var basePath = GetBasePathForRoot(root);
+        destination = "";
+        var relative = fileName.Replace('\\', '/');
+        if (relative.Split('/').Any(segment => segment.Length == 0 || segment is "." or "..") ||
+            Path.IsPathRooted(relative) || relative.Contains(':'))
+            return false;
 
-        var targetPath = string.IsNullOrWhiteSpace(relativePath)
-            ? basePath
-            : Path.Combine(basePath, relativePath);
+        return TryResolve(Path.Combine(target, relative), roots, out destination, allowMissing: true) &&
+            !PathsEqual(destination, target) && IsWithin(destination, target);
+    }
 
-        var items = new List<FileItem>();
+    public bool CanDeleteTree(string path) => !_privateDirectories.Any(directory => IsWithin(directory, path));
 
-        if (!Directory.Exists(targetPath))
-        {
-            return items;
-        }
+    public bool CanList(FileSystemInfo entry) =>
+        (entry.Attributes & FileAttributes.ReparsePoint) == 0 && !IsPrivate(entry.FullName);
+
+    public bool IsAvailableDirectory(string path) =>
+        TryNormalize(path, out var fullPath) && !IsPrivate(fullPath) && HasSafeComponents(fullPath, allowMissing: false) &&
+        Directory.Exists(fullPath);
+
+    private bool IsPrivate(string path) =>
+        _privateDirectories.Any(directory => IsWithin(path, directory)) ||
+        path.Split(Path.DirectorySeparatorChar).Any(segment => segment.StartsWith(".fileportal-upload-", StringComparison.OrdinalIgnoreCase));
+
+    private static bool TryNormalize(string path, out string fullPath)
+    {
+        fullPath = "";
+        if (string.IsNullOrWhiteSpace(path) || !Path.IsPathFullyQualified(path))
+            return false;
 
         try
         {
-            // Directories
-            foreach (var dir in Directory.EnumerateDirectories(targetPath))
+            if (OperatingSystem.IsWindows())
             {
-                try
-                {
-                    var di = new DirectoryInfo(dir);
-                    var rel = Path.GetRelativePath(basePath, di.FullName);
+                var windowsPath = path.Replace('/', '\\');
+                if (windowsPath.StartsWith(@"\\?\", StringComparison.Ordinal) || windowsPath.StartsWith(@"\\.\", StringComparison.Ordinal))
+                    return false;
 
-                    items.Add(new FileItem
-                    {
-                        Name = di.Name,
-                        FullPath = di.FullName,
-                        RelativePath = rel,
-                        IsDirectory = true,
-                        LastModified = di.LastWriteTime
-                    });
-                }
-                catch
-                {
-                    // Skip problem dirs
-                }
+                var drivePrefix = windowsPath.Length >= 2 && windowsPath[1] == ':' ? 2 : 0;
+                var parts = windowsPath[drivePrefix..].Split('\\', StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Any(part => part is not "." and not ".." &&
+                    (part.EndsWith(' ') || part.EndsWith('.') || part.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 ||
+                        IsWindowsDeviceName(part))))
+                    return false;
             }
 
-            // Files
-            foreach (var file in Directory.EnumerateFiles(targetPath))
-            {
-                try
-                {
-                    var fi = new FileInfo(file);
-                    var rel = Path.GetRelativePath(basePath, fi.FullName);
+            fullPath = Path.TrimEndingDirectorySeparator(Path.GetFullPath(path));
+            return true;
+        }
+        catch (Exception exception) when (exception is ArgumentException or IOException or NotSupportedException)
+        {
+            return false;
+        }
+    }
 
-                    items.Add(new FileItem
-                    {
-                        Name = fi.Name,
-                        FullPath = fi.FullName,
-                        RelativePath = rel,
-                        IsDirectory = false,
-                        Size = fi.Length,
-                        LastModified = fi.LastWriteTime
-                    });
-                }
-                catch
-                {
-                    // Skip problem files
-                }
+    private static bool IsWindowsDeviceName(string part)
+    {
+        var name = part.Split('.')[0].TrimEnd().ToUpperInvariant();
+        return name is "CON" or "PRN" or "AUX" or "NUL" or "CONIN$" or "CONOUT$" ||
+            (name.Length == 4 && (name.StartsWith("COM", StringComparison.Ordinal) || name.StartsWith("LPT", StringComparison.Ordinal)) &&
+                "0123456789¹²³".Contains(name[3]));
+    }
+
+    private static bool HasSafeComponents(string path, bool allowMissing)
+    {
+        var root = Path.GetPathRoot(path)!;
+        var current = root;
+        foreach (var segment in path[root.Length..].Split(Path.DirectorySeparatorChar, StringSplitOptions.RemoveEmptyEntries))
+        {
+            current = Path.Combine(current, segment);
+            try
+            {
+                if ((File.GetAttributes(current) & FileAttributes.ReparsePoint) != 0)
+                    return false;
+            }
+            catch (Exception exception) when (exception is FileNotFoundException or DirectoryNotFoundException)
+            {
+                return allowMissing && HasCanonicalWindowsName(Path.GetDirectoryName(current)!);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                return false;
             }
         }
-        catch (UnauthorizedAccessException)
-        {
-            // If some folder under that root denies access,
-            // we just return whatever we already collected.
-            return items;
-        }
 
-        return items
-            .OrderByDescending(i => i.IsDirectory)
-            .ThenBy(i => i.Name, StringComparer.OrdinalIgnoreCase);
+        return HasCanonicalWindowsName(path);
     }
 
-    // Open a file for viewing/downloading
-    public (FileStream stream, string contentType, string fileName) OpenFile(string fullPath)
+    private static bool HasCanonicalWindowsName(string path)
     {
-        if (!File.Exists(fullPath))
-        {
-            throw new FileNotFoundException("File not found", fullPath);
-        }
+        if (!OperatingSystem.IsWindows() || PathsEqual(path, Path.GetPathRoot(path)!))
+            return true;
 
-        var stream = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-        var fileName = Path.GetFileName(fullPath);
-        var contentType = GetContentType(fileName);
-
-        return (stream, contentType, fileName);
+        var canonical = new StringBuilder(path.Length + 1);
+        var length = GetLongPathName(path, canonical, (uint)canonical.Capacity);
+        return length > 0 && length < canonical.Capacity && PathsEqual(path, canonical.ToString());
     }
 
-    private static string GetContentType(string fileName)
-    {
-        var ext = Path.GetExtension(fileName).ToLowerInvariant();
+    [DllImport("kernel32.dll", EntryPoint = "GetLongPathNameW", CharSet = CharSet.Unicode)]
+    private static extern uint GetLongPathName(string shortPath, StringBuilder longPath, uint bufferLength);
 
-        return ext switch
-        {
-            ".jpg" or ".jpeg" => "image/jpeg",
-            ".png" => "image/png",
-            ".gif" => "image/gif",
-            ".webp" => "image/webp",
-            ".heic" => "image/heic",
-            ".mp4" => "video/mp4",
-            ".mov" => "video/quicktime",
-            ".avi" => "video/x-msvideo",
-            ".mkv" => "video/x-matroska",
-            ".txt" => "text/plain",
-            ".pdf" => "application/pdf",
-            ".zip" => "application/zip",
-            _ => "application/octet-stream"
-        };
+    private static bool PathsEqual(string first, string second) =>
+        string.Equals(Path.TrimEndingDirectorySeparator(first), Path.TrimEndingDirectorySeparator(second), PathComparison);
+
+    private static bool IsWithin(string path, string directory)
+    {
+        var prefix = Path.EndsInDirectorySeparator(directory) ? directory : directory + Path.DirectorySeparatorChar;
+        return PathsEqual(path, directory) || path.StartsWith(prefix, PathComparison);
     }
 }
