@@ -47,7 +47,7 @@ test('FilePortal release integration', { timeout: 90_000 }, async t => {
     for (const script of html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi))
       new Script(script[1], { filename: name });
   }
-  for (const name of ['app.js', 'theme.js'])
+  for (const name of ['app.js', 'theme.js', 'preview.js'])
     new Script(readFileSync(path.join(publish, 'wwwroot', name), 'utf8'), { filename: name });
 
   writeFileSync(path.join(publish, 'appsettings.json'), JSON.stringify({
@@ -124,6 +124,7 @@ test('FilePortal release integration', { timeout: 90_000 }, async t => {
     const galleryScript = await request('/app.js', 200);
     assert.match(galleryScript.headers.get('content-type'), /javascript/);
     await request('/theme.js', 200);
+    await request('/preview.js', 200);
     await request('/login.html', 200);
     const fileManager = await request('/files.html', 200);
     assert.match(await fileManager.text(), /archiveDownload/);
@@ -212,6 +213,25 @@ test('FilePortal release integration', { timeout: 90_000 }, async t => {
     await request(at('/api/files/delete', newFile), 200, legacy, { method: 'DELETE' });
     assert.equal(existsSync(newFile), false);
 
+    const firstBulk = path.join(allowed, 'Bulk first.txt');
+    const secondBulk = path.join(allowed, 'Bulk second.txt');
+    const missingBulk = path.join(allowed, 'Missing file.txt');
+    writeFileSync(firstBulk, 'first');
+    writeFileSync(secondBulk, 'second');
+    await request('/api/files/batch/delete', 403, legacy, json({ paths: [firstBulk, hidden] }));
+    await request('/api/files/batch/delete', 403, legacy, json({ paths: [allowed, secondBulk] }));
+    assert.equal(existsSync(firstBulk), true);
+    assert.equal(existsSync(secondBulk), true);
+    const deletedBatch = await request('/api/files/batch/delete', 200, legacy, json({
+      paths: [firstBulk, secondBulk, firstBulk, missingBulk]
+    }));
+    const deletedFiles = await deletedBatch.json();
+    assert.deepEqual(deletedFiles.deleted.sort(), [firstBulk, secondBulk].sort());
+    assert.equal(deletedFiles.failures[0].path, missingBulk);
+    assert.equal(existsSync(firstBulk), false);
+    assert.equal(existsSync(secondBulk), false);
+    assert.equal(existsSync(hidden), true);
+
     async function add(username) {
       await request('/api/users', 201, admin, form({ username, password, firstName: 'Fixture', lastName: 'User' }));
     }
@@ -242,6 +262,17 @@ test('FilePortal release integration', { timeout: 90_000 }, async t => {
     await request('/api/users/legacy/folders', 200, admin, json([]));
     await request('/api/photos/' + photoId + '/file', 404, reset);
     await request('/api/sharing/public/' + token + '/photo/' + photoId + '/file', 404);
+    await request('/api/photos/batch/delete', 403, reset, json({ ids: [photoId] }));
+    await request('/api/photos/batch/delete', 404, admin, json({ ids: [photoId, 'missing-id'] }));
+    assert.equal(existsSync(photo), true);
+    const galleryDeletion = await request('/api/photos/batch/delete', 200, admin, json({
+      ids: photoItems.map(item => item.id)
+    }));
+    const deletedPhotos = await galleryDeletion.json();
+    assert.equal(deletedPhotos.deleted, 2);
+    assert.deepEqual(deletedPhotos.deletedIds.sort(), photoItems.map(item => item.id).sort());
+    assert.equal(existsSync(photo), false);
+    assert.equal(existsSync(video), false);
     await request('/api/users/legacy', 204, admin, { method: 'DELETE' });
     await request('/api/auth/me', 401, reset);
 

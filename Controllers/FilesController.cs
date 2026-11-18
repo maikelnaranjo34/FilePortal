@@ -188,24 +188,80 @@ public class FilesController(FileBrowserService browser, ThumbnailService thumbn
     [HttpDelete("delete")]
     public IActionResult Delete([FromQuery] string path)
     {
-        if (!Resolve(path, out var target))
+        if (!TryResolveDeletion(path, out var target))
             return Forbid();
+        var directory = Directory.Exists(target);
+        if (!DeletePath(target))
+            return NotFound(new { error = "Path not found." });
+        return Ok(new { message = directory ? "Directory deleted." : "File deleted." });
+    }
+
+    [HttpPost("batch/delete")]
+    public IActionResult DeleteBatch([FromBody] DeleteBatchRequest request, CancellationToken cancellationToken)
+    {
+        if (request.Paths is null or { Count: 0 } || request.Paths.Any(string.IsNullOrWhiteSpace))
+            return BadRequest(new { error = "Select at least one file or folder." });
+
+        var targets = new Dictionary<string, string>(FileBrowserService.PathComparer);
+        foreach (var path in request.Paths)
+        {
+            if (!TryResolveDeletion(path, out var target))
+                return Forbid();
+            targets.TryAdd(target, path);
+        }
+
+        var deleted = new List<string>();
+        var failures = new List<DeleteFailure>();
+        foreach (var (target, path) in targets.OrderByDescending(entry => entry.Key.Length))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                if (!TryResolveDeletion(target, out _))
+                    failures.Add(new(path, "Access denied."));
+                else if (DeletePath(target))
+                    deleted.Add(path);
+                else
+                    failures.Add(new(path, "The file or folder no longer exists."));
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                failures.Add(new(path, "Could not delete this file or folder."));
+            }
+        }
+        return Ok(new { deleted, failures });
+    }
+
+    private bool TryResolveDeletion(string path, out string target)
+    {
+        if (!Resolve(path, out target))
+            return false;
+        var resolved = target;
+        return browser.CanDeleteTree(resolved) && !Roots.Any(root =>
+            FileBrowserService.PathComparer.Equals(Path.TrimEndingDirectorySeparator(root.Path), resolved));
+    }
+
+    private static bool DeletePath(string target)
+    {
         if (Directory.Exists(target))
         {
-            if (!browser.CanDeleteTree(target) ||
-                Roots.Any(root => FileBrowserService.PathComparer.Equals(Path.TrimEndingDirectorySeparator(root.Path), target)))
-                return Forbid();
-
             Directory.Delete(target, recursive: true);
-            return Ok(new { message = "Directory deleted." });
+            return true;
         }
 
         if (!System.IO.File.Exists(target))
-            return NotFound(new { error = "Path not found." });
+            return false;
 
         System.IO.File.Delete(target);
-        return Ok(new { message = "File deleted." });
+        return true;
     }
+
+    public class DeleteBatchRequest
+    {
+        public List<string> Paths { get; set; } = [];
+    }
+
+    private sealed record DeleteFailure(string Path, string Error);
 
     [HttpGet("thumbnail")]
     public IActionResult GetThumbnail([FromQuery] string path)

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>File Portal</title>
+  <title>File Manager - FilePortal</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     body {
@@ -14,14 +14,15 @@
     .item.selected { box-shadow: 0 0 0 2px rgba(14,165,233,0.18); border:1px solid #0ea5e9 }
     .item.keyboard-selected { box-shadow: 0 0 0 3px #0ea5e9; background: rgba(14,165,233,0.15); }
     .item input[type="checkbox"] { display:none }
-    .item.selection-mode input[type="checkbox"] { display:inline-block }
+    .selection-mode .item input[type="checkbox"] { display:inline-block }
     /* Image viewer modal */
     .image-viewer { display:none; position:fixed; inset:0; background:rgba(2,6,23,0.95); z-index:9999; align-items:center; justify-content:center; }
-    .image-viewer img { max-width:90%; max-height:90vh; object-fit:contain; }
-    .image-viewer-close { position:absolute; top:20px; right:20px; background:#ef4444; color:#fff; border:none; border-radius:50%; width:40px; height:40px; font-size:24px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
-    .image-viewer-close:hover { background:#dc2626; }
-    .image-viewer-delete { position:absolute; top:20px; right:70px; background:#f59e0b; color:#fff; border:none; border-radius:50%; width:40px; height:40px; font-size:20px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
-    .image-viewer-delete:hover { background:#d97706; }
+    .image-viewer { flex-direction:column; }
+    .preview-toolbar { display:flex; justify-content:center; flex-wrap:wrap; gap:6px; padding:8px; }
+    .preview-toolbar button { min-height:44px; }
+    .preview-stage { width:100%; min-height:0; flex:1; display:grid; place-items:center; container-type:size; position:relative; overflow:hidden; }
+    .preview-stage img, .preview-stage video { max-width:100%; max-height:100%; max-width:100cqw; max-height:100cqh; object-fit:contain; }
+    .preview-stage.quarter-turn img, .preview-stage.quarter-turn video { max-width:100cqh; max-height:100cqw; }
     .image-viewer-nav { position:absolute; top:50%; transform:translateY(-50%); background:#0ea5e9; color:#fff; border:none; border-radius:50%; width:50px; height:50px; font-size:24px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
     .image-viewer-nav:hover { background:#0284c7; }
     .image-viewer-nav.prev { left:20px; }
@@ -29,6 +30,7 @@
     .app {
       display: flex;
       height: 100vh;
+      height: 100dvh;
     }
     .sidebar {
       width: 260px;
@@ -69,6 +71,8 @@
     }
     .main {
       flex: 1;
+      min-width:0;
+      min-height:0;
       display: flex;
       flex-direction: column;
     }
@@ -78,6 +82,7 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
+      flex-wrap:wrap;
       gap: 12px;
     }
     .path {
@@ -87,8 +92,9 @@
       overflow: hidden;
       text-overflow: ellipsis;
     }
-    .buttons {
+    .buttons, .selection-toolbar {
       display: flex;
+      flex-wrap:wrap;
       align-items: center;
       gap: 8px;
     }
@@ -223,6 +229,7 @@
       filter: drop-shadow(0 0 2px rgba(0,0,0,0.5));
     }
     .item-info {
+      min-width:0;
       padding: 8px;
       display: flex;
       flex-direction: column;
@@ -302,6 +309,40 @@
       font-size: 12px;
       margin-bottom: 12px;
     }
+    button.danger { background:#b91c1c; color:white; }
+    button:disabled { opacity:.5; cursor:not-allowed; }
+    .mobile-roots-toggle { display:none; }
+    .selection-toolbar { padding:8px 16px; border-bottom:1px solid #1f2937; }
+    .selection-toolbar [hidden] { display:none; }
+    #selectedCountLabel { font-size:13px; color:#9ca3af; }
+    .item-delete { align-self:flex-end; margin:4px 8px 8px; }
+    .selection-mode .item-delete { display:none; }
+    .grid.list-view .item-delete, .grid.details-view .item-delete { align-self:center; margin:0 0 0 4px; }
+    @media (max-width:700px) {
+      .app { flex-direction:column; }
+      .mobile-roots-toggle { display:inline-flex; }
+      .sidebar { display:none; width:100%; max-height:34dvh; overflow:auto; border-right:0; border-bottom:1px solid #1f2937; }
+      .sidebar.mobile-open { display:flex; }
+      .drive-list { flex-shrink:0; }
+      .drive-item { min-height:44px; }
+      .toolbar, .selection-toolbar { padding:6px 10px; gap:6px; }
+      .toolbar .path { flex-basis:100%; }
+      .buttons, .selection-toolbar { gap:6px; }
+      .buttons button, .buttons .btn-like, .selection-toolbar button { min-height:44px; justify-content:center; padding:6px 10px; }
+      #currentUser { display:none !important; }
+      .content { padding:6px 10px; }
+      .grid:not(.list-view):not(.details-view) { grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+      .grid.list-view .item, .grid.details-view .item { height:auto; min-height:56px; padding:0 6px; }
+      .grid.list-view .item-info, .grid.details-view .item-info { align-items:flex-start; flex-direction:column; gap:2px; }
+      .grid.details-view .item-meta, .grid.details-view .item-name { min-width:0; }
+      .item-meta { gap:6px; }
+      .item-delete { min-height:44px; margin:2px 5px 5px; }
+      .item input[type="checkbox"] { width:22px; height:22px; margin:10px; accent-color:#0ea5e9; }
+      .login-box { box-sizing:border-box; width:calc(100% - 24px); padding:20px; }
+      .login-box input { font-size:16px; }
+      .image-viewer-nav.prev { left:6px; }
+      .image-viewer-nav.next { right:6px; }
+    }
   </style>
 </head>
 <body>
@@ -317,7 +358,7 @@
   </div>
 
   <div class="app" style="display:none;" id="mainApp">
-    <div class="sidebar">
+    <div class="sidebar" id="driveSidebar">
       <div class="sidebar-header">Drives & Sources</div>
       <div id="driveList" class="drive-list"></div>
       <div style="margin-top:16px;padding-top:16px;border-top:1px solid #1f2937">
@@ -331,6 +372,7 @@
       <div class="toolbar">
         <div class="path" id="currentPathLabel">Select a drive…</div>
         <div class="buttons">
+          <button id="rootsToggle" class="secondary mobile-roots-toggle" type="button" aria-controls="driveSidebar" aria-expanded="false">Drives</button>
           <div style="position:relative;display:inline-block">
             <button id="uploadBtn" class="btn-like" type="button">⬆️ Upload</button>
             <div id="uploadMenu" style="display:none;position:absolute;right:0;margin-top:6px;background:#0b1220;border:1px solid #1f2937;border-radius:6px;padding:6px;z-index:50;min-width:140px">
@@ -338,11 +380,6 @@
               <div id="uploadFolderOption" style="padding:8px;cursor:pointer;color:#e5e7eb">📁 Upload Folder</div>
             </div>
           </div>
-          <button id="selectBtn" class="btn-like" type="button" style="margin-left:8px">☑️ Select</button>
-          <button id="selectAllBtn" class="btn-like" type="button" style="margin-left:8px;display:none" onclick="selectAll()">☑️ Select All</button>
-          <button id="downloadSelectedBtn" class="btn-like" type="button" style="margin-left:8px;background:#10b981;display:none" onclick="downloadSelected()">⬇️ Download</button>
-          <button id="deleteSelectedBtn" class="btn-like" type="button" style="margin-left:8px;background:#ef4444;display:none" onclick="deleteSelected()">🗑️ Delete Selected</button>
-          <span id="selectedCountLabel" style="color:#9ca3af;font-size:13px;margin-left:8px;display:none"></span>
           <button class="secondary" type="button" onclick="goUp()">⬆️ Up</button>
           <button id="viewTypeBtn" class="secondary" type="button" onclick="toggleViewType()">📋 View</button>
           <a href="/" class="btn-like" style="background:#111827;color:#e5e7eb;padding:6px 10px;">Photos</a>
@@ -351,8 +388,15 @@
           <button id="logoutBtn" class="secondary" style="margin-left:8px; display:none;" type="button" onclick="performLogout()">Logout</button>
         </div>
       </div>
+      <div class="selection-toolbar" aria-label="Selection and deletion">
+        <button id="selectBtn" class="secondary" type="button" aria-pressed="false">Select</button>
+        <button id="selectAllBtn" class="secondary" type="button" hidden onclick="selectAll()">Select all</button>
+        <button id="downloadSelectedBtn" class="secondary" type="button" hidden onclick="downloadSelected()">Download</button>
+        <button id="deleteSelectedBtn" class="danger" type="button" onclick="deleteSelected()">Delete</button>
+        <span id="selectedCountLabel" role="status"></span>
+      </div>
       <div class="content">
-        <div id="error" class="error"></div>
+        <div id="error" class="error" role="status"></div>
         <div id="items" class="grid"></div>
         <div id="emptyMsg" class="empty" style="display:none;">This folder is empty.</div>
       </div>
@@ -363,25 +407,37 @@
   <input id="fileInputFiles" type="file" multiple style="display:none" />
   <input id="fileInputFolder" type="file" multiple webkitdirectory style="display:none" />
 
-  <!-- Image Viewer Modal -->
-  <div id="imageViewer" class="image-viewer">
-    <button class="image-viewer-close" onclick="closeImageViewer()">×</button>
-    <button class="image-viewer-delete" onclick="deleteCurrentImage()">🗑️</button>
-    <button class="image-viewer-nav prev" id="imagePrevBtn" onclick="navigateImage(-1)">‹</button>
-    <button class="image-viewer-nav next" id="imageNextBtn" onclick="navigateImage(1)">›</button>
-    <img id="imageViewerImg" src="" alt="" />
+  <div id="imageViewer" class="image-viewer" role="dialog" aria-modal="true" aria-label="Image preview">
+    <div class="preview-toolbar">
+      <button class="secondary" type="button" onclick="previewRotation.turn(document.getElementById('imageViewerImg'), -90)" aria-label="Rotate image counterclockwise">↶ Left</button>
+      <button class="secondary" type="button" onclick="previewRotation.turn(document.getElementById('imageViewerImg'), 90)" aria-label="Rotate image clockwise">↷ Right</button>
+      <button class="danger" type="button" onclick="deleteCurrentImage()">Delete</button>
+      <button class="secondary" type="button" onclick="closeImageViewer()">Close</button>
+    </div>
+    <div class="preview-stage">
+      <img id="imageViewerImg" alt="" />
+      <button class="image-viewer-nav prev" id="imagePrevBtn" onclick="navigateImage(-1)" aria-label="Previous image">?</button>
+      <button class="image-viewer-nav next" id="imageNextBtn" onclick="navigateImage(1)" aria-label="Next image">?</button>
+    </div>
   </div>
 
-  <!-- Video Viewer Modal -->
-  <div id="videoViewer" class="image-viewer">
-    <button class="image-viewer-close" onclick="closeVideoViewer()">×</button>
-    <button class="image-viewer-delete" onclick="deleteCurrentVideo()">🗑️</button>
-    <video id="videoViewerVideo" controls style="max-width:90%; max-height:90vh;"></video>
+  <div id="videoViewer" class="image-viewer" role="dialog" aria-modal="true" aria-label="Video preview">
+    <div class="preview-toolbar">
+      <button class="secondary" type="button" onclick="previewRotation.turn(document.getElementById('videoViewerVideo'), -90)" aria-label="Rotate video counterclockwise">↶ Left</button>
+      <button class="secondary" type="button" onclick="previewRotation.turn(document.getElementById('videoViewerVideo'), 90)" aria-label="Rotate video clockwise">↷ Right</button>
+      <button class="danger" type="button" onclick="deleteCurrentVideo()">Delete</button>
+      <button class="secondary" type="button" onclick="closeVideoViewer()">Close</button>
+    </div>
+    <div class="preview-stage">
+      <video id="videoViewerVideo" controls playsinline></video>
+    </div>
   </div>
 
+  <script src="/preview.js"></script>
   <iframe id="archiveDownload" name="archiveDownload" title="Archive download" hidden></iframe>
   <script>
     let currentRoot = null;
+    let currentVideoPath = null;
     let currentPath = null;
     let currentFilter = null;
     let currentImageList = [];
@@ -405,10 +461,11 @@
       currentPath = null;
       currentFilter = null;
       currentImageList = [];
-      if (selectionMode) toggleSelectionMode();
+      setSelectionMode(false);
       closeImageViewer();
       closeVideoViewer();
       document.getElementById("items").replaceChildren();
+      updateSelectedCount();
       document.getElementById("driveList").replaceChildren();
       document.getElementById("currentPathLabel").textContent = "Choose a folder";
       document.getElementById("currentUser").textContent = "";
@@ -528,6 +585,7 @@
             document.querySelectorAll(".drive-item").forEach(d => d.classList.remove("active"));
             div.classList.add("active");
             currentRoot = root.path;
+            closeDriveSidebar();
             loadFolder(root.path);
           };
 
@@ -563,10 +621,12 @@
       currentFilter = null;
       document.getElementById("currentPathLabel").textContent = path;
       setError("");
+      setSelectionMode(false);
 
       const itemsEl = document.getElementById("items");
       const emptyMsgEl = document.getElementById("emptyMsg");
-      itemsEl.innerHTML = "Loading…";
+      itemsEl.textContent = "Loading…";
+      updateSelectedCount();
       emptyMsgEl.textContent = "This folder is empty.";
       emptyMsgEl.style.display = "none";
 
@@ -589,77 +649,91 @@
           return;
         }
 
-        items.forEach(item => {
-          const card = document.createElement("div");
-          card.className = "item";
-          card.dataset.path = item.path;
-          card.dataset.item = JSON.stringify(item);
-          card.onclick = () => {
-            if (selectionMode) {
-              // Toggle checkbox
-              const cb = card.querySelector('input[type="checkbox"]');
-              if (cb) cb.checked = !cb.checked;
-              updateSelectedCount();
-            } else {
-              onItemClick(item);
-            }
-          };
-
-          // Checkbox (only visible in selection mode)
-          const checkbox = document.createElement('input');
-          checkbox.type = 'checkbox';
-          checkbox.style.marginRight = '8px';
-          checkbox.style.cursor = 'pointer';
-          checkbox.onclick = (ev) => { ev.stopPropagation(); updateSelectedCount(); };
-
-          // Thumbnail container
-          const thumbContainer = document.createElement("div");
-          thumbContainer.className = "item-thumbnail";
-
-          const thumbImg = document.createElement("img");
-          thumbImg.src = "/api/files/thumbnail?path=" + encodeURIComponent(item.path);
-          thumbImg.alt = item.name;
-          thumbImg.onerror = () => {
-            thumbImg.style.display = "none";
-          };
-
-          thumbContainer.appendChild(thumbImg);
-
-          // Info container
-          const infoContainer = document.createElement("div");
-          infoContainer.className = "item-info";
-
-          const name = document.createElement("div");
-          name.className = "item-name";
-          name.textContent = item.name;
-          name.title = item.name;
-
-          const meta = document.createElement("div");
-          meta.className = "item-meta";
-
-          const left = document.createElement("span");
-          left.textContent = item.isDirectory ? "Folder" : (item.extension || "").toUpperCase();
-
-          const right = document.createElement("span");
-          right.textContent = item.isDirectory ? "" : formatSize(item.size);
-
-          meta.appendChild(left);
-          meta.appendChild(right);
-
-          infoContainer.appendChild(name);
-          infoContainer.appendChild(meta);
-
-          card.appendChild(checkbox);
-          card.appendChild(thumbContainer);
-          card.appendChild(infoContainer);
-          itemsEl.appendChild(card);
-        });
+        renderItems(items);
       } catch (err) {
         console.error(err);
         if (request !== fileRequest) return;
         setError("Failed to load folder: " + err.message);
         itemsEl.innerHTML = "";
       }
+    }
+
+    function renderItems(items) {
+      const fragment = document.createDocumentFragment();
+      items.forEach(item => {
+        const card = document.createElement("div");
+        card.className = "item";
+        card.tabIndex = 0;
+        card.dataset.path = item.path;
+        card.dataset.item = JSON.stringify(item);
+        card.onclick = () => {
+          if (selectionMode) {
+            // Toggle checkbox
+            const cb = card.querySelector('input[type="checkbox"]');
+            if (cb) cb.checked = !cb.checked;
+            updateSelectedCount();
+          } else {
+            onItemClick(item);
+          }
+        };
+        card.onkeydown = event => {
+          if (event.target === card && (event.key === "Enter" || event.key === " ")) {
+            event.preventDefault();
+            card.click();
+          }
+        };
+        // Checkbox (only visible in selection mode)
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.setAttribute('aria-label', 'Select ' + item.name);
+        checkbox.style.cursor = 'pointer';
+        checkbox.onclick = event => event.stopPropagation();
+        checkbox.onchange = updateSelectedCount;
+        // Thumbnail container
+        const thumbContainer = document.createElement("div");
+        thumbContainer.className = "item-thumbnail";
+        const thumbImg = document.createElement("img");
+        thumbImg.src = "/api/files/thumbnail?path=" + encodeURIComponent(item.path);
+        thumbImg.alt = "";
+        thumbImg.loading = "lazy";
+        thumbImg.onerror = () => {
+          thumbImg.style.display = "none";
+        };
+        thumbContainer.appendChild(thumbImg);
+        // Info container
+        const infoContainer = document.createElement("div");
+        infoContainer.className = "item-info";
+        const name = document.createElement("div");
+        name.className = "item-name";
+        name.textContent = item.name;
+        name.title = item.name;
+        const meta = document.createElement("div");
+        meta.className = "item-meta";
+        const left = document.createElement("span");
+        left.textContent = item.isDirectory ? "Folder" : (item.extension || "").toUpperCase();
+        const right = document.createElement("span");
+        right.textContent = item.isDirectory ? "" : formatSize(item.size);
+        meta.appendChild(left);
+        meta.appendChild(right);
+        infoContainer.appendChild(name);
+        infoContainer.appendChild(meta);
+        card.appendChild(checkbox);
+        card.appendChild(thumbContainer);
+        card.appendChild(infoContainer);
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "secondary item-delete";
+        remove.textContent = "Delete";
+        remove.setAttribute("aria-label", "Delete " + item.name);
+        remove.onclick = event => {
+          event.stopPropagation();
+          deleteItems([item]);
+        };
+        card.appendChild(remove);
+        fragment.appendChild(card);
+      });
+      document.getElementById("items").replaceChildren(fragment);
+      updateSelectedCount();
     }
 
     function onItemClick(item) {
@@ -711,7 +785,11 @@
 
     function updateImageViewer() {
       const img = document.getElementById('imageViewerImg');
-      img.src = '/api/files/file?path=' + encodeURIComponent(currentImageList[currentImageIndex]);
+      const source = '/api/files/file?path=' + encodeURIComponent(currentImageList[currentImageIndex]);
+      if (img.getAttribute('src') !== source) {
+        previewRotation.reset(img);
+        img.src = source;
+      }
       img.style.transform = `scale(${imageZoom}) translate(${imagePanX}px, ${imagePanY}px)`;
       img.style.cursor = imageZoom > 1 ? 'grab' : 'default';
       document.getElementById('imagePrevBtn').style.display = currentImageIndex > 0 ? 'flex' : 'none';
@@ -721,6 +799,8 @@
     function showVideoViewer(videoPath) {
       const viewer = document.getElementById('videoViewer');
       const video = document.getElementById('videoViewerVideo');
+      currentVideoPath = videoPath;
+      previewRotation.reset(video);
       video.src = '/api/files/file?path=' + encodeURIComponent(videoPath);
       viewer.style.display = 'flex';
     }
@@ -777,7 +857,8 @@
       const viewer = document.getElementById('imageViewer');
       const img = document.getElementById('imageViewerImg');
       viewer.style.display = 'none';
-      img.src = '';
+      img.removeAttribute('src');
+      previewRotation.reset(img);
       document.removeEventListener('keydown', handleImageViewerKeys);
       img.removeEventListener('wheel', handleImageZoom);
       img.removeEventListener('mousedown', handlePanStart);
@@ -791,97 +872,66 @@
       viewer.style.display = 'none';
       video.pause();
       video.removeAttribute('src');
+      previewRotation.reset(video);
+      currentVideoPath = null;
       video.load();
     }
 
-    async function deleteCurrentVideo() {
-      if (!confirm('Delete this video?')) return;
-      const videoPath = document.getElementById('videoViewerVideo').src.split('path=')[1];
-      if (!videoPath) return;
-      const decodedPath = decodeURIComponent(videoPath);
-      try {
-        const res = await fetch('/api/files/delete?path=' + encodeURIComponent(decodedPath), { method: 'DELETE', credentials: 'include' });
-        if (res.ok) {
-          closeVideoViewer();
-          if (currentFilter) filterByCategory(currentFilter);
-          else loadFolder(currentPath);
-        } else {
-          alert('Failed to delete video');
-        }
-      } catch (err) {
-        alert('Error deleting video: ' + err.message);
-      }
+    function previewItem(path) {
+      const card = Array.from(document.querySelectorAll("#items .item")).find(item => item.dataset.path === path);
+      return card ? JSON.parse(card.dataset.item) : { path, name: path.split(/[/\\]/).pop() };
     }
 
-    async function deleteCurrentImage() {
-      if (!confirm('Delete this image?')) return;
-      const imagePath = currentImageList[currentImageIndex];
-      try {
-        const res = await fetch('/api/files/delete?path=' + encodeURIComponent(imagePath), { method: 'DELETE', credentials: 'include' });
-        if (res.ok) {
-          currentImageList.splice(currentImageIndex, 1);
-          if (currentImageList.length === 0) {
-            closeImageViewer();
-            if (currentFilter) filterByCategory(currentFilter);
-            else loadFolder(currentPath);
-          } else {
-            if (currentImageIndex >= currentImageList.length) currentImageIndex = currentImageList.length - 1;
-            updateImageViewer();
-          }
-        } else {
-          alert('Failed to delete image');
-        }
-      } catch (err) {
-        alert('Error deleting image: ' + err.message);
-      }
+    function deleteCurrentVideo() {
+      if (currentVideoPath) deleteItems([previewItem(currentVideoPath)], closeVideoViewer);
     }
 
-    // Selection mode
+    function deleteCurrentImage() {
+      const path = currentImageList[currentImageIndex];
+      if (path) deleteItems([previewItem(path)], closeImageViewer);
+    }
+
     let selectionMode = false;
-    let viewType = 'tiles'; // 'tiles', 'list', 'details'
+    let deleting = false;
+    let viewType = matchMedia("(max-width: 700px)").matches ? "list" : "tiles";
 
-    function toggleSelectionMode() {
-      selectionMode = !selectionMode;
-      const selectBtn = document.getElementById('selectBtn');
-      const selectAllBtn = document.getElementById('selectAllBtn');
-      const downloadBtn = document.getElementById('downloadSelectedBtn');
-      const deleteBtn = document.getElementById('deleteSelectedBtn');
-      const countLabel = document.getElementById('selectedCountLabel');
-      const items = document.querySelectorAll('.item');
-
-      if (selectionMode) {
-        selectBtn.style.background = '#0ea5e9';
-        selectBtn.style.color = '#081025';
-        selectAllBtn.style.display = 'inline-block';
-        downloadBtn.style.display = 'inline-block';
-        deleteBtn.style.display = 'inline-block';
-        countLabel.style.display = 'inline-block';
-        items.forEach(item => item.classList.add('selection-mode'));
-        updateSelectedCount();
-      } else {
-        selectBtn.style.background = '';
-        selectBtn.style.color = '';
-        selectAllBtn.style.display = 'none';
-        downloadBtn.style.display = 'none';
-        deleteBtn.style.display = 'none';
-        countLabel.style.display = 'none';
-        items.forEach(item => item.classList.remove('selection-mode'));
-        // Uncheck all
-        document.querySelectorAll('.item input[type="checkbox"]').forEach(cb => cb.checked = false);
-      }
+    function setSelectionMode(active) {
+      selectionMode = active;
+      const grid = document.getElementById("items");
+      grid.classList.toggle("selection-mode", active);
+      const select = document.getElementById("selectBtn");
+      select.textContent = active ? "Done" : "Select";
+      select.setAttribute("aria-pressed", active);
+      document.getElementById("selectAllBtn").hidden = !active;
+      document.getElementById("downloadSelectedBtn").hidden = !active;
+      if (!active) grid.querySelectorAll('input[type="checkbox"]:checked').forEach(box => { box.checked = false; });
+      updateSelectedCount();
     }
 
     function updateSelectedCount() {
-      const selected = document.querySelectorAll('.item input[type="checkbox"]:checked').length;
-      document.getElementById('selectedCountLabel').textContent = selected + ' selected';
+      const cards = Array.from(document.querySelectorAll("#items .item"));
+      let selected = 0;
+      for (const card of cards) {
+        const checked = card.querySelector('input[type="checkbox"]').checked;
+        card.classList.toggle("selected", checked);
+        if (checked) selected++;
+      }
+      document.getElementById("selectedCountLabel").textContent = selectionMode ? selected + " selected" : "";
+      document.getElementById("selectAllBtn").textContent =
+        cards.length && cards.length === selected ? "Deselect all" : "Select all";
+      document.getElementById("selectAllBtn").disabled = deleting || cards.length === 0;
+      document.getElementById("selectBtn").disabled = deleting || cards.length === 0;
+      document.getElementById("downloadSelectedBtn").disabled = deleting || selected === 0;
+      const remove = document.getElementById("deleteSelectedBtn");
+      remove.textContent = selected ? "Delete selected (" + selected + ")" : "Delete";
+      remove.disabled = deleting || cards.length === 0;
     }
 
     function selectAll() {
-      const checkboxes = document.querySelectorAll('.item input[type="checkbox"]');
-      const allChecked = Array.from(checkboxes).every(cb => cb.checked);
-      checkboxes.forEach(cb => cb.checked = !allChecked);
+      const boxes = Array.from(document.querySelectorAll('#items .item input[type="checkbox"]'));
+      const allChecked = boxes.every(box => box.checked);
+      boxes.forEach(box => { box.checked = !allChecked; });
       updateSelectedCount();
-      document.getElementById('selectAllBtn').textContent = allChecked ? '☑️ Select All' : '◻️ Deselect All';
     }
 
     function toggleViewType() {
@@ -889,6 +939,10 @@
       const currentIndex = views.indexOf(viewType);
       viewType = views[(currentIndex + 1) % views.length];
 
+      applyViewType();
+    }
+
+    function applyViewType() {
       const grid = document.getElementById('items');
       grid.classList.remove('list-view', 'details-view');
 
@@ -942,44 +996,71 @@
       } catch {}
     });
 
-    async function deleteSelected() {
-      const selected = Array.from(document.querySelectorAll('.item input[type="checkbox"]:checked')).map(cb => cb.parentElement.dataset.path);
-      if (selected.length === 0) { alert('No items selected'); return; }
-      if (!confirm('Delete ' + selected.length + ' item(s)? This cannot be undone.')) return;
-
-      let errors = 0;
-      let lastError = '';
-      for (const path of selected) {
-        try {
-          console.log('Deleting:', path);
-          const res = await fetch('/api/files/delete?path=' + encodeURIComponent(path), { method: 'DELETE', credentials: 'include' });
-          if (!res.ok) {
-            if (res.status === 401) { checkAuth(); return; }
-            const errData = await res.json().catch(() => ({ error: 'HTTP ' + res.status }));
-            lastError = errData.error || 'HTTP ' + res.status;
-            console.error('Delete failed for', path, ':', lastError);
-            errors++;
-          }
-        } catch (err) {
-          lastError = err.message;
-          console.error('Delete error for', path, ':', err);
-          errors++;
-        }
+    function deleteSelected() {
+      const marked = Array.from(document.querySelectorAll('#items .item input[type="checkbox"]:checked'));
+      if (!marked.length) {
+        setSelectionMode(true);
+        setError("Select the files or folders to delete.");
+        return;
       }
+      deleteItems(marked.map(checkbox => JSON.parse(checkbox.closest(".item").dataset.item)));
+    }
 
-      if (errors > 0) alert('Failed to delete ' + errors + ' item(s). Error: ' + lastError);
-      else alert('Deleted ' + selected.length + ' item(s)');
-      // Refresh current view (filter or folder)
-      toggleSelectionMode();
-      if (currentFilter) {
-        filterByCategory(currentFilter);
-      } else {
-        loadFolder(currentPath || currentRoot);
+    async function deleteItems(items, closePreview) {
+      if (deleting || !items.length) return;
+      const subject = items.length === 1 ? '"' + items[0].name + '"' : items.length + " selected items";
+      const recursive = items.some(item => item.isDirectory) ? " Selected folders and everything inside them will be removed." : "";
+      if (!confirm("Permanently delete " + subject + "?" + recursive)) return;
+
+      deleting = true;
+      updateSelectedCount();
+      const viewAtStart = fileRequest;
+      try {
+        const response = await fetch("/api/files/batch/delete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ paths: items.map(item => item.path) })
+        });
+        if (response.status === 401) {
+          closePreview?.();
+          await checkAuth();
+          return;
+        }
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Could not delete the selection.");
+
+        if (result.deleted.length) closePreview?.();
+        if (viewAtStart === fileRequest) {
+          if (currentFilter) await filterByCategory(currentFilter);
+          else await loadFolder(currentPath);
+        }
+        const count = result.deleted.length;
+        const failures = result.failures.length;
+        const summary = count + (count === 1 ? " item deleted." : " items deleted.") +
+          (failures ? " " + failures + " could not be deleted." : "");
+        if (closePreview && !count) alert(summary);
+        else setError(summary);
+      } catch (error) {
+        if (closePreview) alert(error.message);
+        else setError(error.message);
+      } finally {
+        deleting = false;
+        updateSelectedCount();
       }
     }
 
-    // Wire up Select button
-    document.getElementById('selectBtn').addEventListener('click', toggleSelectionMode);
+    const rootsToggle = document.getElementById("rootsToggle");
+    const driveSidebar = document.getElementById("driveSidebar");
+    function closeDriveSidebar() {
+      driveSidebar.classList.remove("mobile-open");
+      rootsToggle.setAttribute("aria-expanded", "false");
+    }
+    rootsToggle.addEventListener("click", () => {
+      rootsToggle.setAttribute("aria-expanded", driveSidebar.classList.toggle("mobile-open"));
+    });
+    document.getElementById("selectBtn").addEventListener("click", () => setSelectionMode(!selectionMode));
+    applyViewType();
+    updateSelectedCount();
 
     function goUp() {
       if (!currentPath || !currentRoot) return;
@@ -1095,10 +1176,12 @@
 
       document.getElementById("currentPathLabel").textContent = currentRoot + ' - ' + category.charAt(0).toUpperCase() + category.slice(1);
       setError("");
+      setSelectionMode(false);
 
       const itemsEl = document.getElementById("items");
       const emptyMsgEl = document.getElementById("emptyMsg");
       itemsEl.textContent = "Searching for " + category + "...";
+      updateSelectedCount();
       emptyMsgEl.style.display = "none";
 
       try {
@@ -1121,67 +1204,7 @@
           return;
         }
 
-        items.forEach(item => {
-          const card = document.createElement("div");
-          card.className = "item";
-          card.dataset.path = item.path;
-          card.dataset.item = JSON.stringify(item);
-          card.onclick = () => {
-            if (selectionMode) {
-              const cb = card.querySelector('input[type="checkbox"]');
-              if (cb) cb.checked = !cb.checked;
-              updateSelectedCount();
-            } else {
-              onItemClick(item);
-            }
-          };
-
-          const checkbox = document.createElement('input');
-          checkbox.type = 'checkbox';
-          checkbox.style.marginRight = '8px';
-          checkbox.style.cursor = 'pointer';
-          checkbox.onclick = (ev) => { ev.stopPropagation(); updateSelectedCount(); };
-
-          const thumbContainer = document.createElement("div");
-          thumbContainer.className = "item-thumbnail";
-
-          const thumbImg = document.createElement("img");
-          thumbImg.src = "/api/files/thumbnail?path=" + encodeURIComponent(item.path);
-          thumbImg.alt = item.name;
-          thumbImg.onerror = () => {
-            thumbImg.style.display = "none";
-          };
-
-          thumbContainer.appendChild(thumbImg);
-
-          const infoContainer = document.createElement("div");
-          infoContainer.className = "item-info";
-
-          const name = document.createElement("div");
-          name.className = "item-name";
-          name.textContent = item.name;
-          name.title = item.name;
-
-          const meta = document.createElement("div");
-          meta.className = "item-meta";
-
-          const left = document.createElement("span");
-          left.textContent = (item.extension || "").toUpperCase();
-
-          const right = document.createElement("span");
-          right.textContent = formatSize(item.size);
-
-          meta.appendChild(left);
-          meta.appendChild(right);
-
-          infoContainer.appendChild(name);
-          infoContainer.appendChild(meta);
-
-          card.appendChild(checkbox);
-          card.appendChild(thumbContainer);
-          card.appendChild(infoContainer);
-          itemsEl.appendChild(card);
-        });
+        renderItems(items);
       } catch (err) {
         console.error(err);
         if (request !== fileRequest) return;

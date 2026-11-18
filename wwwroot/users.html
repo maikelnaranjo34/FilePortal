@@ -7,13 +7,21 @@
   <style>
     body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background:#020617; color:#e5e7eb; padding:20px }
     .box { max-width:720px; margin:0 auto }
-    input { width:100%; padding:8px; margin:6px 0; border-radius:6px; border:1px solid #374151; background:#111827; color:#e5e7eb }
+    input { box-sizing:border-box; width:100%; padding:8px; margin:6px 0; border-radius:6px; border:1px solid #374151; background:#111827; color:#e5e7eb }
+    input[type="checkbox"] { width:auto }
     button { background:#0ea5e9; color:#081025; padding:8px 12px; border-radius:8px; border:none; cursor:pointer; margin-right:6px }
     button:disabled { background:#6b7280; cursor:not-allowed }
     .user { display:flex; justify-content:space-between; align-items:center; padding:8px; border:1px solid #1f2937; border-radius:6px; margin-bottom:6px }
     a.back { color:#9ca3af; text-decoration:none; display:inline-block; margin-bottom:12px }
     .folder-list { background:#111827; border:1px solid #1f2937; border-radius:6px; padding:10px; margin:10px 0; max-height:200px; overflow-y:auto }
     .folder-item { padding:6px; background:#0b1220; border-radius:4px; margin:4px 0; font-size:12px; color:#9ca3af; word-break:break-all }
+    .account-dialog { box-sizing:border-box; width:min(500px, calc(100% - 24px)); min-width:0; }
+    @media (max-width:700px) {
+      body { padding:12px }
+      .user { flex-wrap:wrap; gap:6px }
+      button, a.back { min-height:44px }
+      input { font-size:16px }
+    }
   </style>
 </head>
 <body>
@@ -28,7 +36,7 @@
 
     <!-- Change Password Modal -->
     <div id="pwModal" style="display:none;position:fixed;inset:0;align-items:center;justify-content:center;background:rgba(2,6,23,0.6);z-index:1000">
-      <div style="background:#0b1220;padding:16px;border:1px solid #1f2937;border-radius:8px;min-width:320px">
+      <div class="account-dialog" style="background:#0b1220;padding:16px;border:1px solid #1f2937;border-radius:8px">
         <h3 style="margin-top:0">Change password for <span id="pwFor"></span></h3>
         <div id="pwMsg" style="color:#f97373;margin-bottom:6px"></div>
         <div id="pwCurrentWrap">
@@ -45,7 +53,7 @@
 
     <!-- Folder Access Modal -->
     <div id="folderModal" style="display:none;position:fixed;inset:0;align-items:center;justify-content:center;background:rgba(2,6,23,0.6);z-index:1000;overflow-y:auto">
-      <div style="background:#0b1220;padding:16px;border:1px solid #1f2937;border-radius:8px;min-width:500px;margin:40px auto;max-height:80vh;display:flex;flex-direction:column">
+      <div class="account-dialog" style="background:#0b1220;padding:16px;border:1px solid #1f2937;border-radius:8px;margin:20px auto;max-height:88dvh;display:flex;flex-direction:column">
         <h3 style="margin-top:0;margin-bottom:12px">Set Folder Access for <span id="folderFor"></span></h3>
         <p style="color:#9ca3af;font-size:12px;margin-bottom:12px">Browse and select folders. Click a folder name to navigate into it.</p>
         

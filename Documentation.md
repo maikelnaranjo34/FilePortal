@@ -62,14 +62,15 @@ File endpoints require sign-in and enforce the caller's folder access.
 | Method | Route | Behavior |
 | --- | --- | --- |
 | GET | `/api/files/roots` | Returns configured roots for administrators and available assigned folders for regular users. |
-| GET | `/api/files/folder`path=` | Lists folder contents. |
-| GET | `/api/files/browse`path=` | Lists subfolders for the administrator folder picker. |
-| GET | `/api/files/category`path=&category=&maxResults=` | Searches recursively for pictures, videos, or documents. The default result limit is 500. |
-| GET | `/api/files/thumbnail`path=` | Returns a JPEG thumbnail or a file-type icon. |
-| GET | `/api/files/file`path=` | Serves a file inline with byte-range support. |
-| GET | `/api/files/open`path=` | Downloads a single file as an attachment. |
-| POST | `/api/files/upload`targetPath=` | Accepts multipart fields named `files`. The app's limit is 10 GB, subject to hosting limits. |
-| DELETE | `/api/files/delete`path=` | Removes a file or recursively removes a directory. |
+| GET | `/api/files/folder?path=` | Lists folder contents. |
+| GET | `/api/files/browse?path=` | Lists subfolders for the administrator folder picker. |
+| GET | `/api/files/category?path=&category=&maxResults=` | Searches recursively for pictures, videos, or documents. The default result limit is 500. |
+| GET | `/api/files/thumbnail?path=` | Returns a JPEG thumbnail or a file-type icon. |
+| GET | `/api/files/file?path=` | Serves a file inline with byte-range support. |
+| GET | `/api/files/open?path=` | Downloads a single file as an attachment. |
+| POST | `/api/files/upload?targetPath=` | Accepts multipart fields named `files`. The app's limit is 10 GB, subject to hosting limits. |
+| DELETE | `/api/files/delete?path=` | Removes a file or recursively removes a directory. |
+| POST | `/api/files/batch/delete` | Accepts a JSON `paths` array. Checks access for the full selection before deleting and returns successful paths and failures. |
 | POST | `/api/files/download-zip` | Accepts a JSON object with a `paths` array. |
 | POST | `/api/files/download-zip-form` | Accepts repeated `paths` form fields for a native browser download. |
 
@@ -91,6 +92,10 @@ File endpoints require sign-in and enforce the caller's folder access.
 `index.html` is the Photos landing page. It serves Photos, Albums, Favorites, and Search after sign-in. File Manager remains available at `/files.html`, and `/portal.html` redirects to the landing page. The frontend checks `/api/auth/me` on load. Letter keys cycle through matching items in File Manager. API responses use camelCase.
 
 The gallery uses the same folder access policy as File Manager. Its metadata cache, albums, favorites, and share records are stored in the application data directory. Set `PhotoLibrary__ScanRoots__0` and subsequent entries to narrow the scanned folders to paths within configured roots. An empty scan list uses all configured roots.
+
+On Android and other narrow screens, File Manager uses a compact list and a **Drives** toggle. Tap **Delete** beside a file for individual deletion. To remove several items, tap **Select**, select the items or choose **Select all**, then tap **Delete selected** and confirm. Deletion respects assigned folders, and deleting a folder removes its contents.
+
+In Photos, administrators can delete an item from its preview or use **Select** and **Delete selected**. Image and video previews provide clockwise and counterclockwise rotation. Rotation applies to the preview and leaves the stored media intact.
 
 Videos support byte-range responses for seeking. ZIP archives are prepared in the protected data directory, then downloaded by the browser and removed when the response closes. Thumbnails for JPEG, PNG, GIF, BMP, and WebP are generated with SkiaSharp at up to 240 pixels per side and cached in memory.
 

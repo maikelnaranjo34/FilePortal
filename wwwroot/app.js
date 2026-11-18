@@ -12,6 +12,7 @@
     flat: [],          // flat ordered list of photo dtos for the current view (for lightbox nav)
     selection: new Set(),
     selectMode: false,
+    deleting: false,
     lb: { index: -1, slideshow: null, infoOpen: false },
     albumsCache: null,
   };
@@ -91,22 +92,39 @@
   });
 
   // ---------- selection ----------
-  function clearSelection() { state.selection.clear(); state.selectMode = false; syncSelectionUI(); }
-  function toggleSelect(id) {
-    if (state.selection.has(id)) state.selection.delete(id);
-    else state.selection.add(id);
-    state.selectMode = state.selection.size > 0;
+  function clearSelection() {
+    state.selection.clear();
+    state.selectMode = false;
     syncSelectionUI();
   }
+
+  function toggleSelect(id) {
+    if (state.deleting) return;
+    state.selectMode = true;
+    if (state.selection.has(id)) state.selection.delete(id);
+    else state.selection.add(id);
+    syncSelectionUI();
+  }
+
   function syncSelectionUI() {
-    document.querySelectorAll(".tile").forEach(t =>
-      t.classList.toggle("selected", state.selection.has(t.dataset.id)));
+    main.classList.toggle("is-selecting", state.selectMode);
+    main.querySelectorAll(".tile").forEach(tile => {
+      const selected = state.selection.has(tile.dataset.id);
+      tile.classList.toggle("selected", selected);
+      tile.querySelector(".check")?.setAttribute("aria-pressed", selected);
+    });
     const bar = document.getElementById("selbar");
-    if (bar) {
-      bar.classList.toggle("show", state.selection.size > 0);
-      const cnt = bar.querySelector(".cnt");
-      if (cnt) cnt.textContent = state.selection.size + " selected";
-    }
+    if (!bar) return;
+    const select = bar.querySelector(".select-toggle");
+    select.textContent = state.selectMode ? "Done" : "Select";
+    select.setAttribute("aria-pressed", state.selectMode);
+    select.disabled = state.deleting;
+    bar.querySelector(".cnt").textContent = state.selectMode ? state.selection.size + " selected" : "";
+    const actions = bar.querySelector(".actions");
+    actions.hidden = !state.selectMode;
+    actions.querySelectorAll("button").forEach(button => {
+      button.disabled = state.deleting || state.selection.size === 0;
+    });
   }
 
   // ---------- tile factory ----------
@@ -134,20 +152,32 @@
   function selectionBar() {
     const bar = el("div", "selbar");
     bar.id = "selbar";
-    bar.appendChild(el("span", "cnt", "0 selected"));
-    const addBtn = el("button", "btn", "➕ Add to album");
-    const dlBtn = el("button", "btn", "⬇️ Download");
-    const favBtn = el("button", "btn", "⭐ Favorite");
-    const delBtn = el("button", "btn danger", "🗑️ Delete");
-    const clr = el("button", "btn", "Clear");
-    addBtn.onclick = () => openAddToAlbum([...state.selection]);
-    dlBtn.onclick = () => downloadZip([...state.selection]);
-    favBtn.onclick = () => batchFavorite([...state.selection]);
-    delBtn.onclick = () => batchDelete([...state.selection]);
-    clr.onclick = clearSelection;
-    bar.appendChild(addBtn); bar.appendChild(dlBtn); bar.appendChild(favBtn);
-    if (state.me && state.me.isAdmin) bar.appendChild(delBtn);
-    bar.appendChild(clr);
+    const select = el("button", "btn select-toggle", "Select");
+    select.type = "button";
+    select.setAttribute("aria-pressed", "false");
+    select.onclick = () => {
+      if (state.selectMode) clearSelection();
+      else {
+        state.selectMode = true;
+        syncSelectionUI();
+      }
+    };
+    const count = el("span", "cnt");
+    count.setAttribute("role", "status");
+    const actions = el("div", "actions");
+    actions.hidden = true;
+    const add = (label, action, style = "") => {
+      const button = el("button", "btn " + style, label);
+      button.type = "button";
+      button.disabled = true;
+      button.onclick = () => action([...state.selection]);
+      actions.appendChild(button);
+    };
+    if (state.me?.isAdmin) add("Delete selected", batchDelete, "danger");
+    add("Download", downloadZip);
+    add("Favorite", batchFavorite);
+    add("Add to album", openAddToAlbum);
+    bar.append(select, count, actions);
     return bar;
   }
 
@@ -485,14 +515,40 @@
     } catch (e) { toast("Error: " + e.message); }
   }
   async function batchDelete(ids) {
-    if (!confirm("Permanently delete " + ids.length + " file(s) from disk? This cannot be undone.")) return;
+    if (state.deleting || !ids.length || !state.me?.isAdmin) return;
+    const item = ids.length === 1 && state.flat.find(photo => photo.id === ids[0]);
+    const subject = item ? '"' + item.fileName + '"' : ids.length + " selected files";
+    if (!confirm("Permanently delete " + subject + " from disk?")) return;
+
+    state.deleting = true;
+    lbDelete.disabled = true;
+    syncSelectionUI();
     try {
-      const r = await apiJson("/api/photos/batch/delete", { method: "POST",
+      const result = await apiJson("/api/photos/batch/delete", { method: "POST",
         headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }) });
-      toast("Deleted " + r.deleted + " file(s)");
-      clearSelection();
-      ids.forEach(id => document.querySelector(`.tile[data-id="${id}"]`)?.remove());
-    } catch (e) { toast("Error: " + e.message); }
+      const deleted = new Set(result.deletedIds);
+      if (deleted.has(state.flat[state.lb.index]?.id)) closeLightbox();
+      state.flat = state.flat.filter(photo => !deleted.has(photo.id));
+      main.querySelectorAll(".tile").forEach(tile => {
+        if (deleted.has(tile.dataset.id)) tile.remove();
+      });
+      for (const id of deleted) state.selection.delete(id);
+      const heading = document.getElementById("tlSub");
+      if (heading && deleted.size) {
+        state.timeline.total = Math.max(0, state.timeline.total - deleted.size);
+        state.timeline.skip = Math.max(0, state.timeline.skip - deleted.size);
+        heading.textContent = state.timeline.total + (state.timeline.favorites ? " favorites" : " items");
+      }
+      if (!state.selection.size) clearSelection();
+      toast(result.deleted + (result.deleted === 1 ? " file deleted." : " files deleted.") +
+        (result.errors.length ? " " + result.errors.length + " could not be deleted." : ""));
+    } catch (error) {
+      if (error.message !== "unauth") toast(error.message);
+    } finally {
+      state.deleting = false;
+      lbDelete.disabled = false;
+      syncSelectionUI();
+    }
   }
 
   // ====================================================================
@@ -527,6 +583,7 @@
   const lbInfo = document.getElementById("lbInfo");
   const lbInfoBody = document.getElementById("lbInfoBody");
   const lbFav = document.getElementById("lbFav");
+  const lbDelete = document.getElementById("lbDelete");
 
   function openLightbox(id) {
     const idx = state.flat.findIndex(p => p.id === id);
@@ -538,16 +595,19 @@
   function closeLightbox() {
     lb.classList.remove("show");
     stopSlideshow();
-    lbMedia.innerHTML = "";
+    lbMedia.replaceChildren();
+    lbMedia.classList.remove("quarter-turn");
   }
   async function showLbItem() {
     const p = state.flat[state.lb.index];
     if (!p) return;
     lbTitle.textContent = p.fileName || "";
-    lbMedia.innerHTML = "";
+    lbDelete.hidden = !state.me?.isAdmin;
+    lbMedia.replaceChildren();
+    lbMedia.classList.remove("quarter-turn");
     if (p.isVideo) {
       const v = document.createElement("video");
-      v.src = fileUrl(p.id); v.controls = true; v.autoplay = true;
+      v.src = fileUrl(p.id); v.controls = true; v.autoplay = true; v.playsInline = true;
       lbMedia.appendChild(v);
     } else {
       const img = document.createElement("img");
@@ -617,6 +677,12 @@
   document.getElementById("lbNext").onclick = () => lbNav(1);
   document.getElementById("lbInfoBtn").onclick = toggleInfo;
   document.getElementById("lbFav").onclick = toggleLbFav;
+  document.getElementById("lbRotateLeft").onclick = () => previewRotation.turn(lbMedia.firstElementChild, -90);
+  document.getElementById("lbRotateRight").onclick = () => previewRotation.turn(lbMedia.firstElementChild, 90);
+  lbDelete.onclick = () => {
+    const item = state.flat[state.lb.index];
+    if (item) batchDelete([item.id]);
+  };
   document.getElementById("lbSlideshow").onclick = startSlideshow;
   document.getElementById("lbFull").onclick = toggleFullscreen;
   document.getElementById("lbDownload").onclick = () => {

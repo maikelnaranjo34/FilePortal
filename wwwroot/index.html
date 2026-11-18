@@ -23,7 +23,7 @@ button{font-family:inherit}
 a{color:inherit;text-decoration:none}
 
 /* Layout */
-.app{display:grid;grid-template-rows:60px 1fr;height:100vh}
+.app{display:grid;grid-template-rows:60px 1fr;height:100vh;height:100dvh}
 .topbar{display:flex;align-items:center;gap:16px;padding:0 18px;border-bottom:1px solid var(--line);background:var(--panel)}
 .brand{display:flex;align-items:center;gap:10px;font-weight:600;font-size:18px;min-width:160px}
 .brand .dot{width:28px;height:28px;border-radius:50%;background:conic-gradient(#ef4444,#f59e0b,#10b981,#3b82f6,#a855f7,#ef4444)}
@@ -36,7 +36,7 @@ a{color:inherit;text-decoration:none}
 .iconbtn:hover{background:var(--panel2)}
 .avatar{width:36px;height:36px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-weight:600;cursor:pointer}
 
-.body{display:grid;grid-template-columns:220px 1fr;min-height:0}
+.body{display:grid;grid-template-columns:220px minmax(0,1fr);min-height:0}
 .nav{border-right:1px solid var(--line);background:var(--panel);padding:14px 10px;display:flex;flex-direction:column;gap:4px}
 .nav a{display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:999px;color:var(--muted);cursor:pointer;font-size:14px}
 .nav a:hover{background:var(--panel2);color:var(--text)}
@@ -58,8 +58,8 @@ a{color:inherit;text-decoration:none}
 .tile .vbadge{position:absolute;left:8px;bottom:8px;background:rgba(0,0,0,.6);border-radius:4px;padding:1px 6px;font-size:11px}
 .tile .star{position:absolute;right:8px;bottom:8px;color:var(--star);font-size:15px;text-shadow:0 1px 3px rgba(0,0,0,.7);display:none}
 .tile.fav .star{display:block}
-.tile .check{position:absolute;left:8px;top:8px;width:22px;height:22px;border-radius:50%;border:2px solid #fff;background:rgba(0,0,0,.35);display:none;align-items:center;justify-content:center;font-size:13px}
-.tile:hover .check{display:flex}
+.tile .check{color:white;cursor:pointer;position:absolute;left:8px;top:8px;width:22px;height:22px;border-radius:50%;border:2px solid #fff;background:rgba(0,0,0,.35);display:none;align-items:center;justify-content:center;font-size:13px}
+.tile:hover .check,.tile:focus-within .check,.is-selecting .tile .check{display:flex}
 .tile.selected .check{display:flex;background:var(--accent);border-color:var(--accent)}
 .tile.selected{outline:3px solid var(--accent);outline-offset:-3px}
 .tile.selected img{transform:scale(.86);transition:transform .12s}
@@ -86,8 +86,10 @@ a{color:inherit;text-decoration:none}
 
 /* Selection bar */
 .selbar{position:sticky;top:-18px;z-index:5;background:var(--panel);border:1px solid var(--line);border-radius:12px;
-  padding:10px 14px;display:none;align-items:center;gap:10px;margin-bottom:14px}
-.selbar.show{display:flex}
+  padding:9px 12px;display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:14px}
+.selbar [hidden], .lbtop [hidden]{display:none}
+.selbar .actions{display:flex;flex-wrap:wrap;gap:8px}
+.selbar button:disabled{opacity:.55;cursor:not-allowed}
 .selbar .cnt{font-weight:600;margin-right:auto}
 
 /* Search filters */
@@ -99,11 +101,13 @@ a{color:inherit;text-decoration:none}
 /* Lightbox */
 .lb{position:fixed;inset:0;background:rgba(0,0,0,.94);z-index:50;display:none;flex-direction:column}
 .lb.show{display:flex}
-.lb .lbtop{display:flex;align-items:center;gap:8px;padding:12px 16px;color:#fff}
+.lb .lbtop{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:12px 16px;color:#fff}
 .lb .lbtop .ttl{font-size:14px;max-width:40vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .lb .lbtop .spacer{flex:1}
 .lb .stage{flex:1;display:flex;align-items:center;justify-content:center;position:relative;min-height:0}
-.lb .stage img,.lb .stage video{max-width:92vw;max-height:82vh;object-fit:contain}
+#lbMedia{display:grid;place-items:center;container-type:size;width:100%;height:100%;overflow:hidden}
+#lbMedia img,#lbMedia video{max-width:100%;max-height:100%;max-width:100cqw;max-height:100cqh;object-fit:contain}
+#lbMedia.quarter-turn img,#lbMedia.quarter-turn video{max-width:100cqh;max-height:100cqw}
 .lb .navbtn{position:absolute;top:50%;transform:translateY(-50%);background:rgba(255,255,255,.1);border:none;color:#fff;
   width:48px;height:48px;border-radius:50%;font-size:22px;cursor:pointer}
 .lb .navbtn:hover{background:rgba(255,255,255,.22)}
@@ -111,6 +115,7 @@ a{color:inherit;text-decoration:none}
 .lb .info{position:absolute;right:0;top:0;bottom:0;width:330px;background:var(--panel);border-left:1px solid var(--line);
   padding:18px;overflow-y:auto;transform:translateX(100%);transition:transform .25s}
 .lb .info.show{transform:translateX(0)}
+.lb .stage{overflow:hidden}
 .lb .info h4{margin:0 0 14px;font-size:16px}
 .lb .info .row{display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);font-size:13px}
 .lb .info .row .k{color:var(--muted);min-width:96px}
@@ -132,6 +137,36 @@ a{color:inherit;text-decoration:none}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--toast-bg);border:1px solid var(--line);
   color:#fff;padding:11px 18px;border-radius:10px;font-size:13px;z-index:80;opacity:0;transition:opacity .25s;pointer-events:none}
 .toast.show{opacity:1}
+@media (max-width:700px){
+  .app{grid-template-rows:auto minmax(0,1fr)}
+  .topbar{flex-wrap:wrap;gap:6px;padding:6px 10px}
+  .brand{min-width:0;font-size:16px}
+  .search{order:1;flex-basis:100%;max-width:none}
+  .search input,.filters input,.filters select,.modal input,.modal textarea,.modal select{font-size:16px}
+  .topbar .iconbtn,.topbar .avatar,.lbtop .iconbtn,.btn{min-width:44px;min-height:44px}
+  .body{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}
+  .nav{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));padding:4px 6px;border-right:0;border-bottom:1px solid var(--line)}
+  .nav a{justify-content:center;min-height:44px;text-align:center;padding:3px;font-size:12px;gap:3px}
+  .nav a span,.nav .sep{display:none}
+  .main{padding:8px 8px 54px}
+  .viewhead{flex-wrap:wrap;gap:6px}
+  .viewhead h2{font-size:19px}
+  .grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:4px}
+  .albumgrid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .tile .check{width:44px;height:44px;top:2px;left:2px}
+  .selbar{top:-8px;padding:6px;gap:6px}
+  .selbar .actions{gap:6px}
+  .selbar .btn{padding:6px 8px}
+  .filters .f{flex:1 1 min(120px,100%);min-width:0}
+  .filters input,.filters select{min-width:0;width:100%}
+  .lb .lbtop{gap:4px;padding:4px}
+  .lb .lbtop .ttl{order:-1;max-width:none;flex-basis:100%}
+  .lb .lbtop .spacer{display:none}
+  .lb .info{width:min(330px,85vw)}
+  .lb .prev{left:4px}.lb .next{right:4px}
+  .modal .box{padding:14px;max-height:90dvh;overflow:auto}
+}
+@media (pointer:coarse){.tile .check{display:flex}}
 </style>
 </head>
 <body>
@@ -145,7 +180,7 @@ a{color:inherit;text-decoration:none}
     <div class="spacer"></div>
     <button class="iconbtn" id="scanBtn" title="Rescan library" style="display:none">🔄</button>
     <a class="iconbtn" href="/files.html" title="File manager">🗂️</a>
-    <div class="avatar" id="avatar" title="Account">U</div>
+    <a class="avatar" id="avatar" href="/users.html" title="Account" aria-label="My account">U</a>
   </div>
 
   <div class="body">
@@ -156,7 +191,7 @@ a{color:inherit;text-decoration:none}
       <a href="#search" data-view="search"><span>🔎</span> Search</a>
       <div class="sep"></div>
       <a href="/files.html"><span>🗂️</span> File manager</a>
-      <a href="/users.html" id="navUsers" style="display:none"><span>👥</span> Manage users</a>
+      <a href="/users.html" id="navUsers"><span>👥</span> My account</a>
       <div class="sep"></div>
       <a href="/login.html" id="navLogout"><span>🚪</span> Sign out</a>
     </nav>
@@ -168,11 +203,14 @@ a{color:inherit;text-decoration:none}
 </div>
 
 <!-- Lightbox -->
-<div class="lb" id="lightbox">
+<div class="lb" id="lightbox" role="dialog" aria-modal="true" aria-label="Photo preview">
   <div class="lbtop">
     <button class="iconbtn" id="lbClose">✕</button>
     <span class="ttl" id="lbTitle"></span>
     <span class="spacer"></span>
+    <button class="iconbtn" id="lbRotateLeft" title="Rotate counterclockwise" aria-label="Rotate counterclockwise">↶</button>
+    <button class="iconbtn" id="lbRotateRight" title="Rotate clockwise" aria-label="Rotate clockwise">↷</button>
+    <button class="btn danger" id="lbDelete" type="button" hidden>Delete</button>
     <button class="iconbtn" id="lbFav" title="Favorite">☆</button>
     <button class="iconbtn" id="lbSlideshow" title="Slideshow">▶️</button>
     <button class="iconbtn" id="lbShare" title="Share">🔗</button>
@@ -192,9 +230,10 @@ a{color:inherit;text-decoration:none}
 </div>
 
 <div class="modal" id="modal"><div class="box" id="modalBox"></div></div>
-<div class="toast" id="toast"></div>
+<div class="toast" id="toast" role="status"></div>
 
 <iframe id="galleryDownload" name="galleryDownload" title="Photo archive download" hidden></iframe>
-<script src="/app.js?v=gallery"></script>
+<script src="/preview.js"></script>
+<script src="/app.js?v=mobile"></script>
 </body>
 </html>

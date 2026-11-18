@@ -186,8 +186,12 @@ namespace FilePortal.Controllers
             if (req?.Ids == null || req.Ids.Count == 0)
                 return BadRequest(new { error = "No ids provided" });
 
-            var photos = _library.GetByIds(req.Ids, CurrentUser);
-            var deleted = 0;
+            var ids = req.Ids.Distinct(StringComparer.Ordinal).ToList();
+            var photos = _library.GetByIds(ids, CurrentUser);
+            if (photos.Count != ids.Count)
+                return NotFound(new { error = "One or more photos are missing or inaccessible." });
+
+            var deletedIds = new List<string>();
             var errors = new List<string>();
             foreach (var p in photos)
             {
@@ -196,13 +200,18 @@ namespace FilePortal.Controllers
                     if (System.IO.File.Exists(p.FullPath))
                     {
                         System.IO.File.Delete(p.FullPath);
-                        deleted++;
+                        deletedIds.Add(p.Id);
                     }
+                    else
+                        errors.Add($"{p.FileName}: File no longer exists.");
                 }
-                catch (Exception ex) { errors.Add($"{p.FileName}: {ex.Message}"); }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    errors.Add($"{p.FileName}: Could not delete this file.");
+                }
             }
             _library.ForgetMissing(photos);
-            return Ok(new { deleted, errors });
+            return Ok(new { deleted = deletedIds.Count, deletedIds, errors });
         }
 
         // POST /api/photos/batch/download  -> zip of selected photos
