@@ -171,6 +171,22 @@ body.fn-page, body.fn-workspace {
 .fn-assistant-message p { margin:3px 0 0; white-space:pre-wrap; overflow-wrap:anywhere; }
 .fn-assistant-form { display:flex; align-items:flex-end; gap:8px; margin:10px 0; }
 .fn-assistant-form textarea { box-sizing:border-box; flex:1; min-width:0; resize:vertical; padding:9px; border:1px solid var(--fn-line); border-radius:10px; color:var(--fn-ink); background:var(--fn-surface); font:inherit; }
+[data-nesti] { transform-origin:50% 72%; will-change:transform,filter; }
+[data-nesti].nesti-idle { animation:nesti-idle 3.4s ease-in-out infinite; }
+[data-nesti].nesti-listening { animation:nesti-listening .85s ease-in-out infinite; filter:drop-shadow(0 0 11px #40f5df); }
+[data-nesti].nesti-thinking { animation:nesti-thinking 1.2s ease-in-out infinite; filter:drop-shadow(0 0 9px #4fb8ff); }
+[data-nesti].nesti-speaking { animation:nesti-speaking .42s ease-in-out infinite alternate; filter:drop-shadow(0 0 12px #6cebe5); }
+[data-nesti].nesti-success { animation:nesti-success .7s ease-out 1; }
+[data-nesti].nesti-error { animation:nesti-error .36s ease-in-out 2; filter:drop-shadow(0 0 8px #fb7185); }
+[data-nesti].nesti-moving { animation:nesti-moving 1.4s ease-in-out infinite; }
+@keyframes nesti-idle { 0%,100% { transform:translateY(0) } 50% { transform:translateY(-4px) } }
+@keyframes nesti-listening { 0%,100% { transform:scale(1) } 50% { transform:scale(1.045) } }
+@keyframes nesti-thinking { 0%,100% { transform:rotate(-1.5deg) translateY(0) } 50% { transform:rotate(1.5deg) translateY(-3px) } }
+@keyframes nesti-speaking { from { transform:scale(1) translateY(0) } to { transform:scale(1.035) translateY(-2px) } }
+@keyframes nesti-success { 0% { transform:scale(1) } 45% { transform:scale(1.13) rotate(3deg) } 100% { transform:scale(1) } }
+@keyframes nesti-error { 0%,100% { transform:translateX(0) } 35% { transform:translateX(-5px) } 70% { transform:translateX(5px) } }
+@keyframes nesti-moving { 0%,100% { transform:translate(-3px,1px) rotate(-1deg) } 50% { transform:translate(5px,-5px) rotate(2deg) } }
+@media (prefers-reduced-motion:reduce) { [data-nesti] { animation:none !important; transition:none !important; } }
 .fn-actions { display:flex; flex-wrap:wrap; gap:8px; }
 @media (prefers-reduced-motion:no-preference) {
   .fn-button,.fn-category,.fn-nav a { transition:background .18s,border-color .18s,box-shadow .18s; }

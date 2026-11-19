@@ -59,7 +59,7 @@ test('FilePortal release integration', { timeout: 90_000 }, async t => {
   }
   for (const name of [
     'app.js', 'theme.js', 'preview.js', 'range-selection.js', 'filenest/route.js',
-    'filenest/shell.js', 'filenest/dashboard.js', 'filenest/assistant.js', 'filenest/pcm-worklet.js'
+    'filenest/shell.js', 'filenest/dashboard.js', 'filenest/nesti.js', 'filenest/assistant.js', 'filenest/pcm-worklet.js'
   ])
     new Script(readFileSync(path.join(publish, 'wwwroot', name), 'utf8'), { filename: name });
 
@@ -158,7 +158,7 @@ test('FilePortal release integration', { timeout: 90_000 }, async t => {
     assert.match(shellSource, /fn-back/);
     assert.match(shellSource, /history\.back\(\)/);
     assert.match(readFileSync(path.join(publish, 'wwwroot', 'login.html'), 'utf8'), /id="loginBack"/);
-    for (const asset of ['shell.js', 'dashboard.js', 'assistant.js', 'pcm-worklet.js', 'site.css', 'workspace.css', 'mascot.png'])
+    for (const asset of ['shell.js', 'dashboard.js', 'nesti.js', 'assistant.js', 'pcm-worklet.js', 'site.css', 'workspace.css', 'mascot.png'])
       await request('/filenest/' + asset, 200);
     const galleryScript = await request('/app.js', 200);
     assert.match(galleryScript.headers.get('cache-control'), /must-revalidate/);

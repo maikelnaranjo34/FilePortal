@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="/filenest/site.css">
   <script src="/filenest/shell.js" defer></script>
   <script src="/filenest/dashboard.js" defer></script>
+  <script src="/filenest/nesti.js" defer></script>
   <script src="/filenest/assistant.js" defer></script>
 </head>
 <body class="fn-page">
@@ -17,7 +18,7 @@
     <p id="dashboardStatus" class="fn-status" role="status">Loading your workspace…</p>
     <section id="dashboard" aria-label="Home" hidden>
       <div class="fn-hero">
-        <img class="fn-hero-mascot" src="/filenest/mascot.png" alt="" width="320" height="320" style="height:auto">
+        <img class="fn-hero-mascot" data-nesti src="/filenest/mascot.png" alt="" width="320" height="320" style="height:auto">
         <div class="fn-welcome">
           <div class="fn-welcome-copy">
             <h1>Welcome <span style="color:var(--fn-accent)">back!</span></h1>
@@ -65,7 +66,7 @@
         </div>
         <div class="fn-stack" id="dashboardSecondary">
           <section class="fn-panel fn-section fn-assistant" id="assistantSection">
-            <img src="/filenest/mascot.png" alt="" width="78" height="78">
+            <img data-nesti src="/filenest/mascot.png" alt="" width="78" height="78">
             <div><div class="fn-title-row"><h2>FileNest Assistant</h2></div><p class="fn-muted">Search tools and AI availability</p></div>
             <button type="button" id="assistantLauncher" class="fn-button" aria-label="Open FileNest Assistant"><span data-icon="sparkle"></span></button>
           </section>
@@ -111,7 +112,7 @@
   <input type="file" id="dashboardFiles" multiple hidden>
   <input type="file" id="dashboardFolder" multiple webkitdirectory hidden>
   <dialog id="assistantPanel" class="fn-dialog" aria-labelledby="assistantTitle">
-    <div class="fn-assistant"><img src="/filenest/mascot.png" alt="" width="78" height="78"><div>
+    <div class="fn-assistant"><img data-nesti src="/filenest/mascot.png" alt="" width="78" height="78"><div>
       <h2 id="assistantTitle">FileNest Assistant</h2>
       <p id="assistantAvailability">Checking assistant availability…</p>
     </div></div>

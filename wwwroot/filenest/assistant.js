@@ -20,6 +20,7 @@
   let microphoneStream;
   let pendingTtsToken;
   let voiceConfiguration;
+  const setNesti = state => window.Nesti?.setState(state);
 
   function addMessage(role, content) {
     const message = document.createElement("div");
@@ -52,6 +53,7 @@
   }
 
   launcher.addEventListener("click", () => {
+    setNesti("idle");
     panel.returnValue = "";
     panel.showModal();
     checkAvailability().then(() => available && input.focus());
@@ -66,6 +68,7 @@
   async function startListening() {
     if (listening || !voiceAvailable) return;
     status.textContent = "Connecting to AssemblyAI…";
+    setNesti("moving");
     try {
       const tokenResponse = await fetch("/api/ai/voice/tokens", { credentials: "include" });
       const tokens = await tokenResponse.json().catch(() => null);
@@ -119,9 +122,11 @@
       mic.setAttribute("aria-label", "Stop voice input");
       mic.textContent = "⏹️";
       status.textContent = "Listening…";
+      setNesti("listening");
     } catch (error) {
       stopListening();
       status.textContent = error.message || "Voice could not start.";
+      setNesti("error");
     }
   }
 
@@ -165,6 +170,7 @@
       socket.send(JSON.stringify({ type: "Generate", text: text.slice(0, 2000) }));
       socket.send(JSON.stringify({ type: "Flush" }));
       status.textContent = "Nesti is speaking…";
+      setNesti("speaking");
     };
     socket.onmessage = event => {
       let message;
@@ -183,11 +189,12 @@
         nextTime += buffer.duration;
       } else if (message.type === "FlushDone") {
         status.textContent = "";
+        setNesti("success");
         socket.send(JSON.stringify({ type: "Terminate" }));
       }
     };
-    socket.onerror = () => { status.textContent = "Nesti could not play the spoken response."; };
-    socket.onclose = () => setTimeout(() => audioContext.close().catch(() => {}), Math.max(0, (nextTime - audioContext.currentTime) * 1000 + 100));
+    socket.onerror = () => { status.textContent = "Nesti could not play the spoken response."; setNesti("error"); };
+    socket.onclose = () => setTimeout(() => { audioContext.close().catch(() => {}); setNesti("idle"); }, Math.max(0, (nextTime - audioContext.currentTime) * 1000 + 100));
   }
 
   mic.addEventListener("click", () => listening ? stopListening() : startListening());
@@ -200,6 +207,7 @@
     input.value = "";
     input.disabled = send.disabled = true;
     status.textContent = "Nesti is thinking…";
+    setNesti("thinking");
     try {
       const response = await fetch("/api/ai/chat", {
         method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
@@ -210,10 +218,13 @@
       history.push({ role: "user", content: message }, { role: "assistant", content: result.reply });
       if (history.length > 12) history.splice(0, history.length - 12);
       addMessage("assistant", result.reply);
+      const willSpeak = !!pendingTtsToken;
       speak(result.reply);
+      if (!willSpeak) setNesti("success");
       status.textContent = "";
     } catch (error) {
       status.textContent = error.message;
+      setNesti("error");
     } finally {
       input.disabled = send.disabled = !available;
       if (available) input.focus();
