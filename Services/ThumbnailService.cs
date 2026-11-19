@@ -14,7 +14,7 @@ public sealed class ThumbnailService(IConfiguration configuration, ILogger<Thumb
 
     private readonly MemoryCache _cache = new(new MemoryCacheOptions { SizeLimit = 32 * 1024 * 1024 });
     private readonly SemaphoreSlim _videoSlots = new(2);
-    private readonly string? _ffmpegPath = configuration["VideoThumbnails:FfmpegPath"];
+    private readonly string? _ffmpegPath = ResolveFfmpegPath(configuration["VideoThumbnails:FfmpegPath"]);
 
     public byte[]? GetThumbnail(FileInfo file)
     {
@@ -96,6 +96,41 @@ public sealed class ThumbnailService(IConfiguration configuration, ILogger<Thumb
         {
             _videoSlots.Release();
         }
+    }
+
+    private static string? ResolveFfmpegPath(string? configured)
+    {
+        if (!string.IsNullOrWhiteSpace(configured) && Path.IsPathFullyQualified(configured) && File.Exists(configured))
+            return configured;
+
+        foreach (var directory in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(
+                     Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var candidate = Path.Combine(directory, OperatingSystem.IsWindows() ? "ffmpeg.exe" : "ffmpeg");
+            if (File.Exists(candidate))
+                return candidate;
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            var packages = Path.Combine(localAppData, "Microsoft", "WinGet", "Packages");
+            try
+            {
+                var candidates = Directory.EnumerateDirectories(packages, "Gyan.FFmpeg_*", SearchOption.TopDirectoryOnly)
+                    .SelectMany(package => Directory.EnumerateFiles(package, "ffmpeg.exe", SearchOption.AllDirectories))
+                    .OrderByDescending(File.GetLastWriteTimeUtc)
+                    .ToArray();
+                if (candidates.Length > 0)
+                    return candidates[0];
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                return null;
+            }
+        }
+
+        return null;
     }
 
     private static async Task<byte[]?> ReadVideoFrameAsync(
