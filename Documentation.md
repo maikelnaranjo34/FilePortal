@@ -89,7 +89,7 @@ File endpoints require sign-in and enforce the caller's folder access.
 
 ## Frontend and media
 
-`index.html` is the Photos landing page. It serves Photos, Albums, Favorites, and Search after sign-in. File Manager remains available at `/files.html`, and `/portal.html` redirects to the landing page. The frontend checks `/api/auth/me` on load. Letter keys cycle through matching items in File Manager. API responses use camelCase.
+`index.html` is the Photos landing page. It serves Photos, Videos, Albums, Favorites, and Search after sign-in. Videos shows only video files, with the same selection and preview controls. File Manager remains available at `/files.html`, and `/portal.html` redirects to the landing page. The frontend checks `/api/auth/me` on load. Letter keys cycle through matching items in File Manager. API responses use camelCase.
 
 The gallery uses the same folder access policy as File Manager. Its metadata cache, albums, favorites, and share records are stored in the application data directory. Set `PhotoLibrary__ScanRoots__0` and subsequent entries to narrow the scanned folders to paths within configured roots. Automatic scans use all configured roots and skip system and program installation directories such as `Program Files`. Explicit scan roots can include media folders that automatic scans would skip.
 

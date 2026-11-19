@@ -8,7 +8,7 @@
   const state = {
     me: null,
     view: "photos",
-    timeline: { sections: [], skip: 0, take: 120, total: 0, hasMore: true, loading: false, favorites: false },
+    timeline: null,
     flat: [],          // flat ordered list of photo dtos for the current view (for lightbox nav)
     selection: new Set(),
     selectMode: false,
@@ -73,8 +73,7 @@
     document.querySelectorAll(".nav a[data-view]").forEach(a =>
       a.classList.toggle("active", a.dataset.view === view));
     clearSelection();
-    if (view === "photos") renderTimeline(false);
-    else if (view === "favorites") renderTimeline(true);
+    if (view === "photos" || view === "favorites" || view === "videos") renderTimeline(view);
     else if (view === "albums") renderAlbums();
     else if (view === "search") renderSearch(keyword);
   }
@@ -206,15 +205,17 @@
   // ====================================================================
   //  TIMELINE (Photos / Favorites)
   // ====================================================================
-  async function renderTimeline(favorites) {
-    state.timeline = { sections: [], skip: 0, take: 120, total: 0, hasMore: true, loading: false, favorites };
+  async function renderTimeline(view) {
+    const favorites = view === "favorites";
+    const videosOnly = view === "videos";
+    state.timeline = { skip: 0, take: 120, total: 0, hasMore: true, loading: false, favorites, videosOnly };
     state.flat = [];
     main.innerHTML = "";
     main.scrollTop = 0;
 
     const head = el("div", "viewhead");
     head.appendChild(el("div", null,
-      `<h2>${favorites ? "Favorites" : "Photos"}</h2><div class="sub" id="tlSub">Loading…</div>`));
+      `<h2>${favorites ? "Favorites" : videosOnly ? "Videos" : "Photos"}</h2><div class="sub" id="tlSub">Loading…</div>`));
     main.appendChild(head);
     main.appendChild(selectionBar());
 
@@ -249,17 +250,17 @@
     if (t.skip === 0) { sp = el("div", "spinner"); container.appendChild(sp); }
 
     try {
-      const data = await apiJson(`/api/photos/timeline?skip=${t.skip}&take=${t.take}&favorites=${t.favorites}`);
+      const data = await apiJson(`/api/photos/timeline?skip=${t.skip}&take=${t.take}&favorites=${t.favorites}&videosOnly=${t.videosOnly}`);
       if (!container.isConnected || t !== state.timeline) return;
       if (sp) sp.remove();
       t.total = data.total; t.hasMore = data.hasMore; t.skip += data.returned;
 
       const subEl = document.getElementById("tlSub");
-      if (subEl) subEl.textContent = data.total + (t.favorites ? " favorites" : " items");
+      if (subEl) subEl.textContent = timelineCount(t);
 
       if (data.total === 0 && t.skip === 0) {
         container.appendChild(el("div", "empty",
-          t.favorites ? "No favorites yet. Tap the star on any photo." :
+          t.favorites ? "No favorites yet. Tap the star on any photo." : t.videosOnly ? "No videos found." :
           "No photos found.<br><br>Make sure your <b>Roots</b> in appsettings.json point to folders with images, then click 🔄 to rescan."));
         t.loading = false; return;
       }
@@ -287,6 +288,11 @@
     } finally {
       t.loading = false;
     }
+  }
+
+  function timelineCount(timeline) {
+    const label = timeline.favorites ? "favorite" : timeline.videosOnly ? "video" : "item";
+    return timeline.total + " " + label + (timeline.total === 1 ? "" : "s");
   }
 
   // ====================================================================
@@ -559,7 +565,7 @@
       if (heading && deleted.size) {
         state.timeline.total = Math.max(0, state.timeline.total - deleted.size);
         state.timeline.skip = Math.max(0, state.timeline.skip - deleted.size);
-        heading.textContent = state.timeline.total + (state.timeline.favorites ? " favorites" : " items");
+        heading.textContent = timelineCount(state.timeline);
       }
       if (!state.selection.size) clearSelection();
       const failures = result.errors.length;
@@ -746,7 +752,7 @@
         document.getElementById("modal").classList.contains("show"))
       return;
 
-    if (state.view === "photos" || state.view === "favorites")
+    if (state.view === "photos" || state.view === "favorites" || state.view === "videos")
       setView(state.view);
   }
 
@@ -773,7 +779,7 @@
       catch (e) { toast("Error: " + e.message); }
     };
     const requestedView = window.location.hash.slice(1);
-    setView(["photos", "albums", "favorites", "search"].includes(requestedView) ? requestedView : "photos");
+    setView(["photos", "videos", "albums", "favorites", "search"].includes(requestedView) ? requestedView : "photos");
   })();
 
 })();

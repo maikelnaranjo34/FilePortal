@@ -60,15 +60,18 @@ namespace FilePortal.Controllers
             IsFavorite = favs.Contains(m.Id)
         };
 
-        // GET /api/photos/timeline?skip=0&take=100&favorites=false
+        // GET /api/photos/timeline?skip=0&take=100&favorites=false&videosOnly=false
         [HttpGet("timeline")]
-        public IActionResult GetTimeline([FromQuery] int skip = 0, [FromQuery] int take = 120, [FromQuery] bool favorites = false)
+        public IActionResult GetTimeline([FromQuery] int skip = 0, [FromQuery] int take = 120,
+            [FromQuery] bool favorites = false, [FromQuery] bool videosOnly = false)
         {
             skip = Math.Max(skip, 0);
             take = Math.Clamp(take, 1, 500);
             var favs = _favorites.GetFavorites(CurrentUser);
 
             var photos = _library.GetVisiblePhotos(CurrentUser);
+            if (videosOnly)
+                photos = photos.Where(photo => photo.IsVideo).ToList();
             if (favorites)
                 photos = photos.Where(p => favs.Contains(p.Id)).ToList();
 

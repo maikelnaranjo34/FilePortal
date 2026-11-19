@@ -123,7 +123,7 @@ test('FilePortal release integration', { timeout: 90_000 }, async t => {
     const landing = await request('/', 200);
     assert.match(landing.headers.get('cache-control'), /no-cache/);
     const landingHtml = await landing.text();
-    for (const view of ['photos', 'albums', 'favorites', 'search'])
+    for (const view of ['photos', 'videos', 'albums', 'favorites', 'search'])
       assert.match(landingHtml, new RegExp('href="#' + view + '"'));
     assert.match(landingHtml, /src="\/app\.js(?:\?[^"]+)?"/);
     const galleryScript = await request('/app.js', 200);
@@ -186,6 +186,10 @@ test('FilePortal release integration', { timeout: 90_000 }, async t => {
     assert.equal(existsSync(bundledImage), true);
     const timeline = await request('/api/photos/timeline', 200, legacy);
     const photoItems = (await timeline.json()).sections.flatMap(section => section.photos);
+    const videoTimeline = await request('/api/photos/timeline?videosOnly=true&take=1', 200, legacy);
+    const videoPage = await videoTimeline.json();
+    assert.equal(videoPage.total, 1);
+    assert.deepEqual(videoPage.sections.flatMap(section => section.photos.map(item => item.fileName)), ['video.mp4']);
     assert.deepEqual(photoItems.map(item => item.fileName).sort(), ['photo.png', 'video.mp4']);
     const photoId = photoItems.find(item => item.fileName === 'photo.png').id;
     await request('/api/photos/' + photoId + '/thumbnail', 200, legacy);
