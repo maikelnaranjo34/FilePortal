@@ -137,6 +137,54 @@ public sealed class AiAssistantController(AiSettingsService settingsStore, IHttp
         }
     }
 
+    [HttpGet("voice/tokens")]
+    public async Task<IActionResult> VoiceTokens(CancellationToken cancellationToken)
+    {
+        var settings = settingsStore.Get();
+        var key = settingsStore.GetAssemblyAiApiKey();
+        if (!settings.Enabled || string.IsNullOrWhiteSpace(key))
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new { error = "AssemblyAI voice is not configured." });
+
+        try
+        {
+            var sttTask = MintAssemblyToken(
+                "https://streaming.assemblyai.com/v3/token?expires_in_seconds=60&max_session_duration_seconds=300",
+                key, cancellationToken);
+            var ttsTask = MintAssemblyToken(
+                "https://token.us.assemblyai.com/v1/token?product=tts&expires_in_seconds=60",
+                key, cancellationToken);
+            await Task.WhenAll(sttTask, ttsTask);
+            return Ok(new
+            {
+                sttToken = sttTask.Result,
+                ttsToken = ttsTask.Result,
+                speechModel = settings.AssemblyAiSpeechModel,
+                ttsModel = settings.AssemblyAiTtsModel,
+                voiceId = settings.AssemblyAiVoiceId,
+                language = settings.Language
+            });
+        }
+        catch (HttpRequestException)
+        {
+            return StatusCode(StatusCodes.Status502BadGateway, new { error = "AssemblyAI voice tokens could not be created." });
+        }
+        catch (TaskCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return StatusCode(StatusCodes.Status504GatewayTimeout, new { error = "AssemblyAI did not respond in time." });
+        }
+    }
+
+    private async Task<string> MintAssemblyToken(string url, string key, CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.TryAddWithoutValidation("Authorization", key);
+        using var response = await clients.CreateClient("AiProviders").SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode) throw new HttpRequestException("AssemblyAI rejected the token request.");
+        using var payload = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(cancellationToken), cancellationToken: cancellationToken);
+        return payload.RootElement.GetProperty("token").GetString()
+            ?? throw new HttpRequestException("AssemblyAI returned an invalid token response.");
+    }
+
     private sealed record ToolCall(string Name, string CallId, string Arguments);
 
     private static IEnumerable<ToolCall> ExtractToolCalls(JsonElement root)
