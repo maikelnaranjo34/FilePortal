@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<title>Shared photos</title>
+<title>Shared media · FileNest</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <script src="/theme.js"></script>
 <script src="/preview.js"></script>
@@ -17,7 +17,7 @@ body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;backgrou
 .wrap{padding:22px;max-width:1200px;margin:0 auto}
 h2{margin:0 0 4px}.sub{color:var(--muted);font-size:13px;margin-bottom:18px}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:6px}
-.tile{aspect-ratio:1/1;border-radius:8px;overflow:hidden;background:var(--panel);cursor:pointer;position:relative}
+.tile{display:block;width:100%;aspect-ratio:1/1;border:0;padding:0;border-radius:8px;overflow:hidden;background:var(--panel);color:inherit;cursor:pointer;position:relative}
 .tile img{width:100%;height:100%;object-fit:cover}
 .tile .vb{position:absolute;left:8px;bottom:8px;background:rgba(0,0,0,.6);border-radius:4px;padding:1px 6px;font-size:11px}
 .empty{color:var(--muted);text-align:center;padding:60px 0}
@@ -33,9 +33,12 @@ h2{margin:0 0 4px}.sub{color:var(--muted);font-size:13px;margin-bottom:18px}
 .lb .p{left:18px}.lb .n{right:18px}
 @media(max-width:700px){.wrap{padding:10px}.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.lb .p{left:6px}.lb .n{right:6px}}
 </style>
+<link rel="stylesheet" href="/filenest/site.css">
+<link rel="stylesheet" href="/filenest/workspace.css">
+<script src="/filenest/shell.js" defer></script>
 </head>
-<body>
-<div class="top"><div class="dot"></div><h1>Photos</h1></div>
+<body class="fn-workspace fn-public-share">
+<header id="fileNestHeader" data-public></header>
 <div class="wrap" id="wrap"><div class="empty">Loading…</div></div>
 
 <div class="lb" id="lb" role="dialog" aria-modal="true" aria-label="Shared media preview">
@@ -75,24 +78,30 @@ function fUrl(id){ return `/api/sharing/public/${encodeURIComponent(token)}/phot
     if (!photos.length){ wrap.appendChild(Object.assign(document.createElement("div"),{className:"empty",textContent:"Nothing to show."})); return; }
     const grid = document.createElement("div"); grid.className="grid";
     photos.forEach((p,i)=>{
-      const t=document.createElement("div"); t.className="tile";
-      const im=document.createElement("img"); im.loading="lazy"; im.src=tUrl(p.id); t.appendChild(im);
+      const t=document.createElement("button"); t.type="button"; t.className="tile";
+      t.setAttribute("aria-label",`Open ${p.isVideo?"video":"photo"} ${p.fileName||i+1}`);
+      const im=document.createElement("img"); im.loading="lazy"; im.src=tUrl(p.id); im.alt=p.fileName||"Shared media"; t.appendChild(im);
       if(p.isVideo){const b=document.createElement("div");b.className="vb";b.textContent="▶ video";t.appendChild(b);}
-      t.onclick=()=>open(i); grid.appendChild(t);
+      t.onclick=()=>open(i,t); grid.appendChild(t);
     });
     wrap.appendChild(grid);
   } catch { wrap.innerHTML = '<div class="empty">Error loading share.</div>'; }
 })();
 
 const lb=document.getElementById("lb"), media=document.getElementById("media");
-function open(i){ idx=i; show(); lb.classList.add("show"); }
+let returnFocus=null;
+function open(i,trigger){ idx=i; returnFocus=trigger||document.activeElement; show(); lb.classList.add("show"); document.getElementById("x").focus(); }
 function show(){
   const p=photos[idx]; media.replaceChildren(); media.classList.remove("quarter-turn");
   if(p.isVideo){const v=document.createElement("video");v.src=fUrl(p.id);v.controls=true;v.autoplay=true;v.playsInline=true;media.appendChild(v);}
   else{const im=document.createElement("img");im.src=fUrl(p.id);media.appendChild(im);}
 }
 function nav(d){ idx=(idx+d+photos.length)%photos.length; show(); }
-function close(){lb.classList.remove("show");media.replaceChildren();}
+function close(){
+  if(!lb.classList.contains("show"))return;
+  lb.classList.remove("show");media.replaceChildren();
+  const destination=returnFocus?.isConnected?returnFocus:null;returnFocus=null;destination?.focus();
+}
 document.getElementById("x").onclick=close;
 document.getElementById("rotateLeft").onclick=()=>previewRotation.turn(media.firstElementChild,-90);
 document.getElementById("rotateRight").onclick=()=>previewRotation.turn(media.firstElementChild,90);
@@ -100,7 +109,12 @@ document.getElementById("p").onclick=()=>nav(-1);
 document.getElementById("n").onclick=()=>nav(1);
 document.getElementById("dl").onclick=()=>{const p=photos[idx];const a=document.createElement("a");a.href=fUrl(p.id);a.download=p.fileName;a.click();};
 document.addEventListener("keydown",e=>{ if(!lb.classList.contains("show"))return;
-  if(e.key==="Escape")close(); else if(e.key==="ArrowLeft")nav(-1); else if(e.key==="ArrowRight")nav(1); });
+  if(e.key==="Tab"){
+    const items=[...lb.querySelectorAll("button:not([disabled]),a[href],[tabindex]:not([tabindex='-1'])")].filter(item=>item.getClientRects().length);
+    const first=items[0],last=items[items.length-1];
+    if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus();}
+    else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus();}
+  } else if(e.key==="Escape")close(); else if(e.key==="ArrowLeft")nav(-1); else if(e.key==="ArrowRight")nav(1); });
 </script>
 </body>
 </html>

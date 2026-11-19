@@ -25,6 +25,25 @@
   // Apply ASAP (script is loaded in <head>, so this runs before body paints).
   applyTheme(getTheme());
 
+  var contextNoticeTimer;
+  function showContextNotice() {
+    var notice = document.getElementById("contextMenuNotice");
+    if (!notice) return;
+    notice.textContent = "";
+    notice.textContent = "Right-click is disabled in FileNest.";
+    notice.classList.add("show");
+    clearTimeout(contextNoticeTimer);
+    contextNoticeTimer = setTimeout(function () {
+      notice.classList.remove("show");
+      setTimeout(function () { notice.textContent = ""; }, 200);
+    }, 2600);
+  }
+
+  document.addEventListener("contextmenu", function (event) {
+    event.preventDefault();
+    showContextNotice();
+  });
+
   function setTheme(theme) {
     applyTheme(theme);
     try { localStorage.setItem(STORAGE_KEY, theme); } catch (e) {}
@@ -48,7 +67,7 @@
   }
 
   function injectButton() {
-    if (document.getElementById("themeToggleBtn")) return;
+    if (document.querySelector("#fileNestHeader, .fn-login, #themeToggleBtn")) return;
     btn = document.createElement("button");
     btn.id = "themeToggleBtn";
     btn.type = "button";
@@ -68,9 +87,34 @@
     updateButton(getTheme());
   }
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", injectButton);
-  } else {
+  function injectContextNotice() {
+    if (document.getElementById("contextMenuNotice")) return;
+
+    var css = document.createElement("style");
+    css.textContent =
+      "#contextMenuNotice{position:fixed;left:50%;bottom:22px;z-index:10000;max-width:calc(100% - 24px);" +
+      "transform:translate(-50%,12px);padding:10px 15px;border:1px solid #52ddd8;border-radius:12px;" +
+      "background:#0b2032;color:#f1f7ff;box-shadow:0 12px 32px rgba(0,0,0,.42);font:600 14px/1.35 " +
+      "system-ui,-apple-system,Segoe UI,sans-serif;text-align:center;opacity:0;visibility:hidden;pointer-events:none;" +
+      "transition:opacity .18s ease,transform .18s ease,visibility .18s}" +
+      "#contextMenuNotice.show{opacity:1;visibility:visible;transform:translate(-50%,0)}";
+    document.head.appendChild(css);
+
+    var notice = document.createElement("div");
+    notice.id = "contextMenuNotice";
+    notice.setAttribute("role", "status");
+    notice.setAttribute("aria-live", "polite");
+    document.body.appendChild(notice);
+  }
+
+  function initializePageControls() {
+    injectContextNotice();
     injectButton();
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initializePageControls);
+  } else {
+    initializePageControls();
   }
 })();

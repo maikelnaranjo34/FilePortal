@@ -26,7 +26,7 @@
   }
   async function apiJson(url, opts) {
     const r = await api(url, opts);
-    if (r.status === 401) { window.location.replace("/login.html"); throw new Error("unauth"); }
+    if (r.status === 401) { window.location.replace(FileNest.signInUrl()); throw new Error("unauth"); }
     if (!r.ok) { let e = {}; try { e = await r.json(); } catch {} throw new Error(e.error || ("HTTP " + r.status)); }
     return r.json();
   }
@@ -50,6 +50,25 @@
   }
   function thumbUrl(id) { return "/api/photos/" + id + "/thumbnail"; }
   function fileUrl(id, dl) { return "/api/photos/" + id + "/file" + (dl ? "?download=true" : ""); }
+  function activateWithKeyboard(element, action) {
+    element.addEventListener("keydown", event => {
+      if (event.target !== element || (event.key !== "Enter" && event.key !== " ")) return;
+      event.preventDefault();
+      action(event);
+    });
+  }
+  function focusableWithin(element) {
+    return [...element.querySelectorAll('button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')]
+      .filter(item => !item.hidden && item.getClientRects().length);
+  }
+  function keepFocusInside(event, container) {
+    if (event.key !== "Tab") return;
+    const items = focusableWithin(container);
+    if (!items.length) { event.preventDefault(); container.focus(); return; }
+    const first = items[0], last = items[items.length - 1];
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+  }
 
   // Lazy image loading via IntersectionObserver
   const imgObserver = new IntersectionObserver((entries) => {
@@ -69,9 +88,14 @@
     timelineObserver?.disconnect();
     state.flat = [];
     state.view = view;
-    if (window.location.hash !== "#" + view) window.history.replaceState(null, "", "#" + view);
+    if (window.location.hash !== "#" + view) window.history.replaceState(null, "", location.pathname + location.search + "#" + view);
+    FileNest.activate(view === "favorites" ? "favorites" : "gallery");
     document.querySelectorAll(".nav a[data-view]").forEach(a =>
-      a.classList.toggle("active", a.dataset.view === view));
+      {
+        a.classList.toggle("active", a.dataset.view === view);
+        if (a.dataset.view === view) a.setAttribute("aria-current", "page");
+        else a.removeAttribute("aria-current");
+      });
     clearSelection();
     if (view === "photos" || view === "favorites" || view === "videos") renderTimeline(view);
     else if (view === "albums") renderAlbums();
@@ -83,12 +107,6 @@
       event.preventDefault();
       setView(a.dataset.view);
     }));
-
-  document.getElementById("navLogout").addEventListener("click", async event => {
-    event.preventDefault();
-    try { await api("/api/auth/logout", { method: "POST" }); } catch {}
-    window.location.replace("/login.html");
-  });
 
   // ---------- selection ----------
   const galleryRange = new RangeSelection();
@@ -141,6 +159,9 @@
   function makeTile(p) {
     const tile = el("div", "tile" + (p.isFavorite ? " fav" : ""));
     tile.dataset.id = p.id;
+    tile.tabIndex = 0;
+    tile.setAttribute("role", "button");
+    tile.setAttribute("aria-label", "Open " + (p.isVideo ? "video " : "photo ") + p.fileName);
     const img = el("img");
     img.dataset.src = thumbUrl(p.id);
     img.alt = p.fileName;
@@ -156,6 +177,10 @@
 
     check.addEventListener("click", event => { event.stopPropagation(); toggleSelect(p.id, event.shiftKey); });
     tile.addEventListener("click", event => {
+      if (state.selectMode) { toggleSelect(p.id, event.shiftKey); return; }
+      openLightbox(p.id);
+    });
+    activateWithKeyboard(tile, event => {
       if (state.selectMode) { toggleSelect(p.id, event.shiftKey); return; }
       openLightbox(p.id);
     });
@@ -229,6 +254,15 @@
     main.appendChild(sentinel);
 
     await loadTimelinePage();
+    const url = new URL(location.href);
+    const requestedId = url.searchParams.get("item");
+    if (requestedId && state.view === view) {
+      url.searchParams.delete("item");
+      history.replaceState(null, "", url.pathname + url.search + url.hash);
+      const itemIndex = state.flat.findIndex(photo => photo.id === requestedId);
+      if (itemIndex >= 0) openLightbox(requestedId);
+    }
+
 
     if (!sentinel.isConnected) return;
 
@@ -317,9 +351,12 @@
       const grid = el("div", "albumgrid");
       for (const a of albums) {
         const card = el("div", "albumcard");
+        card.tabIndex = 0;
+        card.setAttribute("role", "button");
+        card.setAttribute("aria-label", "Open album " + a.name + ", " + a.count + " item" + (a.count === 1 ? "" : "s"));
         const cover = el("div", "cover");
         if (a.coverPhotoId) {
-          const img = el("img"); img.src = thumbUrl(a.coverPhotoId); cover.appendChild(img);
+          const img = el("img"); img.src = thumbUrl(a.coverPhotoId); img.alt = ""; cover.appendChild(img);
         } else { cover.textContent = "📚"; cover.style.fontSize = "40px"; }
         card.appendChild(cover);
         const name = el("div", "nm");
@@ -327,6 +364,7 @@
         card.appendChild(name);
         card.appendChild(el("div", "ct", a.count + " item" + (a.count === 1 ? "" : "s")));
         card.onclick = () => openAlbum(a.id);
+        activateWithKeyboard(card, () => openAlbum(a.id));
         grid.appendChild(card);
       }
       main.appendChild(grid);
@@ -410,7 +448,7 @@
     let albums = state.albumsCache;
     try { albums = await apiJson("/api/albums"); state.albumsCache = albums; } catch {}
     let rows = (albums || []).map(a =>
-      `<div class="it" data-id="${escapeAttr(a.id)}"><span>📚</span><span>${escapeHtml(a.name)}</span><span style="margin-left:auto;color:#9aa4b2">${a.count}</span></div>`).join("");
+      `<div class="it" data-id="${escapeAttr(a.id)}" role="button" tabindex="0" aria-label="Add to ${escapeAttr(a.name)}"><span aria-hidden="true">📚</span><span>${escapeHtml(a.name)}</span><span style="margin-left:auto;color:#9aa4b2">${a.count}</span></div>`).join("");
     showModal(`
       <h3>Add ${ids.length} item(s) to album</h3>
       <button class="btn primary" id="newAlbumInline" style="width:100%">➕ Create new album</button>
@@ -425,12 +463,16 @@
         hideModal(); clearSelection(); toast("Added to " + a.name); state.albumsCache = null;
       } catch (e) { toast("Error: " + e.message); }
     };
-    document.querySelectorAll(".albumlist .it").forEach(it => it.onclick = async () => {
-      try {
-        await apiJson("/api/albums/" + it.dataset.id + "/photos", { method: "POST",
-          headers: { "Content-Type": "application/json" }, body: JSON.stringify({ photoIds: ids }) });
-        hideModal(); clearSelection(); toast("Added to album"); state.albumsCache = null;
-      } catch (e) { toast("Error: " + e.message); }
+    document.querySelectorAll(".albumlist .it").forEach(it => {
+      const addToAlbum = async () => {
+        try {
+          await apiJson("/api/albums/" + it.dataset.id + "/photos", { method: "POST",
+            headers: { "Content-Type": "application/json" }, body: JSON.stringify({ photoIds: ids }) });
+          hideModal(); clearSelection(); toast("Added to album"); state.albumsCache = null;
+        } catch (e) { toast("Error: " + e.message); }
+      };
+      it.onclick = addToAlbum;
+      activateWithKeyboard(it, addToAlbum);
     });
   }
 
@@ -613,19 +655,26 @@
   const lbInfoBody = document.getElementById("lbInfoBody");
   const lbFav = document.getElementById("lbFav");
   const lbDelete = document.getElementById("lbDelete");
+  let lightboxReturnFocus = null;
 
   function openLightbox(id) {
     const idx = state.flat.findIndex(p => p.id === id);
     if (idx < 0) return;
+    lightboxReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     state.lb.index = idx;
     lb.classList.add("show");
     showLbItem();
+    document.getElementById("lbClose").focus();
   }
   function closeLightbox() {
+    if (!lb.classList.contains("show")) return;
     lb.classList.remove("show");
     stopSlideshow();
     lbMedia.replaceChildren();
     lbMedia.classList.remove("quarter-turn");
+    const destination = lightboxReturnFocus?.isConnected ? lightboxReturnFocus : document.getElementById("globalSearch");
+    lightboxReturnFocus = null;
+    destination?.focus();
   }
   async function showLbItem() {
     const p = state.flat[state.lb.index];
@@ -722,6 +771,8 @@
 
   document.addEventListener("keydown", (e) => {
     if (!lb.classList.contains("show")) return;
+    if (modal.classList.contains("show")) return;
+    keepFocusInside(e, lb);
     if (e.key === "Escape") closeLightbox();
     else if (e.key === "ArrowLeft") lbNav(-1);
     else if (e.key === "ArrowRight") lbNav(1);
@@ -733,9 +784,27 @@
   // ---------- modal ----------
   const modal = document.getElementById("modal");
   const modalBox = document.getElementById("modalBox");
-  function showModal(html) { modalBox.innerHTML = html; modal.classList.add("show"); }
-  function hideModal() { modal.classList.remove("show"); modalBox.innerHTML = ""; }
+  let modalReturnFocus = null;
+  function showModal(html) {
+    modalReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    modalBox.innerHTML = html;
+    modal.setAttribute("aria-label", modalBox.querySelector("h3")?.textContent || "Gallery action");
+    modal.classList.add("show");
+    (focusableWithin(modalBox)[0] || modalBox).focus();
+  }
+  function hideModal() {
+    if (!modal.classList.contains("show")) return;
+    modal.classList.remove("show");
+    modalBox.innerHTML = "";
+    const destination = modalReturnFocus?.isConnected ? modalReturnFocus : document.getElementById("globalSearch");
+    modalReturnFocus = null;
+    destination?.focus();
+  }
   modal.addEventListener("click", e => { if (e.target === modal) hideModal(); });
+  modal.addEventListener("keydown", event => {
+    if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); hideModal(); return; }
+    keepFocusInside(event, modalBox);
+  });
 
   // ---------- global search ----------
   document.getElementById("globalSearch").addEventListener("keydown", e => {
@@ -765,12 +834,10 @@
 
   (async () => {
     try {
-      state.me = await apiJson("/api/auth/me");
+      state.me = await FileNest.account();
+      if (!state.me) { window.location.replace(FileNest.signInUrl()); return; }
     } catch { return; }
-    document.getElementById("avatar").textContent = (state.me.user || "U").charAt(0).toUpperCase();
-    document.getElementById("avatar").title = state.me.user + (state.me.isAdmin ? " (admin)" : "");
     if (state.me.isAdmin) {
-      document.getElementById("navUsers").textContent = "Manage users";
       document.getElementById("scanBtn").style.display = "inline-block";
     }
     document.getElementById("scanBtn").onclick = async () => {
@@ -778,8 +845,12 @@
       try { const r = await apiJson("/api/photos/scan", { method: "POST" }); toast("Found " + r.count + " media files"); setView(state.view); }
       catch (e) { toast("Error: " + e.message); }
     };
-    const requestedView = window.location.hash.slice(1);
-    setView(["photos", "videos", "albums", "favorites", "search"].includes(requestedView) ? requestedView : "photos");
+    const restoreView = () => {
+      const requestedView = window.location.hash.slice(1);
+      setView(["photos", "videos", "albums", "favorites", "search"].includes(requestedView) ? requestedView : "photos");
+    };
+    window.addEventListener("hashchange", restoreView);
+    restoreView();
   })();
 
 })();

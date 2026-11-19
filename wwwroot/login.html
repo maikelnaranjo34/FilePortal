@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="utf-8" />
-    <title>Photos — Sign in</title>
+    <title>Sign in · FileNest</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <script src="/theme.js"></script>
     <style>
@@ -34,13 +34,19 @@
         button:hover { background: #4f46e5; }
         .error { background:#3f1d1d;border:1px solid #7f1d1d;color:#fecaca;padding:9px 12px;border-radius:8px;
             font-size:12px;margin-bottom:14px;display:none; }
+        .login-back { position:fixed; top:14px; left:14px; width:44px; height:44px; padding:0; border:1px solid var(--line);
+            border-radius:50%; background:var(--card); color:var(--text); display:grid; place-items:center; font-size:24px; line-height:1; }
+        .login-back:hover { background:var(--inputbg); border-color:var(--accent); }
     </style>
+<link rel="stylesheet" href="/filenest/site.css">
+<link rel="stylesheet" href="/filenest/workspace.css">
 </head>
-<body>
+<body class="fn-workspace fn-login">
+    <button id="loginBack" class="login-back" type="button" aria-label="Go back" title="Back">&#8592;</button>
     <div class="card">
-        <div class="logo"><div class="dot"></div><h1>Photos</h1></div>
-        <p class="desc" id="desc">Sign in to your personal photo gallery.</p>
-        <div id="errorBox" class="error"></div>
+        <div class="logo"><img src="/filenest/mascot.png" alt="" width="62" height="62"><h1>FileNest</h1></div>
+        <p class="desc" id="desc">Sign in to access your files and gallery.</p>
+        <div id="errorBox" class="error" role="alert"></div>
         <form id="loginForm">
             <label for="username">Username</label>
             <input id="username" name="username" type="text" autocomplete="username" autofocus />
@@ -48,10 +54,28 @@
             <input id="password" name="password" type="password" autocomplete="current-password" />
             <button type="submit" id="submitBtn">Sign in</button>
         </form>
+        <button id="loginTheme" type="button">Switch theme</button>
     </div>
 
     <script>
         const errorBox = document.getElementById("errorBox");
+        document.getElementById("loginBack").addEventListener("click", () => {
+            if (history.length > 1) history.back();
+            else location.assign("/");
+        });
+        document.getElementById("loginTheme").addEventListener("click", () => window.toggleSiteTheme());
+
+        function returnDestination() {
+            const requested = new URLSearchParams(location.search).get("next");
+            if (!requested) return "/";
+            try {
+                const next = new URL(requested, location.origin);
+                const allowed = ["/", "/files.html", "/gallery.html", "/users.html"];
+                if (next.origin === location.origin && allowed.includes(next.pathname))
+                    return next.pathname + next.search + next.hash;
+            } catch { /* Invalid return targets go to Home. */ }
+            return "/";
+        }
         function showError(msg){ errorBox.textContent = msg; errorBox.style.display = "block"; }
 
         document.getElementById("loginForm").addEventListener("submit", async (e) => {
@@ -67,7 +91,7 @@
 
             try {
                 const res = await fetch("/api/auth/login", { method: "POST", body, credentials: "include" });
-                if (res.ok) { window.location.replace("/"); }
+                if (res.ok) { window.location.replace(returnDestination()); }
                 else { showError("Invalid username or password."); }
             } catch (err) {
                 showError("Network error. Please try again.");

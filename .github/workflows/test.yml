@@ -8,6 +8,7 @@ permissions:
 jobs:
   integration:
     runs-on: windows-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-dotnet@v5
@@ -16,4 +17,8 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: '24'
-      - run: node --test tests/fileportal.test.mjs
+      - name: Run release integration tests
+        run: node --test tests/fileportal.test.mjs
+      - name: Run FileNest browser regression
+        timeout-minutes: 5
+        run: node --test tests/filenest.browser.mjs
