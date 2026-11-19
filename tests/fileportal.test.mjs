@@ -144,6 +144,8 @@ test('FilePortal release integration', { timeout: 90_000 }, async t => {
     assert.match(galleryScript.headers.get('cache-control'), /must-revalidate/);
     assert.match(galleryScript.headers.get('content-type'), /javascript/);
     await request('/theme.js', 200);
+    assert.match(readFileSync(path.join(publish, 'wwwroot', 'theme.js'), 'utf8'),
+      /addEventListener\("contextmenu"/);
     await request('/preview.js', 200);
     await request('/range-selection.js', 200);
     await request('/login.html', 200);
