@@ -24,8 +24,8 @@ The redesign is developed on the isolated `redesign/filenest` branch under `F:\M
 | 3. Visual foundation | Complete | Shared FileNest tokens, glass panels, generated mascot, top navigation, menus, dialogs, responsive breakpoints, transitions, light and dark themes, and touch targets are in place. Right-click is temporarily blocked with an accessible FileNest status message. |
 | 4. Page redesign | Complete | Dashboard, My Files, Gallery, Shared, Favorites, Trash status, previews, Settings, sign-in, and public shares use the FileNest design. Every page has a Back control with a Home fallback. Keyboard activation, dialog focus, accessible labels, and explicit unsupported-state messaging were added. |
 | 5. Functional integration | Complete | Authentication, authorization, cross-root search, browsing, upload, download, deletion, previews, media, sharing, and account management use real APIs. The AI panel remains isolated and accurately disabled except for file-name search. |
-| 6. Testing and validation | In progress | Release integration tests pass. Reproducible browser validation will be added to the repository before this phase is complete. |
-| 7. Mobile layout | In progress | The top-only mobile navigation and responsive dashboard are implemented. Final mobile regression results will be recorded after the preceding phases close. |
+| 6. Testing and validation | Complete | Release integration tests pass. Reproducible Chrome browser validation is available in `tests/filenest.browser.mjs`; Windows runners execute it in GitHub Actions. |
+| 7. Mobile layout | Complete | The top-only mobile navigation and responsive dashboard are implemented. The browser regression checks 320, 360, 390, and 430 px layouts plus desktop. |
 
 ## Run locally
 
