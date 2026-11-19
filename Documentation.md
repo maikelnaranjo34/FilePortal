@@ -3,6 +3,7 @@
 FilePortal is a photo and video gallery and file browser for Windows drives and UNC shares. It runs on ASP.NET Core 10 with a vanilla JavaScript frontend. Signed-in users can browse assigned folders, preview files, upload, download, and delete items. The application can run directly, under IIS, or as a Windows service.
 
 - [Run locally](#run-locally)
+- [FileNest redesign status](#filenest-redesign-status)
 - [Project structure](#project-structure)
 - [Authentication and folder access](#authentication-and-folder-access)
 - [API endpoints](#api-endpoints)
@@ -11,6 +12,20 @@ FilePortal is a photo and video gallery and file browser for Windows drives and 
 - [Deployment and upgrades](#deployment-and-upgrades)
 - [Verification](#verification)
 - [Deployment history](#deployment-history)
+
+## FileNest redesign status
+
+The redesign is developed on the isolated `redesign/filenest` branch under `F:\My_Apps\FilePortal\redesign`. The active IIS site and its user data remain unchanged until the redesign is reviewed, merged, and deployed.
+
+| Phase | Status | Scope |
+| --- | --- | --- |
+| 1. Project audit | Complete | ASP.NET startup, controllers, storage, authentication, frontend behavior, tests, and four supplied visual references were reviewed before implementation. |
+| 2. Plan and protection | Complete | Work started from clean commit `0ca7fc2` in an isolated branch with disposable preview data and rollback through Git. |
+| 3. Visual foundation | Complete | Shared FileNest tokens, glass panels, generated mascot, top navigation, menus, dialogs, responsive breakpoints, transitions, light and dark themes, and touch targets are in place. Right-click is temporarily blocked with an accessible FileNest status message. |
+| 4. Page redesign | In progress | Dashboard, My Files, Gallery, Shared, Favorites, Trash status, file previews, Settings, login, and public shares have initial FileNest layouts. |
+| 5. Functional integration | In progress | Existing APIs power authentication, browsing, uploads, downloads, deletion, media, sharing, and account management. Global file search remains to be completed. |
+| 6. Testing and validation | In progress | Release integration tests pass. Reproducible browser validation will be added to the repository before this phase is complete. |
+| 7. Mobile layout | In progress | The top-only mobile navigation and responsive dashboard are implemented. Final mobile regression results will be recorded after the preceding phases close. |
 
 ## Run locally
 

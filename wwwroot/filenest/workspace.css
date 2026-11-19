@@ -84,7 +84,7 @@
   .fn-gallery .topbar .brand,.fn-gallery .topbar .spacer { display:none; }
   .fn-gallery .topbar .search { flex:1 1 0; order:0; min-width:0; max-width:none; }
   .fn-gallery .body > .nav { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:3px; padding:3px 6px; }
-  .fn-gallery .body > .nav a { padding:3px; font-size:.79rem; min-height:42px; }
+  .fn-gallery .body > .nav a { padding:3px; font-size:.79rem; min-height:44px; }
   .fn-gallery .body > .nav a span { display:none; }
   .fn-gallery .main { padding-bottom:32px; }
   .fn-files > .app { flex-direction:column; }
@@ -96,8 +96,8 @@
   .fn-files-tools { gap:5px; padding:4px 9px; }
   .fn-files-tools input { font-size:16px; }
   .fn-files-tools .fn-inline-link { margin-inline-start:auto; font-size:.8rem; }
-  .fn-files .toolbar .buttons > :is(button, div) { min-height:42px; }
-  .fn-files .toolbar .buttons #uploadBtn { min-height:42px; }
+  .fn-files .toolbar .buttons > :is(button, div) { min-height:44px; }
+  .fn-files .toolbar .buttons #uploadBtn { min-height:44px; }
 }
 @media (orientation:landscape) and (max-height:470px) {
   .fn-files,.fn-gallery { overflow:auto; height:auto; min-height:100dvh; }

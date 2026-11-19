@@ -37,7 +37,7 @@ body.fn-page, body.fn-workspace {
 .fn-nav,.fn-desktop-links,.fn-account { display:flex; align-items:center; gap:5px; }
 .fn-account { margin-inline-start:auto; }
 .fn-nav a,.fn-nav summary,.fn-account summary,.fn-bell {
-  display:inline-flex; align-items:center; justify-content:center; gap:7px; min-height:38px; padding:6px 12px;
+  display:inline-flex; align-items:center; justify-content:center; gap:7px; min-height:44px; padding:6px 12px;
   color:var(--fn-ink); border:1px solid transparent; border-radius:999px; background:none; white-space:nowrap;
 }
 .fn-nav a[aria-current],.fn-more.fn-active > summary {
@@ -61,7 +61,7 @@ body.fn-page, body.fn-workspace {
 .fn-popover a:hover,.fn-popover button:hover { background:var(--fn-panel); }
 .fn-popover p:empty { display:none; }
 #fn-username { display:block; padding:6px 10px; max-width:230px; overflow-wrap:anywhere; color:var(--fn-muted); }
-.fn-account summary,.fn-bell { min-width:42px; min-height:42px; padding:4px; }
+.fn-account summary,.fn-bell { min-width:44px; min-height:44px; padding:4px; }
 #fn-initial { display:grid; place-items:center; width:32px; height:32px; background:#164867; border:1px solid #477d99; border-radius:50%; color:#e9faff; font-weight:700; }
 .fn-bell:disabled { opacity:.55; cursor:default; }
 .fn-shell { max-width:1540px; padding:0 36px 38px; margin:auto; }
@@ -128,7 +128,7 @@ body.fn-page, body.fn-workspace {
 .fn-root { display:flex; align-items:center; gap:7px; min-width:0; padding:9px; border:1px solid var(--fn-line); border-radius:12px; background:#6cbcf00d; }
 .fn-root a { display:flex; gap:6px; align-items:center; min-width:0; flex:1; }
 .fn-root a span:last-child { white-space:nowrap; text-overflow:ellipsis; overflow:hidden; }
-.fn-root button { flex:none; min-width:36px; min-height:40px; padding:4px; border:0; background:none; color:var(--fn-muted); cursor:pointer; }
+.fn-root button { flex:none; min-width:44px; min-height:44px; padding:4px; border:0; background:none; color:var(--fn-muted); cursor:pointer; }
 .fn-root button[aria-pressed=true] { color:var(--fn-accent); }
 .fn-list { list-style:none; padding:0; margin:0; }
 .fn-list > li + li { border-top:1px solid var(--fn-line); }
@@ -183,7 +183,7 @@ body.fn-page, body.fn-workspace {
     grid-column:1/-1; grid-row:2; display:grid; grid-template-columns:repeat(4,minmax(0,1fr));
     gap:2px; border:1px solid var(--fn-line); padding:2px; border-radius:17px; background:#65c4e00c;
   }
-  .fn-nav > a,.fn-nav > details > summary { width:100%; min-height:42px; padding:3px 1px; gap:4px; border-radius:13px; font-size:.79rem; }
+  .fn-nav > a,.fn-nav > details > summary { width:100%; min-height:44px; padding:3px 1px; gap:4px; border-radius:13px; font-size:.79rem; }
   .fn-nav .fn-icon { width:1.08em; height:1.08em; }
   .fn-shell { padding-inline:11px; }
   .fn-dashboard { grid-template-columns:minmax(0,1fr); }
@@ -212,7 +212,6 @@ body.fn-page, body.fn-workspace {
   .fn-category { gap:6px; padding-inline:6px; }
 }
 @media (orientation:landscape) and (max-height:470px) {
-  .fn-nav > a,.fn-nav > details > summary { min-height:36px; }
   .fn-header-inner { padding-top:0; }
 }
 

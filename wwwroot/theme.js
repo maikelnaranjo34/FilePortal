@@ -29,10 +29,13 @@
   function showContextNotice() {
     var notice = document.getElementById("contextMenuNotice");
     if (!notice) return;
+    notice.textContent = "";
+    notice.textContent = "Right-click is disabled in FileNest.";
     notice.classList.add("show");
     clearTimeout(contextNoticeTimer);
     contextNoticeTimer = setTimeout(function () {
       notice.classList.remove("show");
+      setTimeout(function () { notice.textContent = ""; }, 200);
     }, 2600);
   }
 
@@ -101,7 +104,6 @@
     notice.id = "contextMenuNotice";
     notice.setAttribute("role", "status");
     notice.setAttribute("aria-live", "polite");
-    notice.textContent = "Right-click is disabled in FileNest.";
     document.body.appendChild(notice);
   }
 
