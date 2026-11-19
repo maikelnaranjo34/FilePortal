@@ -13,6 +13,7 @@ var builder = WebApplication.CreateBuilder(provisioning ? [] : args);
 builder.Services.AddControllers().AddJsonOptions(options =>
     options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase);
 builder.Services.AddSingleton<FileBrowserService>();
+builder.Services.AddSingleton<AuthorizedFileSearchService>();
 builder.Services.AddSingleton<UserStoreService>();
 builder.Services.AddSingleton<ThumbnailService>();
 builder.Services.AddSingleton<PhotoLibraryService>();

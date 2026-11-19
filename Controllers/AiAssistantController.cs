@@ -12,7 +12,8 @@ namespace FilePortal.Controllers;
 [Route("api/ai")]
 [Authorize]
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
-public sealed class AiAssistantController(AiSettingsService settingsStore, IHttpClientFactory clients) : ControllerBase
+public sealed class AiAssistantController(AiSettingsService settingsStore, IHttpClientFactory clients,
+    AuthorizedFileSearchService fileSearch) : ControllerBase
 {
     public sealed class Message
     {
@@ -63,6 +64,23 @@ public sealed class AiAssistantController(AiSettingsService settingsStore, IHttp
             model = settings.OpenAiModel,
             instructions = "You are Nesti, the concise and friendly FilePortal assistant. Help the signed-in user manage and understand their files. Never claim to have read, moved, changed, or deleted a file unless a server tool explicitly reports that action. Never request API keys or passwords. Destructive actions always require a separate visual confirmation in FilePortal. The current user is " + currentUser.Username + ".",
             input,
+            tools = new object[]
+            {
+                new
+                {
+                    type = "function",
+                    name = "search_files",
+                    description = "Search file and folder names across only the folders the signed-in FilePortal user is authorized to access.",
+                    parameters = new
+                    {
+                        type = "object",
+                        properties = new { query = new { type = "string", description = "A file or folder name, or part of one." } },
+                        required = new[] { "query" },
+                        additionalProperties = false
+                    },
+                    strict = true
+                }
+            },
             max_output_tokens = 1200
         };
 
@@ -75,6 +93,34 @@ public sealed class AiAssistantController(AiSettingsService settingsStore, IHttp
             using var payload = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(cancellationToken), cancellationToken: cancellationToken);
             if (!response.IsSuccessStatusCode)
                 return StatusCode(StatusCodes.Status502BadGateway, new { error = ProviderError(payload) });
+
+            var toolCalls = ExtractToolCalls(payload.RootElement).ToList();
+            if (toolCalls.Count > 0)
+            {
+                var outputs = toolCalls.Select(call => new
+                {
+                    type = "function_call_output",
+                    call_id = call.CallId,
+                    output = ExecuteTool(call, currentUser, cancellationToken)
+                }).ToArray();
+                var continuation = new
+                {
+                    model = settings.OpenAiModel,
+                    previous_response_id = payload.RootElement.GetProperty("id").GetString(),
+                    input = outputs,
+                    max_output_tokens = 1200
+                };
+                using var continuationRequest = CreateOpenAiRequest(key, continuation);
+                using var continuationResponse = await clients.CreateClient("AiProviders").SendAsync(continuationRequest, cancellationToken);
+                using var continuationPayload = await JsonDocument.ParseAsync(
+                    await continuationResponse.Content.ReadAsStreamAsync(cancellationToken), cancellationToken: cancellationToken);
+                if (!continuationResponse.IsSuccessStatusCode)
+                    return StatusCode(StatusCodes.Status502BadGateway, new { error = ProviderError(continuationPayload) });
+                var continuedReply = ExtractText(continuationPayload.RootElement);
+                return string.IsNullOrWhiteSpace(continuedReply)
+                    ? StatusCode(StatusCodes.Status502BadGateway, new { error = "OpenAI returned no assistant message after searching." })
+                    : Ok(new { reply = continuedReply });
+            }
 
             var reply = ExtractText(payload.RootElement);
             return string.IsNullOrWhiteSpace(reply)
@@ -89,6 +135,46 @@ public sealed class AiAssistantController(AiSettingsService settingsStore, IHttp
         {
             return StatusCode(StatusCodes.Status504GatewayTimeout, new { error = "OpenAI did not respond in time." });
         }
+    }
+
+    private sealed record ToolCall(string Name, string CallId, string Arguments);
+
+    private static IEnumerable<ToolCall> ExtractToolCalls(JsonElement root)
+    {
+        if (!root.TryGetProperty("output", out var output)) yield break;
+        foreach (var item in output.EnumerateArray())
+            if (item.TryGetProperty("type", out var type) && type.GetString() == "function_call" &&
+                item.TryGetProperty("name", out var name) && item.TryGetProperty("call_id", out var callId) &&
+                item.TryGetProperty("arguments", out var arguments))
+                yield return new ToolCall(name.GetString() ?? "", callId.GetString() ?? "", arguments.GetString() ?? "{}");
+    }
+
+    private string ExecuteTool(ToolCall call, UserRecord user, CancellationToken cancellationToken)
+    {
+        if (call.Name != "search_files") return JsonSerializer.Serialize(new { error = "Unsupported tool." });
+        try
+        {
+            using var arguments = JsonDocument.Parse(call.Arguments);
+            var query = arguments.RootElement.GetProperty("query").GetString()?.Trim();
+            if (string.IsNullOrEmpty(query) || query.Length > 200)
+                return JsonSerializer.Serialize(new { error = "Search terms must contain 1 to 200 characters." });
+            var results = fileSearch.Search(user, query, 25, cancellationToken)
+                .Select(item => new { item.Name, item.Path, item.IsDirectory, item.Size, item.LastModified })
+                .ToList();
+            return JsonSerializer.Serialize(new { query, count = results.Count, results });
+        }
+        catch (JsonException)
+        {
+            return JsonSerializer.Serialize(new { error = "The search request was invalid." });
+        }
+    }
+
+    private static HttpRequestMessage CreateOpenAiRequest(string key, object body)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, "https://api.openai.com/v1/responses");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
+        request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+        return request;
     }
 
     private static string ExtractText(JsonElement root)
