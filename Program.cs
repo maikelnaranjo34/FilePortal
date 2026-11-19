@@ -121,7 +121,15 @@ else
     }));
 }
 
-app.UseStaticFiles();
+var clientFiles = new StaticFileOptions
+{
+    OnPrepareResponse = context =>
+    {
+        if (Path.GetExtension(context.File.Name) is ".html" or ".js" or ".css")
+            context.Context.Response.Headers.CacheControl = "no-cache, must-revalidate";
+    }
+};
+app.UseStaticFiles(clientFiles);
 app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();
@@ -130,7 +138,7 @@ app.MapControllers();
 app.MapGet("/portal.html", () => Results.Redirect("/"));
 app.MapGet("/FileManager", () => Results.Redirect("/files.html"));
 app.MapFallback("/api/{**path}", () => Results.NotFound(new { error = "API route not found" }));
-app.MapFallbackToFile("index.html");
+app.MapFallbackToFile("index.html", clientFiles);
 
 app.Run();
 return 0;

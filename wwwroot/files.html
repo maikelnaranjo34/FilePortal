@@ -319,7 +319,7 @@
     .item-delete { align-self:flex-end; margin:4px 8px 8px; }
     .selection-mode .item-delete { display:none; }
     .grid.list-view .item-delete, .grid.details-view .item-delete { align-self:center; margin:0 0 0 4px; }
-    @media (max-width:700px) {
+    @media (max-width:700px), (max-width:1100px) and (pointer:coarse) {
       .app { flex-direction:column; }
       .mobile-roots-toggle { display:inline-flex; }
       .sidebar { display:none; width:100%; max-height:34dvh; overflow:auto; border-right:0; border-bottom:1px solid #1f2937; }
@@ -896,7 +896,7 @@
 
     let selectionMode = false;
     let deleting = false;
-    let viewType = matchMedia("(max-width: 700px)").matches ? "list" : "tiles";
+    let viewType = matchMedia("(max-width: 700px), (max-width: 1100px) and (pointer: coarse)").matches ? "list" : "tiles";
     const fileRange = new RangeSelection();
 
     function selectFile(card, extend, checked) {

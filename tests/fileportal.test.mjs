@@ -121,17 +121,20 @@ test('FilePortal release integration', { timeout: 90_000 }, async t => {
     }
 
     const landing = await request('/', 200);
+    assert.match(landing.headers.get('cache-control'), /no-cache/);
     const landingHtml = await landing.text();
     for (const view of ['photos', 'albums', 'favorites', 'search'])
       assert.match(landingHtml, new RegExp('href="#' + view + '"'));
     assert.match(landingHtml, /src="\/app\.js(?:\?[^"]+)?"/);
     const galleryScript = await request('/app.js', 200);
+    assert.match(galleryScript.headers.get('cache-control'), /must-revalidate/);
     assert.match(galleryScript.headers.get('content-type'), /javascript/);
     await request('/theme.js', 200);
     await request('/preview.js', 200);
     await request('/range-selection.js', 200);
     await request('/login.html', 200);
     const fileManager = await request('/files.html', 200);
+    assert.match(fileManager.headers.get('cache-control'), /no-cache/);
     assert.match(await fileManager.text(), /archiveDownload/);
     assert.equal((await request('/portal.html', 302)).headers.get('location'), '/');
     assert.equal((await request('/FileManager', 302)).headers.get('location'), '/files.html');

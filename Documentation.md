@@ -99,6 +99,8 @@ In Photos, administrators can delete an item from its preview or use **Select**,
 
 Photos and Favorites refresh when you return to the browser tab. Deleted files are omitted from gallery results even before the next library scan.
 
+Browsers revalidate HTML, JavaScript, and CSS before reusing them. Touch devices also use the compact layout at wider phone viewport sizes.
+
 Videos support byte-range responses for seeking. ZIP archives are prepared in the protected data directory, then downloaded by the browser and removed when the response closes. Thumbnails for JPEG, PNG, GIF, BMP, and WebP are generated with SkiaSharp at up to 240 pixels per side and cached in memory.
 
 ## Deployment and upgrade
