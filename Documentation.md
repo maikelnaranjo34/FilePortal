@@ -229,6 +229,7 @@ Use the .NET 10 SDK and Node.js 22 or later.
 ```powershell
 dotnet build Fileportal.sln
 node --test tests/fileportal.test.mjs
+node --test tests/filenest.browser.mjs
 dotnet list FilePortal.csproj package --vulnerable --include-transitive
 ```
 
@@ -243,3 +244,9 @@ After deployment, verify the expected bindings, sign-in, access to each configur
 - The .NET 10 migration kept the existing user store. IIS serves the LAN over HTTP and uses HTTPS on localhost. The SMTP replacement credential is configured through the IIS application pool environment.
 - The gallery rollout restored signed-in navigation on the LAN, reused the active media index, and kept File Manager at `/files.html`. Follow-up releases added Android layout changes, single and batch deletion, first-to-last range selection, preview rotation, and refresh after files are deleted outside FilePortal.
 - On November 18, 2026, the video thumbnail release was deployed to IIS with FFmpeg 8.1.1. Post-deployment checks confirmed the Videos link and sign-in requirement on both bindings and the application pool's access to FFmpeg. Chrome's Android emulation verified rendering a thumbnail and tapping it to open the video on the published build.
+- On November 18, 2026, the `redesign/filenest` branch was merged into `main` and both branches were pushed to GitHub. Commit `46ff168` contains the complete FileNest redesign and commit `b77f08a` contains the final reproducible browser validation.
+- The browser regression suite uses Chrome and verifies the sign-in flow, dashboard, assistant dialog, File Manager search, and 320–430 px mobile layouts. Windows GitHub Actions runs it after the release integration suite.
+- `http://127.0.0.1:5286/` is a temporary redesign preview process. It is not a live deployment and may be stopped independently of IIS or the Windows service.
+- `http://192.168.5.7/` is the expected machine-LAN live address. The LAN endpoint and the temporary preview returned matching dashboard HTML during verification, but an incomplete or mixed live publication must not be considered complete until every live page and asset is from the merged `main` build and no old navigation or UI remains.
+- A merged `.NET 10` publish was created in `bin\Release\net10.0\publish`. The latest known production data from `bin\rollout\publish-ff68b04\data` was copied into that publish directory before live-service diagnosis.
+- The existing Windows service named `FilePortal` was found stopped and still configured through NSSM to an obsolete `.NET 8` executable. NSSM and the Windows service registry require elevated Administrator access to reconfigure and start. No live-service deployment was completed while elevation was unavailable.
