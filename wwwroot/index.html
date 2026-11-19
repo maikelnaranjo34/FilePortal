@@ -113,12 +113,15 @@
   <dialog id="assistantPanel" class="fn-dialog" aria-labelledby="assistantTitle">
     <div class="fn-assistant"><img src="/filenest/mascot.png" alt="" width="78" height="78"><div>
       <h2 id="assistantTitle">FileNest Assistant</h2>
-      <p>AI isn’t connected yet. You can still search by file name.</p>
+      <p id="assistantAvailability">Checking assistant availability…</p>
     </div></div>
-    <div class="fn-actions fn-assistant-actions" aria-label="AI capabilities">
-      <button type="button" class="fn-button" disabled title="Requires an AI connection">Summarize a file</button>
-      <button type="button" class="fn-button" disabled title="Requires an AI connection">Suggest organization</button>
-    </div>
+    <div id="assistantConversation" class="fn-assistant-conversation" role="log" aria-live="polite" aria-label="Conversation"></div>
+    <form id="assistantForm" class="fn-assistant-form">
+      <label class="fn-visually-hidden" for="assistantMessage">Message Nesti</label>
+      <textarea id="assistantMessage" rows="2" maxlength="4000" placeholder="Ask Nesti about your files…" required></textarea>
+      <button type="submit" class="fn-button fn-button-primary" id="assistantSend">Send</button>
+    </form>
+    <p id="assistantStatus" class="fn-muted" role="status"></p>
     <div class="fn-dialog-actions">
       <form method="dialog"><button type="submit" class="fn-button">Close</button></form>
       <button type="button" class="fn-button fn-button-primary" data-assistant-search>Find a file</button>

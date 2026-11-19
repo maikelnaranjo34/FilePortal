@@ -215,6 +215,9 @@ test('FilePortal release integration', { timeout: 90_000 }, async t => {
     assert.equal(afterKeyRemoval.enabled, false);
     assert.equal(afterKeyRemoval.openAiConfigured, false);
     assert.equal(afterKeyRemoval.assemblyAiConfigured, true);
+    const assistantStatus = await (await request('/api/ai/status', 200, legacy)).json();
+    assert.equal(assistantStatus.available, false);
+    await request('/api/ai/chat', 503, legacy, json({ message: 'Hello' }));
     assert.deepEqual((await (await request('/api/files/search?q=NoTe.TxT', 200, legacy)).json())
       .map(item => item.path), [text]);
     assert.deepEqual(await (await request('/api/files/search?q=other.txt', 200, legacy)).json(), []);

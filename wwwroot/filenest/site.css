@@ -164,6 +164,13 @@ body.fn-page, body.fn-workspace {
 .fn-dialog-actions { display:flex; justify-content:flex-end; gap:8px; flex-wrap:wrap; }
 .fn-dialog .fn-assistant { margin-bottom:13px; }
 .fn-dialog .fn-assistant p { color:var(--fn-muted); }
+.fn-assistant-conversation { display:grid; gap:8px; max-height:min(42vh,360px); overflow:auto; margin:8px 0; padding:3px; }
+.fn-assistant-message { max-width:88%; padding:9px 11px; border:1px solid var(--fn-line); border-radius:12px; background:var(--fn-panel); }
+.fn-assistant-message.user { justify-self:end; background:color-mix(in srgb,var(--fn-accent) 18%,var(--fn-panel)); }
+.fn-assistant-message strong { display:block; font-size:.76rem; color:var(--fn-muted); }
+.fn-assistant-message p { margin:3px 0 0; white-space:pre-wrap; overflow-wrap:anywhere; }
+.fn-assistant-form { display:flex; align-items:flex-end; gap:8px; margin:10px 0; }
+.fn-assistant-form textarea { box-sizing:border-box; flex:1; min-width:0; resize:vertical; padding:9px; border:1px solid var(--fn-line); border-radius:10px; color:var(--fn-ink); background:var(--fn-surface); font:inherit; }
 .fn-actions { display:flex; flex-wrap:wrap; gap:8px; }
 @media (prefers-reduced-motion:no-preference) {
   .fn-button,.fn-category,.fn-nav a { transition:background .18s,border-color .18s,box-shadow .18s; }
