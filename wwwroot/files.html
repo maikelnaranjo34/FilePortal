@@ -362,22 +362,25 @@
   <p id="explorerStatus" class="fn-status" role="status">Loading your folders…</p>
 
   <div class="app" style="display:none;" id="mainApp">
-    <div class="sidebar" id="driveSidebar">
-      <div class="sidebar-header">Drives & Sources</div>
-      <div id="driveList" class="drive-list"></div>
-      <div style="margin-top:16px;padding-top:16px;border-top:1px solid #1f2937">
-        <div style="font-size:12px;color:#9ca3af;margin-bottom:8px;font-weight:600">FILTERS</div>
-        <button id="filterPictures" class="secondary" style="width:100%;margin-bottom:6px;justify-content:flex-start" onclick="filterByCategory('pictures')">🖼️ Pictures</button>
-        <button id="filterVideos" class="secondary" style="width:100%;margin-bottom:6px;justify-content:flex-start" onclick="filterByCategory('videos')">🎬 Videos</button>
-        <button id="filterDocuments" class="secondary" style="width:100%;justify-content:flex-start" onclick="filterByCategory('documents')">📄 Documents</button>
+    <aside class="sidebar fn-panel" id="driveSidebar" aria-label="Folders and file filters">
+      <div class="sidebar-header">
+        <strong>Browse folders</strong>
+        <span class="fn-muted">Choose an available location</span>
       </div>
-    </div>
+      <div id="driveList" class="drive-list"></div>
+      <div class="drive-filters" aria-label="Filter by file type">
+        <h2>File types</h2>
+        <button id="filterPictures" class="secondary" type="button" onclick="filterByCategory('pictures')">🖼️ Pictures</button>
+        <button id="filterVideos" class="secondary" type="button" onclick="filterByCategory('videos')">🎬 Videos</button>
+        <button id="filterDocuments" class="secondary" type="button" onclick="filterByCategory('documents')">📄 Documents</button>
+      </div>
+    </aside>
     <main class="main">
       <div class="fn-explorer-title">
         <h1>My Files</h1>
         <nav id="fileBreadcrumbs" class="fn-breadcrumbs" aria-label="Current folder"></nav>
       </div>
-      <div class="toolbar">
+      <div class="toolbar fn-panel">
         <div class="path" id="currentPathLabel">Select a drive…</div>
         <div class="buttons">
           <button id="rootsToggle" class="secondary mobile-roots-toggle" type="button" aria-controls="driveSidebar" aria-expanded="false">Drives</button>
@@ -394,14 +397,14 @@
           <button id="viewTypeBtn" class="secondary" type="button" onclick="toggleViewType()">📋 View</button>
         </div>
       </div>
-      <div class="fn-files-tools">
+      <div class="fn-files-tools fn-panel">
         <label for="folderSearch" class="fn-visually-hidden">Search this folder</label>
         <input id="folderSearch" type="search" placeholder="Search this folder…">
         <label for="fileSort" class="fn-visually-hidden">Sort files</label>
         <select id="fileSort"><option value="name">Name</option><option value="modified">Last modified</option><option value="size">Size</option></select>
         <a class="fn-inline-link" href="/gallery.html#search">Search Gallery</a>
       </div>
-      <div class="selection-toolbar" aria-label="Selection and deletion">
+      <div class="selection-toolbar fn-panel" aria-label="Selection and deletion">
         <button id="selectBtn" class="secondary" type="button" aria-pressed="false">Select</button>
         <button id="rangeBtn" class="secondary" type="button" aria-pressed="false" hidden>Range</button>
         <button id="selectAllBtn" class="secondary" type="button" hidden onclick="selectAll()">Select all</button>
@@ -410,7 +413,7 @@
         <span id="selectedCountLabel" role="status"></span>
       </div>
       <p id="uploadStatus" class="fn-status" role="status"></p>
-      <div class="content">
+      <div class="content fn-panel">
         <div id="error" class="error" role="status"></div>
         <div id="items" class="grid"></div>
         <div id="emptyMsg" class="empty" style="display:none;">This folder is empty.</div>
@@ -499,7 +502,7 @@
         if (!user) { location.replace(FileNest.signInUrl()); return; }
         accountUser = user.user;
         document.getElementById("explorerStatus").hidden = true;
-        document.getElementById("mainApp").style.display = "flex";
+        document.getElementById("mainApp").style.display = "grid";
         await loadDrives();
       } catch (error) {
         document.getElementById("explorerStatus").textContent = error.message;

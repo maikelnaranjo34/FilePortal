@@ -176,7 +176,15 @@ test('FileNest browser regression', { timeout: 120_000, skip: process.platform !
         mobile
       });
       assert.equal(await evaluate('innerWidth'), width);
-      assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth + 1'), true);
+      const noHorizontalOverflow = await evaluate('document.documentElement.scrollWidth <= innerWidth + 1');
+      const overflow = noHorizontalOverflow ? '' : await evaluate(
+        'JSON.stringify({innerWidth,clientWidth:document.documentElement.clientWidth,small:matchMedia("(max-width: 820px)").matches,' +
+        'appColumns:getComputedStyle(document.querySelector("#mainApp")).gridTemplateColumns,' +
+        'sidebar:getComputedStyle(document.querySelector("#driveSidebar")).display,elements:[...document.querySelectorAll("body *")].filter(element => {' +
+        'const rect=element.getBoundingClientRect(); return rect.width && rect.right > innerWidth + 1' +
+        '}).map(element => ({tag:element.tagName,className:element.className,id:element.id,right:element.getBoundingClientRect().right})).slice(0,8)})'
+      );
+      assert.equal(noHorizontalOverflow, true, overflow);
     }
 
     await send('Page.enable');
@@ -207,9 +215,19 @@ test('FileNest browser regression', { timeout: 120_000, skip: process.platform !
 
     await navigate('/files.html');
     await until('location.pathname === "/files.html" && document.readyState === "complete"', 'File Manager did not load');
+    await until('document.querySelectorAll("#driveList .drive-item").length === 1', 'File Manager folders did not load');
+    await setViewport(1440, 900, false);
+    assert.equal(await evaluate('getComputedStyle(document.querySelector("#mainApp")).display'), 'grid');
+    assert.equal(await evaluate('getComputedStyle(document.querySelector("#driveSidebar")).display'), 'flex');
+    assert.equal(await evaluate('document.querySelector(".fn-explorer-title").closest(".main") !== null'), true);
     await evaluate('document.querySelector("#folderSearch").value="Release"; document.querySelector("#folderSearch").dispatchEvent(new Event("input")); true');
     await until('document.querySelectorAll("#items .item").length >= 1', 'File search did not return a result');
     assert.deepEqual(await evaluate('[...document.querySelectorAll("#items .item-name")].map(element => element.textContent)'), ['Release Notes.txt']);
+
+    await setViewport(320, 844, true);
+    assert.equal(await evaluate('getComputedStyle(document.querySelector("#mainApp")).display'), 'grid');
+    assert.equal(await evaluate('getComputedStyle(document.querySelector("#driveSidebar")).display'), 'none');
+    assert.equal(await evaluate('getComputedStyle(document.querySelector("#rootsToggle")).display !== "none"'), true);
 
     assert.deepEqual(runtimeErrors, []);
   } finally {
