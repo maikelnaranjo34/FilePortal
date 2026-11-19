@@ -741,6 +741,22 @@
   function escapeAttr(s) { return escapeHtml(s); }
 
   // ---------- boot ----------
+  function refreshTimelineOnReturn() {
+    if (!state.me || state.selectMode || state.deleting || lb.classList.contains("show") ||
+        document.getElementById("modal").classList.contains("show"))
+      return;
+
+    if (state.view === "photos" || state.view === "favorites")
+      setView(state.view);
+  }
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") refreshTimelineOnReturn();
+  });
+  window.addEventListener("pageshow", event => {
+    if (event.persisted) refreshTimelineOnReturn();
+  });
+
   (async () => {
     try {
       state.me = await apiJson("/api/auth/me");

@@ -202,6 +202,17 @@ test('FilePortal release integration', { timeout: 90_000 }, async t => {
     assert.equal(photoZip.headers.get('content-type'), 'application/zip');
     assert.ok(Buffer.from(await photoZip.arrayBuffer()).includes('photo.png'));
 
+    const externalPhoto = path.join(allowed, 'Removed in Explorer.png');
+    writeFileSync(externalPhoto, readFileSync(photo));
+    await request('/api/photos/scan', 200, admin, { method: 'POST' });
+    const indexedExternalPhoto = await request('/api/search?q=Removed%20in%20Explorer', 200, legacy);
+    assert.equal((await indexedExternalPhoto.json()).total, 1);
+    rmSync(externalPhoto);
+    const updatedSearch = await request('/api/search?q=Removed%20in%20Explorer', 200, legacy);
+    assert.equal((await updatedSearch.json()).total, 0);
+    const updatedTimeline = await request('/api/photos/timeline', 200, legacy);
+    assert.equal((await updatedTimeline.json()).total, photoItems.length);
+
     const upload = new FormData();
     upload.append('files', new Blob(['new file']), 'Nested/new.txt');
     await request(at('/api/files/upload', allowed, 'targetPath'), 200, legacy, { method: 'POST', body: upload });

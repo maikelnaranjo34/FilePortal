@@ -388,7 +388,7 @@ public class PhotoLibraryService
                 allowed = !IsExcluded(directory, exclusions) && _browser.TryResolve(directory, roots, out _) && Directory.Exists(directory);
                 directories.Add(directory, allowed);
             }
-            return allowed;
+            return allowed && File.Exists(photo.FullPath);
         }).OrderByDescending(photo => photo.DateTaken).ToList();
     }
 
