@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { pbkdf2Sync, randomBytes } from 'node:crypto';
 import { once } from 'node:events';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, truncateSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, truncateSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
@@ -69,10 +69,15 @@ test('FilePortal release integration', { timeout: 90_000 }, async t => {
   const ffmpegCommand = process.platform === 'win32' ? 'where.exe' : 'which';
   const ffmpeg = spawnSync(ffmpegCommand, ['ffmpeg'], { encoding: 'utf8' }).stdout
     ?.split(/\r?\n/).find(line => path.isAbsolute(line.trim()))?.trim();
+  if (ffmpeg) {
+    const tools = path.join(publish, 'tools');
+    mkdirSync(tools);
+    copyFileSync(ffmpeg, path.join(tools, path.basename(ffmpeg)));
+  }
   const env = Object.fromEntries(Object.entries(process.env).filter(([name]) =>
     !/^(FilePortal|Roots|Email|Auth|VideoThumbnails)__/i.test(name)));
   Object.assign(env, { ASPNETCORE_ENVIRONMENT: 'Production', DOTNET_ENVIRONMENT: 'Production' });
-  if (ffmpeg) env.VideoThumbnails__FfmpegPath = ffmpeg;
+  if (ffmpeg) env.VideoThumbnails__FfmpegPath = path.join(temp, 'missing-ffmpeg.exe');
 
   const password = 'integration-test-password';
   const adminArgs = ['FilePortal.dll', '--provision-admin', 'administrator'];

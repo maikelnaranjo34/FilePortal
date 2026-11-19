@@ -175,7 +175,7 @@ ZIP archives are prepared in the protected data directory, then downloaded by th
 | `Roots` | Maps display names to fully qualified local or UNC directories. Use `Roots__Name` for an environment variable. |
 | `FilePortal__DataDirectory` | Sets an absolute path outside `wwwroot`. Defaults to `data` beside the application assembly. |
 | `PhotoLibrary__ScanRoots__0` and subsequent entries | Restrict gallery scans to specific folders within configured roots. |
-| `VideoThumbnails__FfmpegPath` | Sets the absolute path to the FFmpeg 8 executable. In JSON, use `FfmpegPath` under `VideoThumbnails`. |
+| `VideoThumbnails__FfmpegPath` | Optional fallback absolute path to the FFmpeg 8 executable. In JSON, use `FfmpegPath` under `VideoThumbnails`. The app first checks `tools\ffmpeg.exe` beside the published application, then this setting and `PATH`. |
 | `Email__SmtpUsername` and `Email__SmtpPassword` | Optional SMTP credentials. For Gmail with an app password, use the Gmail address as the username and set the app password as `Email__SmtpPassword`. It is separate from your FilePortal sign-in password. |
 | `Email__FromEmail` and `Email__ToEmail` | Sender and recipient for optional sign-in notifications. |
 | `Email__SmtpHost`, `Email__SmtpPort`, and `Email__EnableSsl` | SMTP server, port, and TLS. The checked-in settings use `smtp.gmail.com`, port `587`, and TLS enabled. |
@@ -184,7 +184,7 @@ Protect and back up the data directory. It holds `users.json`, Data Protection k
 
 Store SMTP credentials in the hosting environment or a secret manager. Revoke credentials exposed in Git history at their source and replace any reused passwords.
 
-To enable video thumbnails, give the hosting identity read and execute access to the configured FFmpeg executable and restart the app. If the setting is omitted, video tiles use the video icon.
+For IIS or Windows-service deployments, place FFmpeg 8 at `tools\ffmpeg.exe` under the publish directory. The hosting identity inherits read/execute access from the published application directory. Alternatively, configure `VideoThumbnails__FfmpegPath` and grant the hosting identity read/execute access to the executable and every parent directory. Restart the app after changing its configuration. If FFmpeg is unavailable, video tiles use the video icon.
 
 ## Deployment and upgrades
 
@@ -249,5 +249,7 @@ After deployment, verify the expected bindings, sign-in, access to each configur
 - `http://127.0.0.1:5286/` is a temporary redesign preview process. It is not a live deployment and may be stopped independently of IIS or the Windows service.
 - `http://192.168.5.7/` is the expected machine-LAN live address. The LAN endpoint and the temporary preview returned matching dashboard HTML during verification, but an incomplete or mixed live publication must not be considered complete until every live page and asset is from the merged `main` build and no old navigation or UI remains.
 - A merged `.NET 10` publish was created in `bin\Release\net10.0\publish`. The latest known production data from `bin\rollout\publish-ff68b04\data` was copied into that publish directory before live-service diagnosis.
-- The existing Windows service named `FilePortal` was found stopped and still configured through NSSM to an obsolete `.NET 8` executable. NSSM and the Windows service registry require elevated Administrator access to reconfigure and start. No live-service deployment was completed while elevation was unavailable.
-- Video thumbnails previously used a frame around two seconds through FFmpeg 8.1.1. If thumbnail configuration is missing, the application now resolves FFmpeg from the configured path, `PATH`, or the standard Windows WinGet package location. The machine app settings also include the installed FFmpeg 8.1.1 executable explicitly.
+- The Windows service named `FilePortal` was found stopped and still configured through NSSM to an obsolete `.NET 8` executable. The active live deployment is IIS (`FilePortalPool`), so the Windows service was left stopped and was not used for the IIS rollout.
+- Video thumbnails use a frame around two seconds through FFmpeg 8.1.1, then fall back to the opening frame for short clips. On November 18, the live thumbnail issue was traced to the IIS app-pool identity lacking read/execute access to FFmpeg under the interactive user's WinGet profile. The resolver now prefers an app-local `tools\ffmpeg.exe`; deployment instructions require placing FFmpeg beside the published app so the hosting identity can execute it.
+- The live IIS site was switched to `bin\Release\net10.0\live-publish` with its existing port 80 and localhost HTTPS bindings preserved. The current users, Data Protection keys, favorites, shares, and photo index were copied from the previous publish; the users-store hashes matched. FFmpeg 8.1.1 is bundled under the new publish's `tools` directory with app-pool read/execute access. The integration suite verifies a real JPEG from around two seconds and opening-frame fallback for short videos.
+- After the switch, the LAN homepage, Gallery, and FileNest assets returned HTTP 200. The authenticated media-thumbnail route requires a signed-in session; live IIS access to FFmpeg is granted by the app-local executable and directory ACLs.

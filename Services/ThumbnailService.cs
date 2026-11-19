@@ -100,13 +100,18 @@ public sealed class ThumbnailService(IConfiguration configuration, ILogger<Thumb
 
     private static string? ResolveFfmpegPath(string? configured)
     {
+        var executableName = OperatingSystem.IsWindows() ? "ffmpeg.exe" : "ffmpeg";
+        var appLocal = Path.Combine(AppContext.BaseDirectory, "tools", executableName);
+        if (File.Exists(appLocal))
+            return appLocal;
+
         if (!string.IsNullOrWhiteSpace(configured) && Path.IsPathFullyQualified(configured) && File.Exists(configured))
             return configured;
 
         foreach (var directory in (Environment.GetEnvironmentVariable("PATH") ?? "").Split(
                      Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
-            var candidate = Path.Combine(directory, OperatingSystem.IsWindows() ? "ffmpeg.exe" : "ffmpeg");
+            var candidate = Path.Combine(directory, executableName);
             if (File.Exists(candidate))
                 return candidate;
         }
