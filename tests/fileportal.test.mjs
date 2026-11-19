@@ -59,9 +59,13 @@ test('FilePortal release integration', { timeout: 90_000 }, async t => {
     Roots: { Fixture: files },
     Email: { SmtpHost: '' }
   }));
+  const ffmpegCommand = process.platform === 'win32' ? 'where.exe' : 'which';
+  const ffmpeg = spawnSync(ffmpegCommand, ['ffmpeg'], { encoding: 'utf8' }).stdout
+    ?.split(/\r?\n/).find(line => path.isAbsolute(line.trim()))?.trim();
   const env = Object.fromEntries(Object.entries(process.env).filter(([name]) =>
-    !/^(FilePortal|Roots|Email|Auth)__/i.test(name)));
+    !/^(FilePortal|Roots|Email|Auth|VideoThumbnails)__/i.test(name)));
   Object.assign(env, { ASPNETCORE_ENVIRONMENT: 'Production', DOTNET_ENVIRONMENT: 'Production' });
+  if (ffmpeg) env.VideoThumbnails__FfmpegPath = ffmpeg;
 
   const password = 'integration-test-password';
   const adminArgs = ['FilePortal.dll', '--provision-admin', 'administrator'];
@@ -191,6 +195,40 @@ test('FilePortal release integration', { timeout: 90_000 }, async t => {
     assert.equal(videoPage.total, 1);
     assert.deepEqual(videoPage.sections.flatMap(section => section.photos.map(item => item.fileName)), ['video.mp4']);
     assert.deepEqual(photoItems.map(item => item.fileName).sort(), ['photo.png', 'video.mp4']);
+    const videoId = videoPage.sections[0].photos[0].id;
+    const videoThumbnail = '/api/photos/' + videoId + '/thumbnail';
+    assert.equal((await request(videoThumbnail, 200, legacy)).headers.get('content-type'), 'image/svg+xml');
+    await request(videoThumbnail, 401);
+    await t.test('video thumbnails use a frame near two seconds and handle short videos',
+      { skip: !ffmpeg && 'FFmpeg is unavailable' }, async () => {
+        const generate = args => {
+          const result = spawnSync(ffmpeg, ['-y', '-v', 'error', ...args, '-c:v', 'mpeg4', video], { encoding: 'utf8' });
+          assert.equal(result.status, 0, result.stderr);
+        };
+        async function jpeg(route, cookie) {
+          const response = await request(route, 200, cookie);
+          assert.equal(response.headers.get('content-type'), 'image/jpeg');
+          return Buffer.from(await response.arrayBuffer());
+        }
+        generate([
+          '-f', 'lavfi', '-i', 'color=red:s=320x180:d=1',
+          '-f', 'lavfi', '-i', 'color=blue:s=320x180:d=2',
+          '-filter_complex', '[0:v][1:v]concat=n=2:v=1:a=0'
+        ]);
+        const preview = await jpeg(videoThumbnail, legacy);
+        assert.deepEqual(await jpeg(at('/api/files/thumbnail', video), legacy), preview);
+        const shared = await request('/api/sharing', 200, legacy, json({ type: 'photo', targetId: videoId }));
+        const sharedVideo = '/api/sharing/public/' + (await shared.json()).token + '/photo/' + videoId + '/thumbnail';
+        assert.deepEqual(await jpeg(sharedVideo), preview);
+        const pixel = spawnSync(ffmpeg, [
+          '-v', 'error', '-f', 'mjpeg', '-i', 'pipe:0', '-vf', 'scale=1:1',
+          '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1'
+        ], { input: preview });
+        assert.equal(pixel.status, 0, pixel.stderr.toString());
+        assert.ok(pixel.stdout[2] > 200 && pixel.stdout[0] < 40);
+        generate(['-f', 'lavfi', '-i', 'color=red:s=320x180:d=0.25']);
+        assert.notDeepEqual(await jpeg(videoThumbnail, legacy), preview);
+      });
     const photoId = photoItems.find(item => item.fileName === 'photo.png').id;
     await request('/api/photos/' + photoId + '/thumbnail', 200, legacy);
     await request('/api/photos/' + photoId + '/favorite', 200, legacy, json({ favorite: true }));

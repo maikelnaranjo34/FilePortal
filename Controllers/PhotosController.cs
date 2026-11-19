@@ -129,17 +129,17 @@ namespace FilePortal.Controllers
 
         // GET /api/photos/{id}/thumbnail
         [HttpGet("{id}/thumbnail")]
-        public IActionResult GetThumbnail(string id)
+        public async Task<IActionResult> GetThumbnail(string id, CancellationToken cancellationToken)
         {
             var m = _library.GetById(id, CurrentUser);
             if (m == null) return NotFound();
 
-            if (!m.IsVideo)
-            {
-                var thumbnail = _thumbnails.GetThumbnail(new FileInfo(m.FullPath));
-                if (thumbnail is not null)
-                    return File(thumbnail, "image/jpeg");
-            }
+            var file = new FileInfo(m.FullPath);
+            var thumbnail = m.IsVideo
+                ? await _thumbnails.GetVideoThumbnailAsync(file, cancellationToken)
+                : _thumbnails.GetThumbnail(file);
+            if (thumbnail is not null)
+                return File(thumbnail, "image/jpeg");
 
             return Content(ThumbnailService.GetMediaPlaceholder(m.IsVideo), "image/svg+xml");
         }

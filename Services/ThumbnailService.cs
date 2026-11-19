@@ -1,9 +1,11 @@
+using System.ComponentModel;
+using System.Diagnostics;
 using Microsoft.Extensions.Caching.Memory;
 using SkiaSharp;
 
 namespace FilePortal.Services;
 
-public sealed class ThumbnailService : IDisposable
+public sealed class ThumbnailService(IConfiguration configuration, ILogger<ThumbnailService> logger) : IDisposable
 {
     private const int MaxSide = 240;
     private const long MaxPixels = 50_000_000;
@@ -11,6 +13,8 @@ public sealed class ThumbnailService : IDisposable
         { ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp" };
 
     private readonly MemoryCache _cache = new(new MemoryCacheOptions { SizeLimit = 32 * 1024 * 1024 });
+    private readonly SemaphoreSlim _videoSlots = new(2);
+    private readonly string? _ffmpegPath = configuration["VideoThumbnails:FfmpegPath"];
 
     public byte[]? GetThumbnail(FileInfo file)
     {
@@ -45,6 +49,103 @@ public sealed class ThumbnailService : IDisposable
         return result;
     }
 
+    public async Task<byte[]?> GetVideoThumbnailAsync(FileInfo file, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(_ffmpegPath) || !Path.IsPathFullyQualified(_ffmpegPath) || !file.Exists)
+            return null;
+
+        var key = (file.FullName, file.LastWriteTimeUtc, file.Length);
+        if (_cache.TryGetValue<byte[]>(key, out var cached))
+            return cached;
+
+        await _videoSlots.WaitAsync(cancellationToken);
+        try
+        {
+            if (_cache.TryGetValue<byte[]>(key, out cached))
+                return cached;
+
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(TimeSpan.FromSeconds(6));
+            byte[]? frame = null;
+            try
+            {
+                frame = await ReadVideoFrameAsync(_ffmpegPath, file.FullName, "2", timeout.Token)
+                    ?? await ReadVideoFrameAsync(_ffmpegPath, file.FullName, "0", timeout.Token);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                // A slow or damaged file can keep its video icon.
+            }
+            catch (Win32Exception ex)
+            {
+                logger.LogWarning("Could not start the configured video thumbnail decoder ({ErrorCode}).", ex.NativeErrorCode);
+            }
+            catch (IOException)
+            {
+                // A failed decoder pipe can keep its video icon.
+            }
+
+            _cache.Set(key, frame, new MemoryCacheEntryOptions
+            {
+                Size = frame?.Length ?? 256,
+                AbsoluteExpirationRelativeToNow = frame is null ? TimeSpan.FromMinutes(5) : TimeSpan.FromHours(1)
+            });
+            return frame;
+        }
+        finally
+        {
+            _videoSlots.Release();
+        }
+    }
+
+    private static async Task<byte[]?> ReadVideoFrameAsync(
+        string executable, string input, string position, CancellationToken cancellationToken)
+    {
+        var start = new ProcessStartInfo(executable)
+        {
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true
+        };
+        foreach (var argument in new[]
+        {
+            "-nostdin", "-loglevel", "quiet", "-max_alloc", "134217728",
+            "-protocol_whitelist", "file,pipe", "-format_whitelist", "mov,matroska,avi,flv,asf,mpeg,mpegts",
+            "-threads", "1", "-max_pixels", "50000000", "-ss", position, "-i", input,
+            "-map", "0:V:0", "-frames:v", "1", "-filter_threads", "1",
+            "-vf", $"scale={MaxSide}:{MaxSide}:force_original_aspect_ratio=decrease:reset_sar=1",
+            "-c:v", "mjpeg", "-threads", "1", "-q:v", "4", "-f", "image2pipe", "pipe:1"
+        })
+            start.ArgumentList.Add(argument);
+
+        cancellationToken.ThrowIfCancellationRequested();
+        using var decoder = Process.Start(start);
+        if (decoder is null)
+            return null;
+
+        try
+        {
+            var buffer = new byte[128 * 1024];
+            // Stop the decoder when a Windows pipe read is still pending at the deadline.
+            var length = await decoder.StandardOutput.BaseStream.ReadAtLeastAsync(
+                buffer, buffer.Length, false, cancellationToken).AsTask().WaitAsync(cancellationToken);
+            if (length == buffer.Length)
+                return null;
+
+            await decoder.WaitForExitAsync(cancellationToken);
+            return decoder.ExitCode == 0 && length >= 4 && buffer[0] == 0xff && buffer[1] == 0xd8
+                && buffer[length - 2] == 0xff && buffer[length - 1] == 0xd9 ? buffer[..length] : null;
+        }
+        finally
+        {
+            if (!decoder.HasExited)
+            {
+                decoder.Kill();
+                await decoder.WaitForExitAsync();
+            }
+        }
+    }
+
     public static string GetMediaPlaceholder(bool isVideo)
     {
         var shape = isVideo
@@ -54,5 +155,9 @@ public sealed class ThumbnailService : IDisposable
             + shape + "</svg>";
     }
 
-    public void Dispose() => _cache.Dispose();
+    public void Dispose()
+    {
+        _cache.Dispose();
+        _videoSlots.Dispose();
+    }
 }

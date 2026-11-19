@@ -272,7 +272,7 @@ public class FilesController(FileBrowserService browser, ThumbnailService thumbn
     private sealed record DeleteFailure(string Path, string Error);
 
     [HttpGet("thumbnail")]
-    public IActionResult GetThumbnail([FromQuery] string path)
+    public async Task<IActionResult> GetThumbnail([FromQuery] string path, CancellationToken cancellationToken)
     {
         if (!Resolve(path, out var target))
             return Forbid();
@@ -282,10 +282,13 @@ public class FilesController(FileBrowserService browser, ThumbnailService thumbn
             return NotFound();
 
         var file = new FileInfo(target);
-        var image = thumbnails.GetThumbnail(file);
+        var isVideo = PhotoLibraryService.VideoExtensions.Contains(file.Extension);
+        var image = isVideo
+            ? await thumbnails.GetVideoThumbnailAsync(file, cancellationToken)
+            : thumbnails.GetThumbnail(file);
         if (image is not null)
             return File(image, "image/jpeg");
-        if (Categories["videos"].Contains(file.Extension))
+        if (isVideo)
             return Icon("#a78bfa", "M16 10h32v44H16z M27 21v22l15-11z");
         if (FileBrowserService.GetContentType(target).StartsWith("audio/", StringComparison.Ordinal))
             return Icon("#60a5fa", "M25 14v25a7 7 0 1 0 5 7V25l15-5v13a7 7 0 1 0 5 7V7z");

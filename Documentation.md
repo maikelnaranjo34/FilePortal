@@ -28,7 +28,7 @@ Run the provisioning command only when the user store has no administrator. It p
 | [Controllers/UsersController.cs](Controllers/UsersController.cs) | User administration, folder assignment, and password changes |
 | [Services/FileBrowserService.cs](Services/FileBrowserService.cs) | Configured roots and filesystem authorization shared by file endpoints |
 | [Services/UserStoreService.cs](Services/UserStoreService.cs) | JSON persistence, password hashing, and atomic updates |
-| [Services/ThumbnailService.cs](Services/ThumbnailService.cs) | SkiaSharp thumbnail generation and a bounded in-memory cache |
+| [Services/ThumbnailService.cs](Services/ThumbnailService.cs) | SkiaSharp image thumbnails, FFmpeg video stills, and a bounded in-memory cache |
 | [wwwroot/index.html](wwwroot/index.html) | Photos landing page with Albums, Favorites, and Search |
 | [wwwroot/files.html](wwwroot/files.html) | File Manager |
 | [wwwroot/login.html](wwwroot/login.html) | Gallery sign-in |
@@ -101,11 +101,15 @@ Photos and Favorites refresh when you return to the browser tab. Deleted files a
 
 Browsers revalidate HTML, JavaScript, and CSS before reusing them. Touch devices also use the compact layout at wider phone viewport sizes.
 
-Videos support byte-range responses for seeking. ZIP archives are prepared in the protected data directory, then downloaded by the browser and removed when the response closes. Thumbnails for JPEG, PNG, GIF, BMP, and WebP are generated with SkiaSharp at up to 240 pixels per side and cached in memory.
+Videos support byte-range responses for seeking. With FFmpeg configured, Videos, Photos, File Manager, and shared galleries show a thumbnail from about two seconds into each clip. Short clips use their opening frame. The grid loads still images, and tapping a video opens the player. Clips that cannot be decoded display the video icon.
+
+ZIP archives are prepared in the protected data directory, then downloaded by the browser and removed when the response closes. SkiaSharp image thumbnails and FFmpeg video thumbnails fit within 240 pixels per side and share a bounded in-memory cache.
 
 ## Deployment and upgrade
 
 Publish using `dotnet publish FilePortal.csproj -c Release`. Preserve the existing `users.json` or point the new deployment at its current data directory. Existing password hashes and folder assignments remain compatible. Review assignments against the configured roots and have users sign in again.
+
+To enable video thumbnails, install FFmpeg 8 and set `VideoThumbnails__FfmpegPath` to its absolute executable path, or set `VideoThumbnails:FfmpegPath` in deployment configuration. Give the hosting identity read and execute access to that executable and restart the app. The video icon is used when the setting is omitted.
 
 The IIS setup script uses published output. It preserves the site's existing bindings and gives new sites a loopback binding on port 5251. The service setup script uses Local Service and defaults to loopback. Configure an HTTPS endpoint for network access. For IIS startup failures after a runtime update, check the hosting bundle, app pool identity, and access to the published app before adjusting permissions. [IIS guide](IIS-DEPLOYMENT-README.md), [Windows service guide](SERVICE-README.md).
 
@@ -118,6 +122,8 @@ dotnet build Fileportal.sln
 node --test tests/fileportal.test.mjs
 dotnet list FilePortal.csproj package --vulnerable --include-transitive
 ```
+
+With FFmpeg 8 on the test runner’s PATH, the integration suite generates sample videos and checks frame selection, short clips, and thumbnails in the gallery, File Manager, and share links.
 
 The Windows build and Release integration suite passed. The suite covered legacy users, concurrent account updates, permission enforcement, session revocation, password changes, uploads, ZIP downloads, thumbnails, and video byte ranges. Chrome verified sign-in, native folder ZIP downloads, password changes, and logout. The NuGet audit reported no vulnerable packages. The integration suite also runs in [GitHub Actions](.github/workflows/test.yml).
 

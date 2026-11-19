@@ -119,17 +119,17 @@ namespace FilePortal.Controllers
         // GET /api/sharing/public/{token}/photo/{id}/thumbnail
         [AllowAnonymous]
         [HttpGet("public/{token}/photo/{id}/thumbnail")]
-        public IActionResult PublicThumbnail(string token, string id)
+        public async Task<IActionResult> PublicThumbnail(string token, string id, CancellationToken cancellationToken)
         {
             if (!TryResolvePublicPhoto(token, id, out var fullPath, out var isVideo))
                 return NotFound();
 
-            if (!isVideo)
-            {
-                var thumbnail = _thumbnails.GetThumbnail(new FileInfo(fullPath!));
-                if (thumbnail is not null)
-                    return File(thumbnail, "image/jpeg");
-            }
+            var file = new FileInfo(fullPath!);
+            var thumbnail = isVideo
+                ? await _thumbnails.GetVideoThumbnailAsync(file, cancellationToken)
+                : _thumbnails.GetThumbnail(file);
+            if (thumbnail is not null)
+                return File(thumbnail, "image/jpeg");
 
             return Content(ThumbnailService.GetMediaPlaceholder(isVideo), "image/svg+xml");
         }
