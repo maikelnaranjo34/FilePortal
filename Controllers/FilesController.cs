@@ -92,6 +92,100 @@ public class FilesController(FileBrowserService browser, ThumbnailService thumbn
         return Ok(items.OrderByDescending(item => item.LastModified));
     }
 
+    [HttpGet("search")]
+    public IActionResult Search([FromQuery] string? q, [FromQuery] int maxResults = 500,
+        CancellationToken cancellationToken = default)
+    {
+        var query = q?.Trim();
+        if (string.IsNullOrEmpty(query) || query.Length > 200 || maxResults is < 1 or > 10000)
+            return BadRequest(new { error = "Enter a search term of 1 to 200 characters and a result limit between 1 and 10,000." });
+
+        var directories = new Queue<DirectoryInfo>();
+        foreach (var root in Roots.OrderBy(root => root.Name, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(root => root.Path, FileBrowserService.PathComparer))
+        {
+            if (Resolve(root.Path, out var folder, allowMissing: false) && Directory.Exists(folder))
+                directories.Enqueue(new DirectoryInfo(folder));
+        }
+
+        var visitedDirectories = new HashSet<string>(FileBrowserService.PathComparer);
+        var resultPaths = new HashSet<string>(FileBrowserService.PathComparer);
+        var results = new List<FileItem>();
+        var options = new EnumerationOptions
+        {
+            AttributesToSkip = FileAttributes.ReparsePoint,
+            IgnoreInaccessible = true,
+            ReturnSpecialDirectories = false
+        };
+
+        while (directories.TryDequeue(out var directory) && results.Count < maxResults)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!visitedDirectories.Add(directory.FullName) ||
+                !Resolve(directory.FullName, out var resolvedDirectory, allowMissing: false))
+                continue;
+
+            FileSystemInfo[] entries;
+            try
+            {
+                entries = new DirectoryInfo(resolvedDirectory).EnumerateFileSystemInfos("*", options)
+                    .OrderByDescending(entry => entry is DirectoryInfo)
+                    .ThenBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(entry => entry.FullName, FileBrowserService.PathComparer)
+                    .ToArray();
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+            {
+                continue;
+            }
+
+            foreach (var entry in entries)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                try
+                {
+                    if (!browser.CanList(entry) ||
+                        !Resolve(entry.FullName, out var resolvedEntry, allowMissing: false))
+                        continue;
+
+                    FileSystemInfo resolvedInfo;
+                    if (entry is DirectoryInfo)
+                    {
+                        if (!Directory.Exists(resolvedEntry))
+                            continue;
+                        var child = new DirectoryInfo(resolvedEntry);
+                        directories.Enqueue(child);
+                        resolvedInfo = child;
+                    }
+                    else
+                    {
+                        if (!System.IO.File.Exists(resolvedEntry))
+                            continue;
+                        resolvedInfo = new FileInfo(resolvedEntry);
+                    }
+
+                    if (resolvedInfo.Name.Contains(query, StringComparison.OrdinalIgnoreCase) &&
+                        resultPaths.Add(resolvedInfo.FullName))
+                        results.Add(ToItem(resolvedInfo));
+                }
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or System.Security.SecurityException)
+                {
+                    // Files can disappear or become inaccessible during a search. Continue with the remaining scope.
+                }
+
+                if (results.Count >= maxResults)
+                    break;
+            }
+        }
+
+        return Ok(results
+            .OrderBy(item => string.Equals(item.Name, query, StringComparison.OrdinalIgnoreCase) ? 0 :
+                item.Name.StartsWith(query, StringComparison.OrdinalIgnoreCase) ? 1 : 2)
+            .ThenByDescending(item => item.IsDirectory)
+            .ThenBy(item => item.Name, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(item => item.Path, FileBrowserService.PathComparer));
+    }
+
     [HttpGet("open")]
     public IActionResult Open([FromQuery] string path) => ServeFile(path, download: true);
 

@@ -242,6 +242,13 @@
       text-overflow: ellipsis;
       color: #e5e7eb;
     }
+    .item-location {
+      color: var(--muted);
+      font-size: 12px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
     .item-meta {
       font-size: 10px;
       color: #9ca3af;
@@ -383,7 +390,7 @@
           </div>
           <button class="secondary" type="button" disabled title="Folder creation is unavailable">New Folder</button>
           <span class="fn-unsupported-note">Create, rename, and move are unavailable.</span>
-          <button class="secondary" type="button" onclick="goUp()">⬆️ Up</button>
+          <button class="secondary" id="upBtn" type="button" onclick="goUp()">⬆️ Up</button>
           <button id="viewTypeBtn" class="secondary" type="button" onclick="toggleViewType()">📋 View</button>
         </div>
       </div>
@@ -471,6 +478,8 @@
     let searchLetterIndex = 0;
     let imageViewerReturnFocus = null;
     let videoViewerReturnFocus = null;
+    let availableRoots = [];
+    let globalSearchQuery = null;
 
     const initial = new URLSearchParams(location.search);
     const folderSearch = document.getElementById("folderSearch");
@@ -501,6 +510,33 @@
 
     function pathKey(path) {
       return path.replaceAll("/", "\\").replace(/\\+$/, "").toLowerCase();
+    }
+
+    function rootForPath(path) {
+      const key = pathKey(path);
+      return availableRoots.filter(root => {
+        const rootKey = pathKey(root.path);
+        return key === rootKey || key.startsWith(rootKey + "\\");
+      }).sort((first, second) => second.path.length - first.path.length)[0] || null;
+    }
+
+    function selectRootForPath(path) {
+      const root = rootForPath(path);
+      currentRoot = root?.path || null;
+      document.querySelectorAll(".drive-item").forEach(item =>
+        item.classList.toggle("active", Boolean(root) && pathKey(item.dataset.path) === pathKey(root.path)));
+      return root;
+    }
+
+    function locationForItem(item) {
+      const root = rootForPath(item.path);
+      if (!root) return item.path;
+      const clean = item.path.replace(/[/\\]+$/, "");
+      const cut = Math.max(clean.lastIndexOf("\\"), clean.lastIndexOf("/"));
+      const parent = cut > 0 ? clean.slice(0, cut) : clean;
+      const base = root.path.replace(/[/\\]+$/, "");
+      const relative = parent.slice(base.length).split(/[/\\]+/).filter(Boolean);
+      return [root.name, ...relative].join(" / ");
     }
 
     function showBreadcrumbs(path) {
@@ -548,6 +584,7 @@
         }
         const roots = await res.json();
         if (request !== rootRequest) return;
+        availableRoots = roots;
 
         listEl.textContent = roots.length ? "" : "No folders available";
         const requested = initialFolder ? initial.get("path") : null;
@@ -585,7 +622,10 @@
           if (root === selectedRoot) div.classList.add("active");
         });
 
-        if (selectedRoot) {
+        const query = initialFolder ? initial.get("q")?.trim() : "";
+        if (query) {
+          await loadGlobalSearch(query);
+        } else if (selectedRoot) {
           currentRoot = selectedRoot.path;
           await loadFolder(requestedPath || selectedRoot.path, initialFolder ? initial.get("preview") : null);
           const category = initialFolder ? initial.get("category") : null;
@@ -603,12 +643,17 @@
     async function loadFolder(path, previewPath) {
       if (!path) return;
       const request = ++fileRequest;
+      if (globalSearchQuery !== null) folderSearch.value = "";
+      globalSearchQuery = null;
       currentPath = path;
       currentFilter = null;
       folderLoaded = false;
       entries = [];
       showBreadcrumbs(path);
       document.getElementById("currentPathLabel").textContent = path;
+      folderSearch.placeholder = "Search this folder…";
+      document.getElementById("uploadBtn").disabled = false;
+      document.getElementById("upBtn").disabled = false;
       setError("");
       setSelectionMode(false);
 
@@ -646,6 +691,59 @@
       }
     }
 
+    async function loadGlobalSearch(query) {
+      query = query.trim();
+      if (!query) return;
+      const request = ++fileRequest;
+      globalSearchQuery = query;
+      currentRoot = null;
+      currentPath = null;
+      currentFilter = null;
+      folderLoaded = false;
+      entries = [];
+      folderSearch.value = query;
+      folderSearch.placeholder = "Filter global results…";
+      document.querySelectorAll(".drive-item").forEach(item => item.classList.remove("active"));
+      const breadcrumb = document.getElementById("fileBreadcrumbs");
+      const searchCrumb = document.createElement("span");
+      searchCrumb.textContent = "Search";
+      searchCrumb.setAttribute("aria-current", "page");
+      breadcrumb.replaceChildren(searchCrumb);
+      document.getElementById("currentPathLabel").textContent = `Search results for “${query}”`;
+      document.getElementById("uploadBtn").disabled = true;
+      document.getElementById("upBtn").disabled = true;
+      setError("");
+      setSelectionMode(false);
+
+      const itemsEl = document.getElementById("items");
+      const emptyMsgEl = document.getElementById("emptyMsg");
+      itemsEl.textContent = "Searching all accessible folders…";
+      updateSelectedCount();
+      emptyMsgEl.style.display = "none";
+
+      try {
+        const res = await fetch("/api/files/search?" + new URLSearchParams({ q: query }), { credentials: "include" });
+        if (!res.ok) {
+          if (res.status === 401) {
+            showLogin();
+            return;
+          }
+          const payload = await res.json().catch(() => null);
+          throw new Error(payload?.error || "HTTP " + res.status);
+        }
+        const items = await res.json();
+        if (request !== fileRequest) return;
+        entries = items;
+        folderLoaded = true;
+        applyFileFilters();
+      } catch (err) {
+        console.error(err);
+        if (request !== fileRequest) return;
+        setError("Failed to search: " + err.message);
+        itemsEl.replaceChildren();
+      }
+    }
+
     function applyFileFilters() {
       if (!folderLoaded) return;
       const query = folderSearch.value.trim().toLowerCase();
@@ -666,11 +764,23 @@
       matching.sort(compare);
       renderItems(matching);
       const empty = document.getElementById("emptyMsg");
-      empty.textContent = query || currentFilter ? "No matching files in this scope." : "This folder is empty.";
+      empty.textContent = globalSearchQuery !== null ? "No files or folders matched this search." :
+        query || currentFilter ? "No matching files in this scope." : "This folder is empty.";
       empty.style.display = matching.length ? "none" : "block";
     }
 
     folderSearch.addEventListener("input", applyFileFilters);
+    folderSearch.addEventListener("keydown", event => {
+      if (event.key !== "Enter" || globalSearchQuery === null) return;
+      const query = folderSearch.value.trim();
+      if (!query) return;
+      event.preventDefault();
+      const url = new URL(location.href);
+      url.search = "";
+      url.searchParams.set("q", query);
+      history.replaceState(null, "", url);
+      loadGlobalSearch(query);
+    });
     sorter.addEventListener("change", applyFileFilters);
 
     function renderItems(items) {
@@ -731,6 +841,13 @@
         meta.appendChild(left);
         meta.appendChild(right);
         infoContainer.appendChild(name);
+        if (globalSearchQuery !== null) {
+          const location = document.createElement("div");
+          location.className = "item-location";
+          location.textContent = locationForItem(item);
+          location.title = item.path;
+          infoContainer.appendChild(location);
+        }
         infoContainer.appendChild(meta);
         card.appendChild(checkbox);
         card.appendChild(thumbContainer);
@@ -753,11 +870,12 @@
 
     function onItemClick(item) {
       if (item.isDirectory) {
+        selectRootForPath(item.path);
         loadFolder(item.path);
       } else {
         const clean = item.path.replace(/[/\\]+$/, "");
         const parent = clean.slice(0, Math.max(clean.lastIndexOf("\\"), clean.lastIndexOf("/")));
-        const folder = pathKey(parent) === pathKey(currentRoot) ? currentRoot : parent;
+        const folder = currentRoot && pathKey(parent) === pathKey(currentRoot) ? currentRoot : parent;
         FileNest.activity(accountUser, "recent", { path: item.path, folder });
         // Check if it's an image
         const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.heic', '.tiff', '.svg'];
@@ -1112,7 +1230,8 @@
 
         if (result.deleted.length) closePreview?.();
         if (viewAtStart === fileRequest) {
-          if (currentFilter === "notes") {
+          if (globalSearchQuery !== null) await loadGlobalSearch(globalSearchQuery);
+          else if (currentFilter === "notes") {
             await loadFolder(currentPath);
             await filterByCategory("notes");
           } else if (currentFilter) await filterByCategory(currentFilter);

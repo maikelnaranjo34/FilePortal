@@ -23,7 +23,7 @@ The redesign is developed on the isolated `redesign/filenest` branch under `F:\M
 | 2. Plan and protection | Complete | Work started from clean commit `0ca7fc2` in an isolated branch with disposable preview data and rollback through Git. |
 | 3. Visual foundation | Complete | Shared FileNest tokens, glass panels, generated mascot, top navigation, menus, dialogs, responsive breakpoints, transitions, light and dark themes, and touch targets are in place. Right-click is temporarily blocked with an accessible FileNest status message. |
 | 4. Page redesign | Complete | Dashboard, My Files, Gallery, Shared, Favorites, Trash status, previews, Settings, sign-in, and public shares use the FileNest design. Every page has a Back control with a Home fallback. Keyboard activation, dialog focus, accessible labels, and explicit unsupported-state messaging were added. |
-| 5. Functional integration | In progress | Existing APIs power authentication, browsing, uploads, downloads, deletion, media, sharing, and account management. Global file search remains to be completed. |
+| 5. Functional integration | Complete | Authentication, authorization, cross-root search, browsing, upload, download, deletion, previews, media, sharing, and account management use real APIs. The AI panel remains isolated and accurately disabled except for file-name search. |
 | 6. Testing and validation | In progress | Release integration tests pass. Reproducible browser validation will be added to the repository before this phase is complete. |
 | 7. Mobile layout | In progress | The top-only mobile navigation and responsive dashboard are implemented. Final mobile regression results will be recorded after the preceding phases close. |
 
@@ -48,7 +48,7 @@ The redesign is developed on the isolated `redesign/filenest` branch under `F:\M
 | --- | --- |
 | [Program.cs](Program.cs) | Startup, local administrator provisioning, authentication cookie validation, and routing |
 | [Controllers/AuthController.cs](Controllers/AuthController.cs) | Sign-in, sign-out, account details, and optional login notifications |
-| [Controllers/FilesController.cs](Controllers/FilesController.cs) | Folder listings, previews, file downloads, uploads, deletion, and ZIP archives |
+| [Controllers/FilesController.cs](Controllers/FilesController.cs) | Folder listings, authorized global search, previews, file downloads, uploads, deletion, and ZIP archives |
 | [Controllers/PhotosController.cs](Controllers/PhotosController.cs) | Photo timeline, favorites, previews, and library scans |
 | [Controllers/AlbumsController.cs](Controllers/AlbumsController.cs) | Album creation and editing |
 | [Controllers/SearchController.cs](Controllers/SearchController.cs) | Photo search and camera filters |
@@ -98,6 +98,7 @@ File endpoints require sign-in and enforce the caller's folder access.
 | GET | `/api/files/roots` | Returns configured roots for administrators and available assigned folders for regular users. |
 | GET | `/api/files/folder?path=` | Lists folder contents. |
 | GET | `/api/files/browse?path=` | Lists subfolders for the administrator folder picker. |
+| GET | `/api/files/search?q=&maxResults=` | Searches file and folder names recursively across every authorized root. Queries are 1–200 characters; the default limit is 500 and the maximum is 10,000. |
 | GET | `/api/files/category?path=&category=&maxResults=` | Searches recursively for pictures, videos, or documents. The default result limit is 500. |
 | GET | `/api/files/thumbnail?path=` | Returns a JPEG thumbnail or a file-type icon. |
 | GET | `/api/files/file?path=` | Serves a file inline with byte-range support. |
@@ -145,7 +146,7 @@ File endpoints require sign-in and enforce the caller's folder access.
 
 ## Frontend and media
 
-The FileNest dashboard opens at `/`. It shows authorized roots, media favorites, and activity recorded by this browser for the signed-in account. Quick Access can pin available roots. The folder storage check reports the count and combined size of files directly in the selected folder. File Manager searches the current listing by name, and Gallery searches indexed photos and videos. File Manager is available at `/files.html`, and Gallery at `/gallery.html`. Older gallery bookmarks such as `/#videos` still open the corresponding view. Existing public media links continue to use `/share.html`. The Back arrow on every page returns to the previous browser-history entry and falls back to Home when no previous entry exists.
+The FileNest dashboard opens at `/`. It shows authorized roots, media favorites, and activity recorded by this browser for the signed-in account. Quick Access can pin available roots. The folder storage check reports the count and combined size of files directly in the selected folder. Dashboard searches open authorized results from every available root in File Manager. File Manager can rerun that global search or filter the current folder or result set locally; Gallery searches indexed photos and videos. File Manager is available at `/files.html`, and Gallery at `/gallery.html`. Older gallery bookmarks such as `/#videos` still open the corresponding view. Existing public media links continue to use `/share.html`. The Back arrow on every page returns to the previous browser-history entry and falls back to Home when no previous entry exists.
 
 On phones, the sticky top navigation shows Home, My Files, Gallery, and More. More opens Shared, Favorites, Trash, and Settings. The upload dialog uses an authorized root as its destination. For a nested destination, open that folder in My Files and upload there. Shared lists outgoing photo and album links and lets owners revoke them. Deletion is permanent in the current backend, so Trash explains the limitation and disables recovery.
 
@@ -231,7 +232,7 @@ node --test tests/fileportal.test.mjs
 dotnet list FilePortal.csproj package --vulnerable --include-transitive
 ```
 
-The integration suite publishes to a temporary directory and runs on loopback against disposable accounts and files. It covers legacy user data, concurrent account updates, authorization, session revocation, password changes, uploads, ZIP downloads, image thumbnails, and video byte ranges. With FFmpeg 8 on the test runner's PATH, it also checks frame selection, short clips, and JPEG thumbnails in the gallery, File Manager, and share links. [GitHub Actions workflow](.github/workflows/test.yml).
+The integration suite publishes to a temporary directory and runs on loopback against disposable accounts and files. It covers legacy user data, concurrent account updates, authorization-aware cross-root search, session revocation, password changes, uploads, ZIP downloads, image thumbnails, and video byte ranges. With FFmpeg 8 on the test runner's PATH, it also checks frame selection, short clips, and JPEG thumbnails in the gallery, File Manager, and share links. [GitHub Actions workflow](.github/workflows/test.yml).
 
 Before deploying a redesigned build, test responsive navigation at 320–430 CSS pixels and in landscape, plus upload, download, file and video previews, deep links, and session handling with administrator and regular accounts. Test against disposable roots and app data.
 
