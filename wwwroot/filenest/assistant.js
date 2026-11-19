@@ -29,6 +29,11 @@
   let permissionNeeded = false;
   let processingTurn = false;
   let movedDuringPointer = false;
+  let activeTtsSocket;
+  let playbackContext;
+  let playbackTimer;
+  let speechGeneration = 0;
+  const playbackSources = new Set();
   const setNesti = state => window.Nesti?.setState(state);
 
   function addMessage(role, content) {
@@ -59,11 +64,12 @@
   function handleActions(actions) {
     for (const action of actions || []) {
       if (action.type === "navigate" && typeof action.url === "string") {
-        addActionButton("Open page", "fn-button-primary", () => location.assign(action.url));
+        setNesti("moving");
+        status.textContent = "Opening…";
+        setTimeout(() => location.assign(action.url), 650);
       } else if (action.type === "open_file" && typeof action.path === "string") {
-        addActionButton("Open file", "fn-button-primary", () => {
-          location.assign("/api/files/file?" + new URLSearchParams({ path: action.path }));
-        });
+        setNesti("moving");
+        setTimeout(() => location.assign("/api/files/file?" + new URLSearchParams({ path: action.path })), 650);
       } else if (action.type === "confirm_download" && Array.isArray(action.paths)) {
         addActionButton(`Download ${action.paths.length} item${action.paths.length === 1 ? "" : "s"}`, "fn-button-primary", () => {
           const form = document.createElement("form");
@@ -128,6 +134,7 @@
 
   async function startListening() {
     if (listening || !voiceAvailable) return;
+    stopSpeaking();
     status.textContent = "Connecting to AssemblyAI…";
     setNesti("moving");
     try {
@@ -219,11 +226,30 @@
     stopCapture();
   }
 
+  function stopSpeaking() {
+    speechGeneration++;
+    clearTimeout(playbackTimer);
+    playbackTimer = undefined;
+    if (activeTtsSocket?.readyState === WebSocket.OPEN) {
+      activeTtsSocket.send(JSON.stringify({ type: "Cancel" }));
+      activeTtsSocket.send(JSON.stringify({ type: "Terminate" }));
+      activeTtsSocket.close(1000);
+    }
+    activeTtsSocket = undefined;
+    for (const source of playbackSources) { try { source.stop(); } catch { } }
+    playbackSources.clear();
+    playbackContext?.close().catch(() => {});
+    playbackContext = undefined;
+  }
+
   async function speak(text) {
     const token = pendingTtsToken;
     pendingTtsToken = undefined;
     if (!token || !voiceConfiguration || !text) return;
+    stopSpeaking();
+    const generation = speechGeneration;
     const audioContext = new AudioContext();
+    playbackContext = audioContext;
     let nextTime = audioContext.currentTime;
     const url = new URL("wss://tts.us.assemblyai.com/v1/ws");
     url.searchParams.set("token", token);
@@ -233,13 +259,16 @@
     url.searchParams.set("sample_rate", "24000");
     url.searchParams.set("encoding", "pcm_s16le");
     const socket = new WebSocket(url);
+    activeTtsSocket = socket;
     socket.onopen = () => {
+      if (generation !== speechGeneration) { socket.close(1000); return; }
       socket.send(JSON.stringify({ type: "Generate", text: text.slice(0, 2000) }));
       socket.send(JSON.stringify({ type: "Flush" }));
       status.textContent = "Nesti is speaking…";
       setNesti("speaking");
     };
     socket.onmessage = event => {
+      if (generation !== speechGeneration) return;
       let message;
       try { message = JSON.parse(event.data); } catch { return; }
       if (message.type === "Audio" && message.audio) {
@@ -253,6 +282,8 @@
         source.connect(audioContext.destination);
         nextTime = Math.max(nextTime, audioContext.currentTime + 0.03);
         source.start(nextTime);
+        playbackSources.add(source);
+        source.onended = () => playbackSources.delete(source);
         nextTime += buffer.duration;
       } else if (message.type === "FlushDone") {
         status.textContent = "";
@@ -260,13 +291,19 @@
         socket.send(JSON.stringify({ type: "Terminate" }));
       }
     };
-    socket.onerror = () => { status.textContent = "Nesti could not play the spoken response."; setNesti("error"); };
-    socket.onclose = () => setTimeout(() => {
+    socket.onerror = () => { if (generation === speechGeneration) { status.textContent = "Nesti could not play the spoken response."; setNesti("error"); } };
+    socket.onclose = () => {
+      if (generation !== speechGeneration) return;
+      activeTtsSocket = undefined;
+      playbackTimer = setTimeout(() => {
+        if (generation !== speechGeneration) return;
       audioContext.close().catch(() => {});
+      playbackContext = undefined;
       setNesti("idle");
       processingTurn = false;
-      if (continuousVoice) startListening();
-    }, Math.max(0, (nextTime - audioContext.currentTime) * 1000 + 100));
+      if (continuousVoice) setTimeout(startListening, 650);
+      }, Math.max(0, (nextTime - audioContext.currentTime) * 1000 + 150));
+    };
   }
 
   mic.addEventListener("click", () => listening ? stopListening() : startListening());
@@ -291,7 +328,7 @@
     permissionNeeded = false;
     updateVoiceToggle();
     if (continuousVoice) checkAvailability().then(startListening);
-    else { processingTurn = false; pendingTtsToken = undefined; stopListening(); setNesti("idle"); }
+    else { processingTurn = false; pendingTtsToken = undefined; stopListening(); stopSpeaking(); setNesti("idle"); }
   });
 
   function openAssistant() {
@@ -339,12 +376,13 @@
     };
     floatOpen.addEventListener("pointerup", release);
     floatOpen.addEventListener("pointercancel", release);
-    setInterval(moveCompanion, 7000);
-    setTimeout(moveCompanion, 1600);
+    setInterval(moveCompanion, 35000);
+    setTimeout(moveCompanion, 8000);
   }
 
   updateVoiceToggle();
   checkAvailability().then(() => { if (continuousVoice) startListening(); });
+  addEventListener("pagehide", () => { stopListening(); stopSpeaking(); }, { once: true });
 
   form.addEventListener("submit", async event => {
     event.preventDefault();

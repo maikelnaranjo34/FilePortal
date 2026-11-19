@@ -189,7 +189,7 @@ body.fn-page, body.fn-workspace {
 @keyframes nesti-error { 0%,100% { transform:translateX(0) } 35% { transform:translateX(-5px) } 70% { transform:translateX(5px) } }
 @keyframes nesti-moving { 0%,100% { transform:translate(-3px,1px) rotate(-1deg) } 50% { transform:translate(5px,-5px) rotate(2deg) } }
 @media (prefers-reduced-motion:reduce) { [data-nesti] { animation:none !important; transition:none !important; } }
-.fn-nesti-companion { position:fixed; left:calc(100vw - 148px); top:calc(100dvh - 172px); z-index:75; display:grid; justify-items:center; touch-action:none; transition:left 5.5s ease-in-out,top 5.5s ease-in-out; }
+.fn-nesti-companion { position:fixed; left:calc(100vw - 148px); top:calc(100dvh - 172px); z-index:75; display:grid; justify-items:center; touch-action:none; transition:left 2.2s ease-in-out,top 2.2s ease-in-out; }
 .fn-nesti-companion.dragging,.fn-nesti-companion.user-positioned { transition:none; }
 .fn-nesti-float-open { width:112px; height:112px; padding:0; border:0; border-radius:28px; background:transparent; cursor:grab; filter:drop-shadow(0 12px 22px #0008); }
 .fn-nesti-float-open:active { cursor:grabbing; }

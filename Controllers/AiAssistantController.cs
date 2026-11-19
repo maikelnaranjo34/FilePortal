@@ -64,7 +64,7 @@ public sealed class AiAssistantController(AiSettingsService settingsStore, IHttp
         var body = new
         {
             model = settings.OpenAiModel,
-            instructions = "You are Nesti, the concise and friendly FilePortal assistant. Help the signed-in user manage and understand their files. Never claim to have read, moved, changed, or deleted a file unless a server tool explicitly reports that action. Never request API keys or passwords. Destructive actions always require a separate visual confirmation in FilePortal. Duplicate scans are read-only. The current user is " + currentUser.Username + ". Available root display names: " + availableRoots + ".",
+            instructions = "You are Nesti, the concise FilePortal action assistant. When the user asks to open, navigate, search, download, or prepare an operation, call the appropriate tool instead of describing steps. Do not narrate what you are thinking or what you intend to do. Reply in at most two short sentences after tools finish. Never claim an action happened unless its tool reports it was prepared or completed. Never request API keys or passwords. Destructive actions require separate visual confirmation. Duplicate scans are read-only. The current user is " + currentUser.Username + ". Available root display names: " + availableRoots + ".",
             input,
             tools = new object[]
             {
@@ -113,6 +113,15 @@ public sealed class AiAssistantController(AiSettingsService settingsStore, IHttp
                     type = "function", name = "open_page",
                     description = "Navigate the user's browser to a FilePortal page.",
                     parameters = new { type = "object", properties = new { page = new { type = "string", @enum = new[] { "home", "files", "gallery", "shared", "favorites", "trash", "settings" } } }, required = new[] { "page" }, additionalProperties = false }, strict = true
+                },
+                new
+                {
+                    type = "function", name = "open_category",
+                    description = "Open a specific file category inside a specific available FilePortal root. Use this for requests such as open Videos on My_Apps F.",
+                    parameters = new { type = "object", properties = new {
+                        rootName = new { type = "string", description = "Exact available root display name." },
+                        category = new { type = "string", @enum = new[] { "pictures", "videos", "pdfs", "notes", "documents" } }
+                    }, required = new[] { "rootName", "category" }, additionalProperties = false }, strict = true
                 },
                 new
                 {
@@ -320,6 +329,21 @@ public sealed class AiAssistantController(AiSettingsService settingsStore, IHttp
                     "favorites" => "/gallery.html#favorites", "trash" => "/#trash", "settings" => "/users.html", _ => "/" };
                 clientActions.Add(new { type = "navigate", url = route });
                 return JsonSerializer.Serialize(new { prepared = true, page, route });
+            }
+            if (call.Name == "open_category")
+            {
+                var rootName = arguments.RootElement.GetProperty("rootName").GetString() ?? "";
+                var category = arguments.RootElement.GetProperty("category").GetString() ?? "";
+                var root = roots.FirstOrDefault(item => string.Equals(item.Name, rootName, StringComparison.OrdinalIgnoreCase));
+                if (root is null || category is not ("pictures" or "videos" or "pdfs" or "notes" or "documents"))
+                    return JsonSerializer.Serialize(new { error = "Choose an available root and supported category." });
+                var route = "/files.html" + QueryString.Create(new Dictionary<string, string?>
+                {
+                    ["path"] = root.Path,
+                    ["category"] = category
+                }).Value;
+                clientActions.Add(new { type = "navigate", url = route });
+                return JsonSerializer.Serialize(new { prepared = true, root = root.Name, category, route });
             }
             if (call.Name == "open_file")
             {
