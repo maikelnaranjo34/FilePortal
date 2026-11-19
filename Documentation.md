@@ -4,6 +4,7 @@ FilePortal is a photo and video gallery and file browser for Windows drives and 
 
 - [Run locally](#run-locally)
 - [FileNest redesign status](#filenest-redesign-status)
+- [AI assistant roadmap](#ai-assistant-roadmap)
 - [Project structure](#project-structure)
 - [Authentication and folder access](#authentication-and-folder-access)
 - [API endpoints](#api-endpoints)
@@ -26,6 +27,22 @@ The redesign is developed on the isolated `redesign/filenest` branch under `F:\M
 | 5. Functional integration | Complete | Authentication, authorization, cross-root search, browsing, upload, download, deletion, previews, media, sharing, and account management use real APIs. The AI panel remains isolated and accurately disabled except for file-name search. |
 | 6. Testing and validation | Complete | Release integration tests pass. Reproducible Chrome browser validation is available in `tests/filenest.browser.mjs`; Windows runners execute it in GitHub Actions. |
 | 7. Mobile layout | Complete | The top-only mobile navigation and responsive dashboard are implemented. The browser regression checks 320, 360, 390, and 430 px layouts plus desktop. |
+| 8. AI and voice assistant | In progress | Add secure administrator-managed OpenAI and AssemblyAI configuration, an authorization-aware OpenAI assistant, AssemblyAI listening and speech, content-based duplicate discovery, and the animation-ready Nesti mascot. |
+
+## AI assistant roadmap
+
+The FileNest assistant will use a cascaded provider design: AssemblyAI converts microphone audio to text, OpenAI reasons and invokes FilePortal tools, and AssemblyAI converts the final response to speech. Provider credentials and privileged file operations remain on the server. The browser receives only short-lived AssemblyAI session tokens and non-secret configuration such as model and voice identifiers.
+
+Implementation is divided into independently testable phases:
+
+1. **Secure provider configuration.** Add an administrator-only **AI & Voice** section in Settings. Encrypt OpenAI and AssemblyAI keys at rest with Windows Data Protection, never return saved keys to the browser, and support replace, remove, connection test, model refresh, enabled/disabled state, and saved model/voice defaults. Store the protected configuration in the FilePortal data directory outside `wwwroot`.
+2. **OpenAI assistant foundation.** Add an authenticated conversation endpoint using the selected OpenAI model, bounded conversation history, clear errors, cancellation, and server-defined tools. Tool execution must reuse the current user's folder authorization and must never accept an unrestricted path supplied by the model.
+3. **AssemblyAI voice pipeline.** Add push-to-talk microphone capture, partial and final transcripts, short-lived server-minted streaming and TTS tokens, speech playback, stop/mute controls, interruption handling, language and voice selection, and visible listening/thinking/speaking states. Permanent provider keys must never be included in HTML, JavaScript, logs, URLs, or API responses.
+4. **Duplicate discovery.** Scan only folders authorized for the requesting user. Detect exact content matches locally with cryptographic hashes, then rank likely duplicates using filename similarity and content-derived signals appropriate to each file type. Cache fingerprints, show the evidence and confidence for each group, and keep discovery read-only. Deletion remains a separate existing FilePortal operation with an explicit visual confirmation; the assistant cannot silently delete files.
+5. **Nesti mascot controller.** Preserve the blue folder mascot and implement reusable `idle`, `listening`, `thinking`, `speaking`, `moving`, `success`, and `error` states. Keep animation separate from provider code, avoid covering actionable UI, support touch dragging and a compact mobile position, and honor reduced-motion preferences. The approved concept uses the turquoise ribbon as arms and a movement trail.
+6. **Hardening and release.** Add API, authorization, encryption, browser, mobile, microphone-denial, provider-failure, and accessibility tests. Document provider costs and data boundaries, publish without overwriting live data or IIS configuration, verify HTTPS and Android behavior, and retain a rollback point.
+
+Initial defaults are push-to-talk, no automatic file-content upload, no automatic deletion, selected/authorized folder scans, and an administrator-controlled global provider configuration. A later phase may add hands-free mode only as an explicit user choice.
 
 ## Run locally
 
