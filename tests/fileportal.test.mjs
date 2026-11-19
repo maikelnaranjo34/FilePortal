@@ -138,6 +138,12 @@ test('FilePortal release integration', { timeout: 90_000 }, async t => {
     for (const view of ['photos', 'videos', 'albums', 'favorites', 'search'])
       assert.match(galleryHtml, new RegExp('href="#' + view + '"'));
     assert.match(galleryHtml, /src="\/app\.js(?:\?[^"]+)?"/);
+    for (const name of ['index.html', 'gallery.html', 'files.html', 'users.html', 'share.html'])
+      assert.match(readFileSync(path.join(publish, 'wwwroot', name), 'utf8'), /id="fileNestHeader"/);
+    const shellSource = readFileSync(path.join(publish, 'wwwroot', 'filenest', 'shell.js'), 'utf8');
+    assert.match(shellSource, /fn-back/);
+    assert.match(shellSource, /history\.back\(\)/);
+    assert.match(readFileSync(path.join(publish, 'wwwroot', 'login.html'), 'utf8'), /id="loginBack"/);
     for (const asset of ['shell.js', 'dashboard.js', 'assistant.js', 'site.css', 'workspace.css', 'mascot.png'])
       await request('/filenest/' + asset, 200);
     const galleryScript = await request('/app.js', 200);

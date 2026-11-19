@@ -45,6 +45,9 @@
 .fn-files #uploadBtn { background:linear-gradient(115deg,#8effd4,#18d7e1 54%,#2aa2fa); color:#062038; }
 .fn-files #uploadMenu { background:var(--fn-surface) !important; border-color:var(--fn-line) !important; }
 .fn-files #uploadMenu button { flex:1; width:100%; min-height:42px; justify-content:flex-start; border-radius:8px; }
+.fn-files .fn-unsupported-note {
+  max-width:190px; color:var(--fn-muted); font-size:.76rem; line-height:1.25;
+}
 .fn-files #uploadStatus:not(:empty),.fn-files #explorerStatus:not([hidden]) { padding-inline:14px; }
 .fn-explorer-title { padding:9px 16px 3px; }
 .fn-explorer-title h1 { margin:0; font-size:clamp(1.36rem,2.4vw,2rem); letter-spacing:-.036em; }
@@ -98,6 +101,7 @@
   .fn-files-tools .fn-inline-link { margin-inline-start:auto; font-size:.8rem; }
   .fn-files .toolbar .buttons > :is(button, div) { min-height:44px; }
   .fn-files .toolbar .buttons #uploadBtn { min-height:44px; }
+  .fn-files .fn-unsupported-note { flex:1 1 100%; max-width:none; }
 }
 @media (orientation:landscape) and (max-height:470px) {
   .fn-files,.fn-gallery { overflow:auto; height:auto; min-height:100dvh; }

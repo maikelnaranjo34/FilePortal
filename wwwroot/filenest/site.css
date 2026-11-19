@@ -31,6 +31,12 @@ body.fn-page, body.fn-workspace {
   border-bottom:1px solid var(--fn-line); font:500 14px/1.35 "Segoe UI",system-ui,sans-serif;
 }
 .fn-header-inner { display:flex; align-items:center; gap:clamp(12px,2.5vw,36px); max-width:1540px; padding:5px 36px; margin:auto; min-height:62px; }
+.fn-brand-group { display:flex; align-items:center; gap:7px; min-width:0; }
+.fn-back {
+  display:grid; place-items:center; flex:none; width:44px; height:44px; padding:0; border:1px solid var(--fn-line);
+  border-radius:50%; background:color-mix(in srgb,var(--fn-panel) 78%,transparent); color:var(--fn-ink); cursor:pointer;
+}
+.fn-back:hover { border-color:var(--fn-accent); background:#4edbe81e; color:var(--fn-accent); }
 .fn-brand { flex:none; display:inline-flex; align-items:center; gap:6px; font-size:1.65rem; letter-spacing:-.055em; font-weight:750; }
 .fn-brand img { object-fit:contain; }
 .fn-brand b { color:var(--fn-accent); font-weight:inherit; }
@@ -176,6 +182,8 @@ body.fn-page, body.fn-workspace {
   .fn-desktop-links { display:none; }
   .fn-more { display:block; }
   .fn-header-inner { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:4px; padding:3px 10px 6px; }
+  .fn-brand-group { width:max-content; max-width:100%; gap:3px; }
+  .fn-back { width:40px; height:40px; }
   .fn-brand { width:max-content; font-size:1.43rem; }
   .fn-brand img { width:39px; height:39px; }
   .fn-account { grid-column:2; grid-row:1; }

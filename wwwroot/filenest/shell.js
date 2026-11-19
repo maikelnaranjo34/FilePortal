@@ -18,6 +18,7 @@
     pin: '<path d="m15 3 6 6-4 1-3 3v4l-7-7h4l3-3zM7 17l-4 4"/>',
     storage: '<ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v12c0 4 16 4 16 0V6M4 12c0 4 16 4 16 0"/>',
     sparkle: '<path d="m12 2 2.5 7.5L22 12l-7.5 2.5L12 22l-2.5-7.5L2 12l7.5-2.5z"/>',
+    back: '<path d="M19 12H5m6-6-6 6 6 6"/>',
     arrow: '<path d="M5 12h14m-6-6 6 6-6 6"/>',
     chevron: '<path d="m9 5 7 7-7 7"/>'
   };
@@ -60,6 +61,15 @@
     return "/login.html?next=" + encodeURIComponent(next);
   }
 
+  function goBack(fallback = "/") {
+    if (history.length > 1) {
+      history.back();
+      return;
+    }
+    if (location.pathname + location.search + location.hash !== fallback)
+      location.assign(fallback);
+  }
+
   function activate(key) {
     if (!header) return;
     header.querySelectorAll("[data-destination]").forEach(item => {
@@ -71,7 +81,8 @@
 
   if (header) {
     header.className = "fn-header";
-    header.innerHTML = '<div class="fn-header-inner"><a class="fn-brand" href="/"><img src="' + mascot + '" alt="" width="44" height="44"><span><b>File</b>Nest</span></a>' +
+    header.innerHTML = '<div class="fn-header-inner"><div class="fn-brand-group"><button class="fn-back" type="button" aria-label="Go back" title="Back">' + icon("back") + '</button>' +
+      '<a class="fn-brand" href="/"><img src="' + mascot + '" alt="" width="44" height="44"><span><b>File</b>Nest</span></a></div>' +
       (profile ? '<nav class="fn-nav" aria-label="Main navigation">' + ["home", "files", "gallery"].map(link).join("") +
         '<span class="fn-desktop-links">' + ["shared", "favorites", "trash"].map(link).join("") + '</span>' +
         '<details class="fn-menu fn-more"><summary>' + icon("more") + 'More</summary><div class="fn-popover">' +
@@ -81,6 +92,7 @@
         '<div class="fn-popover"><span id="fn-username"></span>' + link("settings") +
         '<button id="fn-theme" type="button">Switch theme</button><button id="fn-logout" type="button">Sign out</button><p id="fn-account-status" role="status"></p></div></details></div>' :
         '<button id="fn-public-theme" class="fn-button fn-public-theme" type="button">Switch theme</button>') + '</div>';
+    header.querySelector(".fn-back").addEventListener("click", () => goBack("/"));
     header.querySelector("#fn-public-theme")?.addEventListener("click", () => window.toggleSiteTheme());
 
     if (profile) {
@@ -167,5 +179,5 @@
     return "/files.html?" + query;
   }
 
-  window.FileNest = { account, activate, activity, bytes, fileLink, icon, request, signInUrl };
+  window.FileNest = { account, activate, activity, bytes, fileLink, goBack, icon, request, signInUrl };
 })();

@@ -22,7 +22,7 @@ The redesign is developed on the isolated `redesign/filenest` branch under `F:\M
 | 1. Project audit | Complete | ASP.NET startup, controllers, storage, authentication, frontend behavior, tests, and four supplied visual references were reviewed before implementation. |
 | 2. Plan and protection | Complete | Work started from clean commit `0ca7fc2` in an isolated branch with disposable preview data and rollback through Git. |
 | 3. Visual foundation | Complete | Shared FileNest tokens, glass panels, generated mascot, top navigation, menus, dialogs, responsive breakpoints, transitions, light and dark themes, and touch targets are in place. Right-click is temporarily blocked with an accessible FileNest status message. |
-| 4. Page redesign | In progress | Dashboard, My Files, Gallery, Shared, Favorites, Trash status, file previews, Settings, login, and public shares have initial FileNest layouts. |
+| 4. Page redesign | Complete | Dashboard, My Files, Gallery, Shared, Favorites, Trash status, previews, Settings, sign-in, and public shares use the FileNest design. Every page has a Back control with a Home fallback. Keyboard activation, dialog focus, accessible labels, and explicit unsupported-state messaging were added. |
 | 5. Functional integration | In progress | Existing APIs power authentication, browsing, uploads, downloads, deletion, media, sharing, and account management. Global file search remains to be completed. |
 | 6. Testing and validation | In progress | Release integration tests pass. Reproducible browser validation will be added to the repository before this phase is complete. |
 | 7. Mobile layout | In progress | The top-only mobile navigation and responsive dashboard are implemented. Final mobile regression results will be recorded after the preceding phases close. |
@@ -61,7 +61,7 @@ The redesign is developed on the isolated `redesign/filenest` branch under `F:\M
 | [wwwroot/filenest/site.css](wwwroot/filenest/site.css), [wwwroot/filenest/workspace.css](wwwroot/filenest/workspace.css), [wwwroot/filenest/shell.js](wwwroot/filenest/shell.js) | Shared theme and responsive navigation |
 | [wwwroot/gallery.html](wwwroot/gallery.html), [wwwroot/app.js](wwwroot/app.js) | Media Gallery with Photos, Videos, Albums, Favorites, and Search |
 | [wwwroot/files.html](wwwroot/files.html) | File Manager |
-| [wwwroot/login.html](wwwroot/login.html) | Gallery sign-in |
+| [wwwroot/login.html](wwwroot/login.html) | FileNest sign-in |
 | [wwwroot/users.html](wwwroot/users.html) | Account settings and administrator controls |
 | [tests/fileportal.test.mjs](tests/fileportal.test.mjs) | Integration tests against the published application |
 
@@ -113,7 +113,7 @@ File endpoints require sign-in and enforce the caller's folder access.
 | Method | Route | Access |
 | --- | --- | --- |
 | GET | `/api/users` | Administrator. Lists users. |
-| POST | `/api/users` | Administrator. Creates an account from form fields. |
+| POST | `/api/users` | Administrator. Creates an account from required `username`, `password`, `firstName`, and `lastName` form fields plus optional `isAdmin`. |
 | DELETE | `/api/users/{username}` | Administrator. The signed-in account and the last administrator are protected. |
 | POST | `/api/users/{username}/promote` | Administrator. Grants the administrator role. |
 | POST | `/api/users/{username}/demote` | Administrator. Self-demotion and demotion of the last administrator are blocked. |
@@ -131,13 +131,25 @@ File endpoints require sign-in and enforce the caller's folder access.
 | POST | `/api/photos/batch/download-form` | Downloads selected media as a ZIP through the browser. |
 | POST | `/api/photos/scan` | Administrator. Requests a library scan. |
 | GET | `/api/albums` and `/api/search` | List albums or search accessible media. |
-| GET | `/api/sharing/public/{token}` | Opens a public share subject to the owner's current folder access. |
+
+### Sharing
+
+| Method | Route | Behavior |
+| --- | --- | --- |
+| POST | `/api/sharing` | Signed-in user. Creates a photo or album share from `type`, `targetId`, and optional `expiresInDays`. |
+| GET | `/api/sharing/mine` | Signed-in user. Lists share links owned by the current account. |
+| DELETE | `/api/sharing/{token}` | Owner or administrator. Revokes a share link. |
+| GET | `/api/sharing/public/{token}` | Public. Opens a manifest subject to the owner's current folder access. |
+| GET | `/api/sharing/public/{token}/photo/{id}/thumbnail` | Public. Serves an item thumbnail when the item belongs to the share. |
+| GET | `/api/sharing/public/{token}/photo/{id}/file` | Public. Serves shared media with byte-range support. |
 
 ## Frontend and media
 
-The FileNest dashboard opens at `/`. It shows authorized roots, media favorites, and activity recorded by this browser for the signed-in account. Quick Access can pin available roots. The folder storage check reports the count and combined size of files directly in the selected folder. File Manager searches the current listing by name, and Gallery searches indexed photos and videos. File Manager is available at `/files.html`, and Gallery at `/gallery.html`. Older gallery bookmarks such as `/#videos` still open the corresponding view. Existing public media links continue to use `/share.html`.
+The FileNest dashboard opens at `/`. It shows authorized roots, media favorites, and activity recorded by this browser for the signed-in account. Quick Access can pin available roots. The folder storage check reports the count and combined size of files directly in the selected folder. File Manager searches the current listing by name, and Gallery searches indexed photos and videos. File Manager is available at `/files.html`, and Gallery at `/gallery.html`. Older gallery bookmarks such as `/#videos` still open the corresponding view. Existing public media links continue to use `/share.html`. The Back arrow on every page returns to the previous browser-history entry and falls back to Home when no previous entry exists.
 
 On phones, the sticky top navigation shows Home, My Files, Gallery, and More. More opens Shared, Favorites, Trash, and Settings. The upload dialog uses an authorized root as its destination. For a nested destination, open that folder in My Files and upload there. Shared lists outgoing photo and album links and lets owners revoke them. Deletion is permanent in the current backend, so Trash explains the limitation and disables recovery.
+
+Controls without backend support are disabled and described in the interface. FilePortal currently has no create-folder, rename, or move endpoint; no recycle-bin or restore endpoint; and no notification service. AI summarization and organization remain disabled until an authenticated, server-side provider integration is added. Right-click is temporarily disabled across FileNest and displays an accessible status message; keyboard and touch controls remain available.
 
 The assistant opens in its own dialog. It links users to existing file search while AI is unavailable. A future AI integration should use an authenticated server endpoint, authorize each requested file through the existing folder policy, keep provider credentials server-side, and obtain explicit authorization before sending private file contents to an external service. [Assistant module](wwwroot/filenest/assistant.js).
 

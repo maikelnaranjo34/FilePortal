@@ -375,13 +375,14 @@
         <div class="buttons">
           <button id="rootsToggle" class="secondary mobile-roots-toggle" type="button" aria-controls="driveSidebar" aria-expanded="false">Drives</button>
           <div style="position:relative;display:inline-block">
-            <button id="uploadBtn" class="btn-like" type="button">⬆️ Upload</button>
-            <div id="uploadMenu" style="display:none;position:absolute;right:0;margin-top:6px;background:#0b1220;border:1px solid #1f2937;border-radius:6px;padding:6px;z-index:50;min-width:140px">
-              <button type="button" class="secondary" id="uploadFilesOption">⬆️ Upload Files</button>
-              <button type="button" class="secondary" id="uploadFolderOption">📁 Upload Folder</button>
+            <button id="uploadBtn" class="btn-like" type="button" aria-haspopup="menu" aria-controls="uploadMenu" aria-expanded="false">⬆️ Upload</button>
+            <div id="uploadMenu" role="menu" style="display:none;position:absolute;right:0;margin-top:6px;background:#0b1220;border:1px solid #1f2937;border-radius:6px;padding:6px;z-index:50;min-width:140px">
+              <button type="button" class="secondary" id="uploadFilesOption" role="menuitem">⬆️ Upload Files</button>
+              <button type="button" class="secondary" id="uploadFolderOption" role="menuitem">📁 Upload Folder</button>
             </div>
           </div>
           <button class="secondary" type="button" disabled title="Folder creation is unavailable">New Folder</button>
+          <span class="fn-unsupported-note">Create, rename, and move are unavailable.</span>
           <button class="secondary" type="button" onclick="goUp()">⬆️ Up</button>
           <button id="viewTypeBtn" class="secondary" type="button" onclick="toggleViewType()">📋 View</button>
         </div>
@@ -429,12 +430,12 @@
       <button class="secondary" type="button" onclick="previewRotation.turn(document.getElementById('imageViewerImg'), -90)" aria-label="Rotate image counterclockwise">↶ Left</button>
       <button class="secondary" type="button" onclick="previewRotation.turn(document.getElementById('imageViewerImg'), 90)" aria-label="Rotate image clockwise">↷ Right</button>
       <button class="danger" type="button" onclick="deleteCurrentImage()">Delete</button>
-      <button class="secondary" type="button" onclick="closeImageViewer()">Close</button>
+      <button class="secondary" id="imageViewerClose" type="button" onclick="closeImageViewer()">Close</button>
     </div>
     <div class="preview-stage">
       <img id="imageViewerImg" alt="" />
-      <button class="image-viewer-nav prev" id="imagePrevBtn" onclick="navigateImage(-1)" aria-label="Previous image">?</button>
-      <button class="image-viewer-nav next" id="imageNextBtn" onclick="navigateImage(1)" aria-label="Next image">?</button>
+      <button class="image-viewer-nav prev" id="imagePrevBtn" onclick="navigateImage(-1)" aria-label="Previous image">‹</button>
+      <button class="image-viewer-nav next" id="imageNextBtn" onclick="navigateImage(1)" aria-label="Next image">›</button>
     </div>
   </div>
 
@@ -443,7 +444,7 @@
       <button class="secondary" type="button" onclick="previewRotation.turn(document.getElementById('videoViewerVideo'), -90)" aria-label="Rotate video counterclockwise">↶ Left</button>
       <button class="secondary" type="button" onclick="previewRotation.turn(document.getElementById('videoViewerVideo'), 90)" aria-label="Rotate video clockwise">↷ Right</button>
       <button class="danger" type="button" onclick="deleteCurrentVideo()">Delete</button>
-      <button class="secondary" type="button" onclick="closeVideoViewer()">Close</button>
+      <button class="secondary" id="videoViewerClose" type="button" onclick="closeVideoViewer()">Close</button>
     </div>
     <div class="preview-stage">
       <video id="videoViewerVideo" controls playsinline></video>
@@ -468,6 +469,8 @@
     let panStartY = 0;
     let lastSearchLetter = '';
     let searchLetterIndex = 0;
+    let imageViewerReturnFocus = null;
+    let videoViewerReturnFocus = null;
 
     const initial = new URLSearchParams(location.search);
     const folderSearch = document.getElementById("folderSearch");
@@ -790,6 +793,7 @@
     }
 
     function showImageViewer(imageList, index) {
+      imageViewerReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
       currentImageList = imageList;
       currentImageIndex = index;
       imageZoom = 1;
@@ -804,6 +808,7 @@
       img.addEventListener('mousedown', handlePanStart);
       document.addEventListener('mousemove', handlePanMove);
       document.addEventListener('mouseup', handlePanEnd);
+      document.getElementById('imageViewerClose').focus();
     }
 
     function updateImageViewer() {
@@ -822,10 +827,13 @@
     function showVideoViewer(videoPath) {
       const viewer = document.getElementById('videoViewer');
       const video = document.getElementById('videoViewerVideo');
+      videoViewerReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
       currentVideoPath = videoPath;
       previewRotation.reset(video);
       video.src = '/api/files/file?path=' + encodeURIComponent(videoPath);
       viewer.style.display = 'flex';
+      document.addEventListener('keydown', handleVideoViewerKeys);
+      document.getElementById('videoViewerClose').focus();
     }
 
     function navigateImage(direction) {
@@ -839,9 +847,30 @@
     }
 
     function handleImageViewerKeys(e) {
-      if (e.key === 'ArrowLeft') navigateImage(-1);
-      else if (e.key === 'ArrowRight') navigateImage(1);
-      else if (e.key === 'Escape') closeImageViewer();
+      if (e.key === 'Tab') trapViewerFocus(e, document.getElementById('imageViewer'));
+      else if (e.key === 'ArrowLeft') { e.preventDefault(); navigateImage(-1); }
+      else if (e.key === 'ArrowRight') { e.preventDefault(); navigateImage(1); }
+      else if (e.key === 'Escape') { e.preventDefault(); closeImageViewer(); }
+    }
+
+    function handleVideoViewerKeys(e) {
+      if (e.key === 'Tab') trapViewerFocus(e, document.getElementById('videoViewer'));
+      else if (e.key === 'Escape') { e.preventDefault(); closeVideoViewer(); }
+    }
+
+    function trapViewerFocus(event, viewer) {
+      const controls = Array.from(viewer.querySelectorAll('button:not([disabled]), video[controls]'))
+        .filter(element => element.getClientRects().length);
+      if (!controls.length) return;
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     }
 
     function handleImageZoom(e) {
@@ -887,17 +916,22 @@
       img.removeEventListener('mousedown', handlePanStart);
       document.removeEventListener('mousemove', handlePanMove);
       document.removeEventListener('mouseup', handlePanEnd);
+      if (imageViewerReturnFocus?.isConnected) imageViewerReturnFocus.focus();
+      imageViewerReturnFocus = null;
     }
 
     function closeVideoViewer() {
       const viewer = document.getElementById('videoViewer');
       const video = document.getElementById('videoViewerVideo');
       viewer.style.display = 'none';
+      document.removeEventListener('keydown', handleVideoViewerKeys);
       video.pause();
       video.removeAttribute('src');
       previewRotation.reset(video);
       currentVideoPath = null;
       video.load();
+      if (videoViewerReturnFocus?.isConnected) videoViewerReturnFocus.focus();
+      videoViewerReturnFocus = null;
     }
 
     function previewItem(path) {
@@ -1214,18 +1248,57 @@
 
       if (!uploadBtn) return;
 
+      function menuIsOpen() {
+        return uploadMenu.style.display === 'flex';
+      }
+
+      function openMenu() {
+        uploadMenu.style.display = 'flex';
+        uploadMenu.style.flexDirection = 'column';
+        uploadBtn.setAttribute('aria-expanded', 'true');
+        filesOpt.focus();
+      }
+
+      function closeMenu(restoreFocus = false) {
+        if (!menuIsOpen()) return;
+        uploadMenu.style.display = 'none';
+        uploadBtn.setAttribute('aria-expanded', 'false');
+        if (restoreFocus) uploadBtn.focus();
+      }
+
       uploadBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        uploadMenu.style.display = uploadMenu.style.display === 'flex' ? 'none' : 'flex';
-        uploadMenu.style.flexDirection = 'column';
+        if (menuIsOpen()) closeMenu();
+        else openMenu();
       });
 
-      filesOpt.addEventListener('click', (e) => { e.stopPropagation(); document.getElementById('fileInputFiles').click(); uploadMenu.style.display = 'none'; });
-      folderOpt.addEventListener('click', (e) => { e.stopPropagation(); document.getElementById('fileInputFolder').click(); uploadMenu.style.display = 'none'; });
+      filesOpt.addEventListener('click', (e) => {
+        e.stopPropagation();
+        closeMenu(true);
+        document.getElementById('fileInputFiles').click();
+      });
+      folderOpt.addEventListener('click', (e) => {
+        e.stopPropagation();
+        closeMenu(true);
+        document.getElementById('fileInputFolder').click();
+      });
+
+      uploadMenu.addEventListener('keydown', event => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          closeMenu(true);
+        } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+          event.preventDefault();
+          const options = [filesOpt, folderOpt];
+          const index = options.indexOf(document.activeElement);
+          const direction = event.key === 'ArrowDown' ? 1 : -1;
+          options[(index + direction + options.length) % options.length].focus();
+        }
+      });
 
       // Close menu when clicking outside
       document.addEventListener('click', (e) => {
-        if (!uploadBtn.contains(e.target) && !uploadMenu.contains(e.target)) uploadMenu.style.display = 'none';
+        if (!uploadBtn.contains(e.target) && !uploadMenu.contains(e.target)) closeMenu();
       });
     })();
 

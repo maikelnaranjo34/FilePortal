@@ -180,10 +180,10 @@ a{color:inherit;text-decoration:none}
     <div class="brand">Media Gallery</div>
     <div class="search">
       <span class="icon">🔍</span>
-      <input id="globalSearch" placeholder="Search by name, camera, folder…" />
+      <input id="globalSearch" aria-label="Search media by name, camera, or folder" placeholder="Search by name, camera, folder…" />
     </div>
     <div class="spacer"></div>
-    <button class="iconbtn" id="scanBtn" title="Rescan library" style="display:none">🔄</button>
+    <button class="iconbtn" id="scanBtn" title="Rescan library" aria-label="Rescan media library" style="display:none">🔄</button>
   </div>
 
   <div class="body">
@@ -204,7 +204,7 @@ a{color:inherit;text-decoration:none}
 <!-- Lightbox -->
 <div class="lb" id="lightbox" role="dialog" aria-modal="true" aria-label="Photo preview">
   <div class="lbtop">
-    <button class="iconbtn" id="lbClose">✕</button>
+    <button class="iconbtn" id="lbClose" aria-label="Close preview">✕</button>
     <span class="ttl" id="lbTitle"></span>
     <span class="spacer"></span>
     <button class="iconbtn" id="lbRotateLeft" title="Rotate counterclockwise" aria-label="Rotate counterclockwise">↶</button>
@@ -218,9 +218,9 @@ a{color:inherit;text-decoration:none}
     <button class="iconbtn" id="lbInfoBtn" title="Info">ℹ️</button>
   </div>
   <div class="stage" id="lbStage">
-    <button class="navbtn prev" id="lbPrev">‹</button>
+    <button class="navbtn prev" id="lbPrev" aria-label="Previous media item">‹</button>
     <div id="lbMedia"></div>
-    <button class="navbtn next" id="lbNext">›</button>
+    <button class="navbtn next" id="lbNext" aria-label="Next media item">›</button>
     <div class="info" id="lbInfo">
       <h4>Details</h4>
       <div id="lbInfoBody"></div>
@@ -228,7 +228,7 @@ a{color:inherit;text-decoration:none}
   </div>
 </div>
 
-<div class="modal" id="modal"><div class="box" id="modalBox"></div></div>
+<div class="modal" id="modal" role="dialog" aria-modal="true" aria-label="Gallery action"><div class="box" id="modalBox" tabindex="-1"></div></div>
 <div class="toast" id="toast" role="status"></div>
 
 <iframe id="galleryDownload" name="galleryDownload" title="Photo archive download" hidden></iframe>
