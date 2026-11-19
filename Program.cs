@@ -133,6 +133,33 @@ app.UseStaticFiles(clientFiles);
 app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();
+app.Use(async (context, next) =>
+{
+    if (context.User.Identity?.IsAuthenticated == true &&
+        context.Items[typeof(UserRecord)] is UserRecord user &&
+        user.MustChangePassword &&
+        context.Request.Path.StartsWithSegments("/api"))
+    {
+        var requestPath = Uri.UnescapeDataString(context.Request.Path.Value ?? "");
+        var ownPasswordPath = $"/api/users/{user.Username}/password";
+        var allowed = requestPath.Equals("/api/auth/me", StringComparison.OrdinalIgnoreCase) ||
+            requestPath.Equals("/api/auth/logout", StringComparison.OrdinalIgnoreCase) ||
+            (HttpMethods.IsPost(context.Request.Method) &&
+                requestPath.Equals(ownPasswordPath, StringComparison.OrdinalIgnoreCase));
+        if (!allowed)
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            await context.Response.WriteAsJsonAsync(new
+            {
+                error = "Change your temporary password before continuing.",
+                mustChangePassword = true
+            });
+            return;
+        }
+    }
+
+    await next();
+});
 
 app.MapControllers();
 app.MapGet("/portal.html", () => Results.Redirect("/"));

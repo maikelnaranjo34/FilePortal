@@ -51,6 +51,10 @@
       if (response.status === 401) return null;
       if (!response.ok) throw new Error("Could not load your account.");
       return response.json();
+    }).then(user => {
+      if (user?.mustChangePassword && location.pathname.toLowerCase() !== "/users.html")
+        location.replace("/users.html?passwordChange=required");
+      return user;
     }).catch(error => {
       accountRequest = null;
       throw error;

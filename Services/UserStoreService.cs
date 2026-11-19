@@ -178,8 +178,44 @@ public class UserStoreService
         if (currentPassword is not null && !CheckPassword(user, currentPassword)) return UserChange.InvalidPassword;
 
         SetPassword(user, newPassword);
+        user.MustChangePassword = false;
         return UserChange.Updated;
     });
+
+    public (UserChange Result, string? Password) GenerateTemporaryPassword(string username)
+    {
+        string? password = null;
+        var result = Update(users =>
+        {
+            var user = FindUser(users, username);
+            if (user is null) return UserChange.NotFound;
+
+            password = CreateTemporaryPassword();
+            SetPassword(user, password);
+            user.MustChangePassword = true;
+            return UserChange.Updated;
+        });
+        return (result, password);
+    }
+
+    private static string CreateTemporaryPassword()
+    {
+        const string upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+        const string lower = "abcdefghijkmnopqrstuvwxyz";
+        const string digits = "23456789";
+        const string symbols = "!@#$%*+-=?";
+        const string all = upper + lower + digits + symbols;
+        var password = new char[18];
+        password[0] = upper[RandomNumberGenerator.GetInt32(upper.Length)];
+        password[1] = lower[RandomNumberGenerator.GetInt32(lower.Length)];
+        password[2] = digits[RandomNumberGenerator.GetInt32(digits.Length)];
+        password[3] = symbols[RandomNumberGenerator.GetInt32(symbols.Length)];
+        for (var index = 4; index < password.Length; index++)
+            password[index] = all[RandomNumberGenerator.GetInt32(all.Length)];
+
+        RandomNumberGenerator.Shuffle(password);
+        return new string(password);
+    }
 
     private static bool CheckPassword(UserRecord user, string password)
     {

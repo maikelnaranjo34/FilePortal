@@ -51,7 +51,7 @@ namespace FilePortal.Controllers
 
             var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString();
             _ = Task.Run(() => SendLoginNotificationEmail(user.Username, ipAddress));
-            return Ok(new { message = "Logged in" });
+            return Ok(new { message = "Logged in", mustChangePassword = user.MustChangePassword });
         }
 
         // POST /api/auth/logout
@@ -69,7 +69,13 @@ namespace FilePortal.Controllers
         public IActionResult Me()
         {
             var user = (FilePortal.Models.UserRecord)HttpContext.Items[typeof(FilePortal.Models.UserRecord)]!;
-            return Ok(new { user = user.Username, isAdmin = user.IsAdmin, allowedFolders = user.AllowedFolders });
+            return Ok(new
+            {
+                user = user.Username,
+                isAdmin = user.IsAdmin,
+                allowedFolders = user.AllowedFolders,
+                mustChangePassword = user.MustChangePassword
+            });
         }
 
         private void SendLoginNotificationEmail(string username, string? ipAddress)

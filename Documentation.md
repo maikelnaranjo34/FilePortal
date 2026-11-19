@@ -87,7 +87,7 @@ Each account in `users.json` stores fully qualified folder paths in `AllowedFold
 | --- | --- | --- |
 | POST | `/api/auth/login` | Public. Send form fields `username` and `password`. |
 | POST | `/api/auth/logout` | Signed-in user |
-| GET | `/api/auth/me` | Signed-in user. Returns `user`, `isAdmin`, and `allowedFolders`. |
+| GET | `/api/auth/me` | Signed-in user. Returns `user`, `isAdmin`, `allowedFolders`, and `mustChangePassword`. |
 
 ### Files
 
@@ -120,6 +120,7 @@ File endpoints require sign-in and enforce the caller's folder access.
 | POST | `/api/users/{username}/promote` | Administrator. Grants the administrator role. |
 | POST | `/api/users/{username}/demote` | Administrator. Self-demotion and demotion of the last administrator are blocked. |
 | POST | `/api/users/{username}/password` | Users change their own password with `currentPassword` and `newPassword` form fields. Administrators can reset another account with `newPassword`. |
+| POST | `/api/users/{username}/temporary-password` | Administrator. Generates and returns a temporary password once, invalidates existing sessions, and requires the target user to replace it at the next sign-in. Administrators must use the normal self-service flow for their own password. |
 | GET | `/api/users/{username}/folders` | Administrator. Reads an account's assigned folders. |
 | POST | `/api/users/{username}/folders` | Administrator. Replaces folder assignments with a JSON array of paths. |
 
@@ -158,6 +159,8 @@ On phones, the sticky top navigation shows Home, My Files, Gallery, and More. Mo
 Controls without backend support are disabled and described in the interface. FilePortal currently has no create-folder, rename, or move endpoint; no recycle-bin or restore endpoint; and no notification service. AI summarization and organization remain disabled until an authenticated, server-side provider integration is added. Right-click is temporarily disabled across FileNest and displays an accessible status message; keyboard and touch controls remain available.
 
 Administrators can open Settings to view every account and edit its first and last name after creation. Usernames are fixed identifiers. Role, password, and folder-access changes remain separate controls so their existing authorization and session protections continue to apply.
+
+Passwords are never stored in readable form and cannot be recovered. An administrator can use **Password → Generate temporary password** for another account. FilePortal displays the generated password only in that response so it can be copied and shared securely; the user store contains only its salted hash. Generation invalidates the account's existing sessions. After signing in with the temporary password, the user is redirected to Settings and all other API operations remain blocked until the temporary password is replaced.
 
 The assistant opens in its own dialog. It links users to existing file search while AI is unavailable. A future AI integration should use an authenticated server endpoint, authorize each requested file through the existing folder policy, keep provider credentials server-side, and obtain explicit authorization before sending private file contents to an external service. [Assistant module](wwwroot/filenest/assistant.js).
 
@@ -240,7 +243,7 @@ node --test tests/filenest.browser.mjs
 dotnet list FilePortal.csproj package --vulnerable --include-transitive
 ```
 
-The integration suite publishes to a temporary directory and runs on loopback against disposable accounts and files. It covers legacy user data, concurrent account updates, authorization-aware cross-root search, session revocation, password changes, uploads, ZIP downloads, image thumbnails, and video byte ranges. With FFmpeg 8 on the test runner's PATH, it also checks frame selection, short clips, and JPEG thumbnails in the gallery, File Manager, and share links. [GitHub Actions workflow](.github/workflows/test.yml).
+The integration suite publishes to a temporary directory and runs on loopback against disposable accounts and files. It covers legacy user data, concurrent account updates, authorization-aware cross-root search, session revocation, one-time temporary passwords, forced password replacement, uploads, ZIP downloads, image thumbnails, and video byte ranges. With FFmpeg 8 on the test runner's PATH, it also checks frame selection, short clips, and JPEG thumbnails in the gallery, File Manager, and share links. [GitHub Actions workflow](.github/workflows/test.yml).
 
 Before deploying a redesigned build, test responsive navigation at 320–430 CSS pixels and in landscape, plus upload, download, file and video previews, deep links, and session handling with administrator and regular accounts. Test against disposable roots and app data.
 

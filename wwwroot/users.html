@@ -75,8 +75,20 @@
         <input id="pwNew" type="password" autocomplete="new-password" />
         <label for="pwConfirm">Confirm new password</label>
         <input id="pwConfirm" type="password" autocomplete="new-password" />
+        <section id="temporaryPasswordSection" hidden style="margin-top:14px;padding-top:14px;border-top:1px solid #1f2937">
+          <button id="generateTemporaryPassword" type="button" onclick="generateTemporaryPassword()">Generate temporary password</button>
+          <p style="color:#9ca3af;font-size:12px">This signs the user out everywhere and requires a new password at the next sign-in.</p>
+          <div id="temporaryPasswordResult" hidden>
+            <label for="temporaryPassword">Temporary password — shown only once</label>
+            <div style="display:flex;gap:8px;align-items:center">
+              <input id="temporaryPassword" readonly style="font-family:ui-monospace,Consolas,monospace" />
+              <button type="button" onclick="copyTemporaryPassword()">Copy</button>
+            </div>
+            <p id="temporaryPasswordStatus" role="status"></p>
+          </div>
+        </section>
         <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end">
-          <button onclick="submitChangePassword()">Save</button>
+          <button onclick="submitChangePassword()">Set password</button>
           <button onclick="closePwModal()" style="background:#374151;color:#e5e7eb">Cancel</button>
         </div>
       </div>
@@ -152,6 +164,11 @@
       document.getElementById('addUserPanel').hidden = !currentIsAdmin;
       const list = document.getElementById('list');
       list.hidden = !currentIsAdmin;
+      if (profile.mustChangePassword) {
+        account.textContent = 'Change your temporary password before continuing.';
+        openPwModal(currentUser);
+        return;
+      }
       if (!currentIsAdmin) return;
 
       const res = await fetch('/api/users');
@@ -170,7 +187,8 @@
         const identity = document.createElement('strong');
         identity.textContent = displayName;
         const role = document.createElement('small');
-        role.textContent = u.isAdmin ? 'Administrator' : 'Standard user';
+        role.textContent = (u.isAdmin ? 'Administrator' : 'Standard user') +
+          (u.mustChangePassword ? ' · Password change required' : '');
         left.append(identity, role);
 
         const actions = document.createElement('div');
@@ -203,6 +221,7 @@
         // Change password button
         const cp = document.createElement('button'); 
         cp.textContent = 'Password';
+        cp.dataset.passwordUser = u.username;
         cp.onclick = () => openPwModal(u.username);
         actions.appendChild(cp);
 
@@ -357,6 +376,11 @@
       document.getElementById('pwConfirm').value = '';
       document.getElementById('pwCurrent').value = '';
       document.getElementById('pwCurrentWrap').hidden = currentIsAdmin && username !== currentUser;
+      const temporarySection = document.getElementById('temporaryPasswordSection');
+      temporarySection.hidden = !(currentIsAdmin && username !== currentUser);
+      document.getElementById('temporaryPasswordResult').hidden = true;
+      document.getElementById('temporaryPassword').value = '';
+      document.getElementById('temporaryPasswordStatus').textContent = '';
       document.getElementById('pwModal').style.display = 'flex';
       const firstField = document.getElementById('pwCurrentWrap').hidden
         ? document.getElementById('pwNew')
@@ -368,9 +392,62 @@
       if (document.getElementById('pwModal').style.display === 'none') return;
       document.getElementById('pwModal').style.display = 'none';
       pwTarget = null;
+      document.getElementById('temporaryPassword').value = '';
+      document.getElementById('temporaryPasswordResult').hidden = true;
+      document.getElementById('temporaryPasswordStatus').textContent = '';
       const returnFocus = pwReturnFocus;
       pwReturnFocus = null;
       restoreFocus(returnFocus);
+    }
+
+    async function generateTemporaryPassword() {
+      if (!pwTarget || pwTarget === currentUser) return;
+      const button = document.getElementById('generateTemporaryPassword');
+      const msg = document.getElementById('pwMsg');
+      button.disabled = true;
+      msg.textContent = '';
+      try {
+        const res = await fetch('/api/users/' + encodeURIComponent(pwTarget) + '/temporary-password', {
+          method: 'POST', credentials: 'include'
+        });
+        const result = await res.json().catch(() => null);
+        if (!res.ok) {
+          msg.textContent = result?.error || 'Could not generate a temporary password.';
+          return;
+        }
+
+        document.getElementById('temporaryPassword').value = result.temporaryPassword;
+        document.getElementById('temporaryPasswordResult').hidden = false;
+        document.getElementById('temporaryPasswordStatus').textContent =
+          'Copy this password now. It cannot be viewed again.';
+        document.getElementById('accountStatus').textContent =
+          'Temporary password generated for ' + pwTarget + '.';
+        const editButton = [...document.querySelectorAll('[data-edit-user]')]
+          .find(item => item.dataset.editUser === pwTarget);
+        const role = editButton?.closest('.user')?.querySelector('.user-summary small');
+        if (role && !role.textContent.includes('Password change required'))
+          role.textContent += ' · Password change required';
+        document.getElementById('temporaryPassword').focus();
+      } catch {
+        msg.textContent = 'Request failed.';
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    async function copyTemporaryPassword() {
+      const field = document.getElementById('temporaryPassword');
+      const status = document.getElementById('temporaryPasswordStatus');
+      if (!field.value) return;
+      try {
+        await navigator.clipboard.writeText(field.value);
+        status.textContent = 'Temporary password copied.';
+      } catch {
+        field.select();
+        const copied = document.execCommand('copy');
+        field.setSelectionRange(0, 0);
+        status.textContent = copied ? 'Temporary password copied.' : 'Select and copy the password manually.';
+      }
     }
 
     let folderTarget = null;

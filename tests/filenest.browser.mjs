@@ -242,6 +242,16 @@ test('FileNest browser regression', { timeout: 120_000, skip: process.platform !
     );
     await until('document.querySelector("#accountStatus").textContent === "Updated administrator."', 'User profile did not update');
     assert.match(await evaluate('document.querySelector(".user-summary strong").textContent'), /Browser Administrator/);
+    await evaluate(
+      'fetch("/api/users",{method:"POST",body:new URLSearchParams({username:"recovery-user",password:"InitialPassword123!",firstName:"Recovery",lastName:"User"})})' +
+      '.then(response=>{if(!response.ok)throw new Error("Could not create recovery user");return load();}); true'
+    );
+    await until('document.querySelector("[data-password-user=recovery-user]")', 'Recovery user did not appear');
+    await evaluate('document.querySelector("[data-password-user=recovery-user]").click(); true');
+    await until('!document.querySelector("#temporaryPasswordSection").hidden', 'Temporary password controls did not appear');
+    await evaluate('document.querySelector("#generateTemporaryPassword").click(); true');
+    await until('document.querySelector("#temporaryPassword").value.length === 18', 'Temporary password was not generated');
+    assert.equal(await evaluate('document.querySelector("#temporaryPasswordResult").hidden'), false);
 
     assert.deepEqual(runtimeErrors, []);
   } finally {

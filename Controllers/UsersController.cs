@@ -15,7 +15,14 @@ public class UsersController(UserStoreService store, FileBrowserService browser)
     [Authorize(Roles = "Admin")]
     [HttpGet]
     public IActionResult Get() =>
-        Ok(store.GetUsers().Select(user => new { user.Username, user.FirstName, user.LastName, user.IsAdmin }));
+        Ok(store.GetUsers().Select(user => new
+        {
+            user.Username,
+            user.FirstName,
+            user.LastName,
+            user.IsAdmin,
+            user.MustChangePassword
+        }));
 
     [Authorize(Roles = "Admin")]
     [HttpPost]
@@ -100,6 +107,21 @@ public class UsersController(UserStoreService store, FileBrowserService browser)
         {
             UserChange.Updated => Ok(),
             UserChange.InvalidPassword => BadRequest(new { error = "Current password is incorrect." }),
+            _ => NotFound()
+        };
+    }
+
+    [Authorize(Roles = "Admin")]
+    [HttpPost("{username}/temporary-password")]
+    public IActionResult GenerateTemporaryPassword(string username)
+    {
+        if (IsCurrentUser(username))
+            return BadRequest(new { error = "Use Change my password for your own account." });
+
+        var result = store.GenerateTemporaryPassword(username);
+        return result.Result switch
+        {
+            UserChange.Updated => Ok(new { temporaryPassword = result.Password, mustChangePassword = true }),
             _ => NotFound()
         };
     }

@@ -12,6 +12,7 @@ namespace FilePortal.Models
         public DateTime CreatedUtc { get; set; }
         public bool IsAdmin { get; set; }
         public Guid SecurityStamp { get; set; }
+        public bool MustChangePassword { get; set; }
         
         // Folder access control: list of folder paths user can access
         // If empty, admin users can access all, regular users can access none

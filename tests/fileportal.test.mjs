@@ -414,8 +414,32 @@ test('FilePortal release integration', { timeout: 90_000 }, async t => {
     const userList = await users.json();
     assert.equal(userList.length, 6);
     assert.deepEqual(userList.find(user => user.username === 'viewer'), {
-      username: 'viewer', firstName: 'Updated', lastName: 'Viewer', isAdmin: false
+      username: 'viewer', firstName: 'Updated', lastName: 'Viewer', isAdmin: false, mustChangePassword: false
     });
+    await request('/api/users/administrator/temporary-password', 400, admin, { method: 'POST' });
+    await request('/api/users/missing-user/temporary-password', 404, admin, { method: 'POST' });
+    await request('/api/users/second-user/temporary-password', 403, legacy, { method: 'POST' });
+    const secondSession = await login('second-user');
+    const temporaryResponse = await request('/api/users/second-user/temporary-password', 200, admin, { method: 'POST' });
+    const temporaryResult = await temporaryResponse.json();
+    assert.equal(temporaryResult.mustChangePassword, true);
+    assert.match(temporaryResult.temporaryPassword, /^(?=.*[A-Z])(?=.*[a-z])(?=.*[0-9])(?=.*[!@#$%*+\-=?]).{18}$/);
+    assert.equal(readFileSync(userFile, 'utf8').includes(temporaryResult.temporaryPassword), false);
+    await request('/api/auth/me', 401, secondSession);
+    const temporarySession = await login('second-user', temporaryResult.temporaryPassword);
+    const temporaryProfile = await request('/api/auth/me', 200, temporarySession);
+    assert.equal((await temporaryProfile.json()).mustChangePassword, true);
+    const blocked = await request('/api/files/roots', 403, temporarySession);
+    assert.deepEqual(await blocked.json(), {
+      error: 'Change your temporary password before continuing.', mustChangePassword: true
+    });
+    const permanentPassword = 'permanent-integration-password';
+    await request('/api/users/second-user/password', 200, temporarySession,
+      form({ currentPassword: temporaryResult.temporaryPassword, newPassword: permanentPassword }));
+    await request('/api/auth/me', 401, temporarySession);
+    const permanentSession = await login('second-user', permanentPassword);
+    assert.equal((await (await request('/api/auth/me', 200, permanentSession)).json()).mustChangePassword, false);
+    assert.deepEqual(await (await request('/api/files/roots', 200, permanentSession)).json(), []);
     await request('/api/users/viewer/folders', 200, admin, json([allowed]));
     await request('/api/users/viewer/folders', 400, admin, json([outside]));
     const viewer = await login('viewer');
