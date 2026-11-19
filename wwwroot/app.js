@@ -44,9 +44,9 @@
   }
   function fmtDate(d) { try { return new Date(d).toLocaleString(); } catch { return d; } }
   let toastTimer;
-  function toast(msg) {
+  function toast(msg, duration = 2600) {
     toastEl.textContent = msg; toastEl.classList.add("show");
-    clearTimeout(toastTimer); toastTimer = setTimeout(() => toastEl.classList.remove("show"), 2600);
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => toastEl.classList.remove("show"), duration);
   }
   function thumbUrl(id) { return "/api/photos/" + id + "/thumbnail"; }
   function fileUrl(id, dl) { return "/api/photos/" + id + "/file" + (dl ? "?download=true" : ""); }
@@ -92,16 +92,22 @@
   });
 
   // ---------- selection ----------
+  const galleryRange = new RangeSelection();
+
   function clearSelection() {
     state.selection.clear();
     state.selectMode = false;
+    galleryRange.reset();
     syncSelectionUI();
   }
 
-  function toggleSelect(id) {
+  function toggleSelect(id, extend = false) {
     if (state.deleting) return;
     state.selectMode = true;
-    if (state.selection.has(id)) state.selection.delete(id);
+    const ids = [...main.querySelectorAll(".tile")].map(tile => tile.dataset.id);
+    const range = galleryRange.select(ids, id, extend);
+    if (range) range.forEach(key => state.selection.add(key));
+    else if (state.selection.has(id)) state.selection.delete(id);
     else state.selection.add(id);
     syncSelectionUI();
   }
@@ -119,7 +125,12 @@
     select.textContent = state.selectMode ? "Done" : "Select";
     select.setAttribute("aria-pressed", state.selectMode);
     select.disabled = state.deleting;
-    bar.querySelector(".cnt").textContent = state.selectMode ? state.selection.size + " selected" : "";
+    const range = bar.querySelector(".range-toggle");
+    range.hidden = !state.selectMode;
+    range.disabled = state.deleting;
+    range.setAttribute("aria-pressed", galleryRange.active);
+    bar.querySelector(".cnt").textContent = state.selectMode ? state.selection.size + " selected" +
+      (galleryRange.hint ? ". " + galleryRange.hint : "") : "";
     const actions = bar.querySelector(".actions");
     actions.hidden = !state.selectMode;
     actions.querySelectorAll("button").forEach(button => {
@@ -138,12 +149,15 @@
     tile.appendChild(img);
     if (p.isVideo) tile.appendChild(el("div", "vbadge", "▶ video"));
     tile.appendChild(el("div", "star", "★"));
-    const check = el("div", "check", "✓");
+    const check = el("button", "check", "✓");
+    check.type = "button";
+    check.setAttribute("aria-label", "Select " + p.fileName);
+    check.setAttribute("aria-pressed", state.selection.has(p.id));
     tile.appendChild(check);
 
-    check.addEventListener("click", (e) => { e.stopPropagation(); toggleSelect(p.id); });
-    tile.addEventListener("click", () => {
-      if (state.selectMode) { toggleSelect(p.id); return; }
+    check.addEventListener("click", event => { event.stopPropagation(); toggleSelect(p.id, event.shiftKey); });
+    tile.addEventListener("click", event => {
+      if (state.selectMode) { toggleSelect(p.id, event.shiftKey); return; }
       openLightbox(p.id);
     });
     return tile;
@@ -162,6 +176,14 @@
         syncSelectionUI();
       }
     };
+    const range = el("button", "btn range-toggle", "Range");
+    range.type = "button";
+    range.hidden = true;
+    range.setAttribute("aria-pressed", "false");
+    range.onclick = () => {
+      galleryRange.toggle();
+      syncSelectionUI();
+    };
     const count = el("span", "cnt");
     count.setAttribute("role", "status");
     const actions = el("div", "actions");
@@ -177,7 +199,7 @@
     add("Download", downloadZip);
     add("Favorite", batchFavorite);
     add("Add to album", openAddToAlbum);
-    bar.append(select, count, actions);
+    bar.append(select, range, count, actions);
     return bar;
   }
 
@@ -540,8 +562,9 @@
         heading.textContent = state.timeline.total + (state.timeline.favorites ? " favorites" : " items");
       }
       if (!state.selection.size) clearSelection();
+      const failures = result.errors.length;
       toast(result.deleted + (result.deleted === 1 ? " file deleted." : " files deleted.") +
-        (result.errors.length ? " " + result.errors.length + " could not be deleted." : ""));
+        (failures ? " " + failures + " could not be deleted. " + result.errors[0] : ""), failures ? 6500 : 2600);
     } catch (error) {
       if (error.message !== "unauth") toast(error.message);
     } finally {

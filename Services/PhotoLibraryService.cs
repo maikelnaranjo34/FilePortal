@@ -22,6 +22,15 @@ public class PhotoLibraryService
     private readonly object _lock = new();
     private readonly object _scanLock = new();
     private static readonly TimeSpan ScanInterval = TimeSpan.FromMinutes(5);
+    private static readonly UserRecord Scanner = new() { IsAdmin = true };
+    private static readonly string[] InstallationDirectories =
+    [
+        "Program Files", "Program Files (x86)", "ProgramData", "Windows", "WindowsApps",
+        "WpSystem", "$RECYCLE.BIN", "System Volume Information"
+    ];
+    private static readonly StringComparison PathComparison = OperatingSystem.IsWindows()
+        ? StringComparison.OrdinalIgnoreCase
+        : StringComparison.Ordinal;
     private int _refreshing;
     private readonly string _cachePath;
 
@@ -143,8 +152,9 @@ public class PhotoLibraryService
                 _lastScanUtc = DateTime.UtcNow;
             }
 
-            var allowed = _browser.GetRoots(new UserRecord { IsAdmin = true });
-            var configured = _configuration.GetSection("PhotoLibrary:ScanRoots").Get<string[]>() ?? [];
+            var allowed = _browser.GetRoots(Scanner);
+            var configured = GetConfiguredScanRoots();
+            var exclusions = configured.Length == 0 ? GetInstallationDirectories(allowed) : [];
             var candidates = configured.Length == 0 ? allowed.Select(root => root.Path) : configured;
             var roots = new HashSet<string>(FileBrowserService.PathComparer);
             foreach (var candidate in candidates)
@@ -158,7 +168,7 @@ public class PhotoLibraryService
             var limit = Math.Clamp(_configuration.GetValue("PhotoLibrary:MaxScanFiles", 100000), 1, 1000000);
             foreach (var root in roots)
             {
-                foreach (var file in EnumerateFiles(root, allowed, visited))
+                foreach (var file in EnumerateFiles(root, allowed, visited, exclusions))
                 {
                     var id = ComputeId(file.FullName);
                     if (refreshed.ContainsKey(id) || !_browser.TryResolve(file.FullName, allowed, out _))
@@ -194,13 +204,29 @@ public class PhotoLibraryService
         }
     }
 
-    private IEnumerable<FileInfo> EnumerateFiles(string root, List<RootItem> allowed, HashSet<string> visited)
+    private string[] GetConfiguredScanRoots() =>
+        (_configuration.GetSection("PhotoLibrary:ScanRoots").Get<string[]>() ?? [])
+        .Where(path => !string.IsNullOrWhiteSpace(path)).ToArray();
+
+    private string[] GetDefaultScanExclusions() => GetConfiguredScanRoots().Length == 0
+        ? GetInstallationDirectories(_browser.GetRoots(Scanner))
+        : [];
+
+    private static string[] GetInstallationDirectories(IEnumerable<RootItem> roots) => roots
+        .SelectMany(root => InstallationDirectories.Select(directory => Path.Combine(root.Path, directory))).ToArray();
+
+    private static bool IsExcluded(string path, string[] exclusions) => exclusions.Any(directory =>
+        string.Equals(path, directory, PathComparison) ||
+        (path.Length > directory.Length && path[directory.Length] == Path.DirectorySeparatorChar &&
+            path.StartsWith(directory, PathComparison)));
+
+    private IEnumerable<FileInfo> EnumerateFiles(string root, List<RootItem> allowed, HashSet<string> visited, string[] exclusions)
     {
         var pending = new Stack<string>();
         pending.Push(root);
         while (pending.TryPop(out var folder))
         {
-            if (!visited.Add(folder) || !_browser.TryResolve(folder, allowed, out _))
+            if (IsExcluded(folder, exclusions) || !visited.Add(folder) || !_browser.TryResolve(folder, allowed, out _))
                 continue;
 
             FileSystemInfo[] entries;
@@ -258,7 +284,8 @@ public class PhotoLibraryService
     {
         try
         {
-            var directories = ImageMetadataReader.ReadMetadata(path);
+            using var stream = FileBrowserService.OpenRead(path);
+            var directories = ImageMetadataReader.ReadMetadata(stream);
 
             var subIfd = directories.OfType<ExifSubIfdDirectory>().FirstOrDefault();
             if (subIfd != null)
@@ -346,6 +373,7 @@ public class PhotoLibraryService
         if (roots.Count == 0)
             return [];
 
+        var exclusions = GetDefaultScanExclusions();
         var directories = new Dictionary<string, bool>(FileBrowserService.PathComparer);
         return GetSnapshot().Values.Where(photo =>
         {
@@ -357,7 +385,7 @@ public class PhotoLibraryService
                 return false;
             if (!directories.TryGetValue(directory, out var allowed))
             {
-                allowed = _browser.TryResolve(directory, roots, out _) && Directory.Exists(directory);
+                allowed = !IsExcluded(directory, exclusions) && _browser.TryResolve(directory, roots, out _) && Directory.Exists(directory);
                 directories.Add(directory, allowed);
             }
             return allowed;
@@ -372,11 +400,12 @@ public class PhotoLibraryService
         if (roots.Count == 0)
             return [];
 
+        var exclusions = GetDefaultScanExclusions();
         var snapshot = GetSnapshot();
         var result = new List<PhotoMeta>();
         foreach (var id in ids.Distinct(StringComparer.Ordinal))
         {
-            if (!string.IsNullOrEmpty(id) && snapshot.TryGetValue(id, out var photo) &&
+            if (!string.IsNullOrEmpty(id) && snapshot.TryGetValue(id, out var photo) && !IsExcluded(photo.FullPath, exclusions) &&
                 _browser.TryResolve(photo.FullPath, roots, out _) && File.Exists(photo.FullPath))
             {
                 result.Add(photo);

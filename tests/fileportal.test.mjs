@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { pbkdf2Sync, randomBytes } from 'node:crypto';
 import { once } from 'node:events';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, truncateSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
@@ -34,6 +34,10 @@ test('FilePortal release integration', { timeout: 90_000 }, async t => {
   writeFileSync(hidden, 'other');
   writeFileSync(photo, Buffer.from(
     'iVBORw0KGgoAAAANSUhEUgAAAAQAAAACCAIAAADwyuo0AAAAEElEQVR4nGNQmPAfjhiQOQCoOg151fcjLwAAAABJRU5ErkJggg==', 'base64'));
+  const installed = path.join(files, 'Program Files', 'Fixture App');
+  mkdirSync(installed, { recursive: true });
+  const bundledImage = path.join(installed, 'AppInterface.png');
+  writeFileSync(bundledImage, readFileSync(photo));
   const throughLink = path.join(allowed, 'Linked');
   symlinkSync(unassigned, throughLink, process.platform === 'win32' ? 'junction' : 'dir');
 
@@ -47,7 +51,7 @@ test('FilePortal release integration', { timeout: 90_000 }, async t => {
     for (const script of html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi))
       new Script(script[1], { filename: name });
   }
-  for (const name of ['app.js', 'theme.js', 'preview.js'])
+  for (const name of ['app.js', 'theme.js', 'preview.js', 'range-selection.js'])
     new Script(readFileSync(path.join(publish, 'wwwroot', name), 'utf8'), { filename: name });
 
   writeFileSync(path.join(publish, 'appsettings.json'), JSON.stringify({
@@ -125,6 +129,7 @@ test('FilePortal release integration', { timeout: 90_000 }, async t => {
     assert.match(galleryScript.headers.get('content-type'), /javascript/);
     await request('/theme.js', 200);
     await request('/preview.js', 200);
+    await request('/range-selection.js', 200);
     await request('/login.html', 200);
     const fileManager = await request('/files.html', 200);
     assert.match(await fileManager.text(), /archiveDownload/);
@@ -173,6 +178,9 @@ test('FilePortal release integration', { timeout: 90_000 }, async t => {
     assert.deepEqual((await category.json()).map(item => item.name), ['note.txt']);
 
     await request('/api/photos/scan', 200, admin, { method: 'POST' });
+    const bundledSearch = await request('/api/search?q=AppInterface.png', 200, admin);
+    assert.equal((await bundledSearch.json()).total, 0);
+    assert.equal(existsSync(bundledImage), true);
     const timeline = await request('/api/photos/timeline', 200, legacy);
     const photoItems = (await timeline.json()).sections.flatMap(section => section.photos);
     assert.deepEqual(photoItems.map(item => item.fileName).sort(), ['photo.png', 'video.mp4']);
@@ -231,6 +239,54 @@ test('FilePortal release integration', { timeout: 90_000 }, async t => {
     assert.equal(existsSync(firstBulk), false);
     assert.equal(existsSync(secondBulk), false);
     assert.equal(existsSync(hidden), true);
+
+    const streamFile = path.join(allowed, 'Open preview.mp4');
+    writeFileSync(streamFile, '');
+    truncateSync(streamFile, 16 * 1024 * 1024);
+    const activePreview = await request(at('/api/files/file', streamFile), 200, legacy);
+    try {
+      const result = await request('/api/files/batch/delete', 200, legacy, json({ paths: [streamFile] }));
+      assert.deepEqual((await result.json()).deleted, [streamFile]);
+    } finally {
+      await activePreview.body.cancel();
+    }
+    assert.equal(existsSync(streamFile), false);
+
+    if (process.platform === 'win32') {
+      const protectedFile = path.join(allowed, 'Read-only.txt');
+      writeFileSync(protectedFile, 'fixture');
+      chmodSync(protectedFile, 0o444);
+      try {
+        const result = await request('/api/files/batch/delete', 200, legacy, json({ paths: [protectedFile] }));
+        assert.deepEqual((await result.json()).failures, [{ path: protectedFile, error: 'The file is read-only.' }]);
+        assert.equal(existsSync(protectedFile), true);
+      } finally {
+        chmodSync(protectedFile, 0o666);
+      }
+
+      const hold = [
+        '$file = [IO.File]::OpenRead($env:FilePortalFixtureLockPath)',
+        'try { [Console]::WriteLine("ready"); $null = [Console]::ReadLine() } finally { $file.Dispose() }'
+      ].join('\n');
+      const locker = spawn('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand',
+        Buffer.from(hold, 'utf16le').toString('base64')], {
+        env: { ...process.env, FilePortalFixtureLockPath: protectedFile },
+        windowsHide: true, stdio: ['pipe', 'pipe', 'pipe']
+      });
+      const released = once(locker, 'exit');
+      try {
+        const [ready] = await once(locker.stdout, 'data');
+        assert.match(ready.toString(), /ready/);
+        const result = await request('/api/files/batch/delete', 200, legacy, json({ paths: [protectedFile] }));
+        assert.deepEqual((await result.json()).failures, [{
+          path: protectedFile, error: 'The file is open in another program. Close it and try again.'
+        }]);
+      } finally {
+        locker.stdin.end('\n');
+        await released;
+      }
+      await request(at('/api/files/delete', protectedFile), 200, legacy, { method: 'DELETE' });
+    }
 
     async function add(username) {
       await request('/api/users', 201, admin, form({ username, password, firstName: 'Fixture', lastName: 'User' }));

@@ -32,6 +32,9 @@ public sealed class FileBrowserService
     public static string GetContentType(string file) =>
         ContentTypes.TryGetContentType(file, out var type) ? type : "application/octet-stream";
 
+    public static FileStream OpenRead(string file) =>
+        new(file, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
+
     private readonly IConfiguration _configuration;
     private readonly string[] _privateDirectories;
 

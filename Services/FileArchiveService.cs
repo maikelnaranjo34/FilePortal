@@ -62,7 +62,7 @@ public sealed class FileArchiveService(FileBrowserService browser)
 
             var entryStream = archive.CreateEntry(item.EntryName, CompressionLevel.Fastest).Open();
             await using (entryStream)
-            await using (var input = System.IO.File.OpenRead(path))
+            await using (var input = FileBrowserService.OpenRead(path))
                 await input.CopyToAsync(entryStream, cancellationToken);
         }
     }

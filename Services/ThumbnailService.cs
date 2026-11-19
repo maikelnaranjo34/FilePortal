@@ -21,7 +21,7 @@ public sealed class ThumbnailService : IDisposable
         if (_cache.TryGetValue<byte[]>(key, out var cached))
             return cached;
 
-        using var input = file.OpenRead();
+        using var input = FileBrowserService.OpenRead(file.FullName);
         using var codec = SKCodec.Create(input);
         if (codec is null || (long)codec.Info.Width * codec.Info.Height > MaxPixels)
             return null;

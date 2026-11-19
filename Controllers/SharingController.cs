@@ -142,7 +142,7 @@ namespace FilePortal.Controllers
             if (!TryResolvePublicPhoto(token, id, out var fullPath, out _) || !System.IO.File.Exists(fullPath))
                 return NotFound();
 
-            var stream = new FileStream(fullPath!, FileMode.Open, FileAccess.Read, FileShare.Read);
+            var stream = FileBrowserService.OpenRead(fullPath!);
             return File(stream, FileBrowserService.GetContentType(fullPath!), enableRangeProcessing: true);
         }
 

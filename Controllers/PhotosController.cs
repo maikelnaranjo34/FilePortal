@@ -149,7 +149,7 @@ namespace FilePortal.Controllers
             if (m == null || !System.IO.File.Exists(m.FullPath))
                 return NotFound();
 
-            var stream = new FileStream(m.FullPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+            var stream = FileBrowserService.OpenRead(m.FullPath);
             var contentType = FileBrowserService.GetContentType(m.FullPath);
             // enableRangeProcessing => video seeking works
             return File(stream, contentType, download ? m.FileName : null, enableRangeProcessing: true);
@@ -205,9 +205,9 @@ namespace FilePortal.Controllers
                     else
                         errors.Add($"{p.FileName}: File no longer exists.");
                 }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
                 {
-                    errors.Add($"{p.FileName}: Could not delete this file.");
+                    errors.Add($"{p.FileName}: {FileDeletion.DescribeFailure(p.FullPath, exception)}");
                 }
             }
             _library.ForgetMissing(photos);

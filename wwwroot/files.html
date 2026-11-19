@@ -314,6 +314,7 @@
     .mobile-roots-toggle { display:none; }
     .selection-toolbar { padding:8px 16px; border-bottom:1px solid #1f2937; }
     .selection-toolbar [hidden] { display:none; }
+    #rangeBtn[aria-pressed="true"] { border-color:#0ea5e9; }
     #selectedCountLabel { font-size:13px; color:#9ca3af; }
     .item-delete { align-self:flex-end; margin:4px 8px 8px; }
     .selection-mode .item-delete { display:none; }
@@ -390,6 +391,7 @@
       </div>
       <div class="selection-toolbar" aria-label="Selection and deletion">
         <button id="selectBtn" class="secondary" type="button" aria-pressed="false">Select</button>
+        <button id="rangeBtn" class="secondary" type="button" aria-pressed="false" hidden>Range</button>
         <button id="selectAllBtn" class="secondary" type="button" hidden onclick="selectAll()">Select all</button>
         <button id="downloadSelectedBtn" class="secondary" type="button" hidden onclick="downloadSelected()">Download</button>
         <button id="deleteSelectedBtn" class="danger" type="button" onclick="deleteSelected()">Delete</button>
@@ -434,6 +436,7 @@
   </div>
 
   <script src="/preview.js"></script>
+  <script src="/range-selection.js"></script>
   <iframe id="archiveDownload" name="archiveDownload" title="Archive download" hidden></iframe>
   <script>
     let currentRoot = null;
@@ -666,12 +669,9 @@
         card.tabIndex = 0;
         card.dataset.path = item.path;
         card.dataset.item = JSON.stringify(item);
-        card.onclick = () => {
+        card.onclick = event => {
           if (selectionMode) {
-            // Toggle checkbox
-            const cb = card.querySelector('input[type="checkbox"]');
-            if (cb) cb.checked = !cb.checked;
-            updateSelectedCount();
+            selectFile(card, event.shiftKey, !checkbox.checked);
           } else {
             onItemClick(item);
           }
@@ -679,7 +679,8 @@
         card.onkeydown = event => {
           if (event.target === card && (event.key === "Enter" || event.key === " ")) {
             event.preventDefault();
-            card.click();
+            if (selectionMode) selectFile(card, event.shiftKey, !checkbox.checked);
+            else onItemClick(item);
           }
         };
         // Checkbox (only visible in selection mode)
@@ -687,8 +688,10 @@
         checkbox.type = 'checkbox';
         checkbox.setAttribute('aria-label', 'Select ' + item.name);
         checkbox.style.cursor = 'pointer';
-        checkbox.onclick = event => event.stopPropagation();
-        checkbox.onchange = updateSelectedCount;
+        checkbox.onclick = event => {
+          event.stopPropagation();
+          selectFile(card, event.shiftKey, checkbox.checked);
+        };
         // Thumbnail container
         const thumbContainer = document.createElement("div");
         thumbContainer.className = "item-thumbnail";
@@ -894,6 +897,19 @@
     let selectionMode = false;
     let deleting = false;
     let viewType = matchMedia("(max-width: 700px)").matches ? "list" : "tiles";
+    const fileRange = new RangeSelection();
+
+    function selectFile(card, extend, checked) {
+      if (deleting) {
+        card.querySelector('input[type="checkbox"]').checked = card.classList.contains("selected");
+        return;
+      }
+      const cards = [...document.querySelectorAll("#items .item")];
+      const range = fileRange.select(cards, card, extend);
+      for (const item of range || [card])
+        item.querySelector('input[type="checkbox"]').checked = Boolean(range) || checked;
+      updateSelectedCount();
+    }
 
     function setSelectionMode(active) {
       selectionMode = active;
@@ -904,7 +920,10 @@
       select.setAttribute("aria-pressed", active);
       document.getElementById("selectAllBtn").hidden = !active;
       document.getElementById("downloadSelectedBtn").hidden = !active;
-      if (!active) grid.querySelectorAll('input[type="checkbox"]:checked').forEach(box => { box.checked = false; });
+      if (!active) {
+        fileRange.reset();
+        grid.querySelectorAll('input[type="checkbox"]:checked').forEach(box => { box.checked = false; });
+      }
       updateSelectedCount();
     }
 
@@ -916,7 +935,14 @@
         card.classList.toggle("selected", checked);
         if (checked) selected++;
       }
-      document.getElementById("selectedCountLabel").textContent = selectionMode ? selected + " selected" : "";
+      const hint = fileRange.hint;
+      document.getElementById("selectedCountLabel").textContent = selectionMode
+        ? selected + " selected" + (hint ? ". " + hint : "")
+        : "";
+      const range = document.getElementById("rangeBtn");
+      range.hidden = !selectionMode;
+      range.disabled = deleting || cards.length === 0;
+      range.setAttribute("aria-pressed", fileRange.active);
       document.getElementById("selectAllBtn").textContent =
         cards.length && cards.length === selected ? "Deselect all" : "Select all";
       document.getElementById("selectAllBtn").disabled = deleting || cards.length === 0;
@@ -928,6 +954,7 @@
     }
 
     function selectAll() {
+      fileRange.reset();
       const boxes = Array.from(document.querySelectorAll('#items .item input[type="checkbox"]'));
       const allChecked = boxes.every(box => box.checked);
       boxes.forEach(box => { box.checked = !allChecked; });
@@ -1036,8 +1063,11 @@
         }
         const count = result.deleted.length;
         const failures = result.failures.length;
+        const firstFailure = result.failures[0];
+        const failedItem = firstFailure && items.find(item => item.path === firstFailure.path);
         const summary = count + (count === 1 ? " item deleted." : " items deleted.") +
-          (failures ? " " + failures + " could not be deleted." : "");
+          (failures ? " " + failures + " could not be deleted. " +
+            (failedItem ? failedItem.name + ": " : "") + firstFailure.error : "");
         if (closePreview && !count) alert(summary);
         else setError(summary);
       } catch (error) {
@@ -1059,6 +1089,10 @@
       rootsToggle.setAttribute("aria-expanded", driveSidebar.classList.toggle("mobile-open"));
     });
     document.getElementById("selectBtn").addEventListener("click", () => setSelectionMode(!selectionMode));
+    document.getElementById("rangeBtn").addEventListener("click", () => {
+      fileRange.toggle();
+      updateSelectedCount();
+    });
     applyViewType();
     updateSelectedCount();
 

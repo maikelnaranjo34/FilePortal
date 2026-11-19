@@ -90,6 +90,7 @@ a{color:inherit;text-decoration:none}
 .selbar [hidden], .lbtop [hidden]{display:none}
 .selbar .actions{display:flex;flex-wrap:wrap;gap:8px}
 .selbar button:disabled{opacity:.55;cursor:not-allowed}
+.selbar .range-toggle[aria-pressed="true"]{border-color:var(--accent)}
 .selbar .cnt{font-weight:600;margin-right:auto}
 
 /* Search filters */
@@ -234,6 +235,7 @@ a{color:inherit;text-decoration:none}
 
 <iframe id="galleryDownload" name="galleryDownload" title="Photo archive download" hidden></iframe>
 <script src="/preview.js"></script>
-<script src="/app.js?v=mobile"></script>
+<script src="/range-selection.js"></script>
+<script src="/app.js?v=range"></script>
 </body>
 </html>

@@ -113,7 +113,7 @@ public class FilesController(FileBrowserService browser, ThumbnailService thumbn
         if (type == "image/svg+xml")
             Response.Headers.ContentSecurityPolicy = "sandbox; default-src 'none'";
 
-        var stream = System.IO.File.OpenRead(file);
+        var stream = FileBrowserService.OpenRead(file);
         return File(stream, type, download ? Path.GetFileName(file) : null, enableRangeProcessing: true);
     }
 
@@ -190,10 +190,18 @@ public class FilesController(FileBrowserService browser, ThumbnailService thumbn
     {
         if (!TryResolveDeletion(path, out var target))
             return Forbid();
-        var directory = Directory.Exists(target);
-        if (!DeletePath(target))
-            return NotFound(new { error = "Path not found." });
-        return Ok(new { message = directory ? "Directory deleted." : "File deleted." });
+        try
+        {
+            var directory = Directory.Exists(target);
+            if (!DeletePath(target))
+                return NotFound(new { error = "Path not found." });
+            return Ok(new { message = directory ? "Directory deleted." : "File deleted." });
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            var error = FileDeletion.DescribeFailure(target, exception);
+            return StatusCode(exception is UnauthorizedAccessException ? 403 : 409, new { error });
+        }
     }
 
     [HttpPost("batch/delete")]
@@ -206,7 +214,7 @@ public class FilesController(FileBrowserService browser, ThumbnailService thumbn
         foreach (var path in request.Paths)
         {
             if (!TryResolveDeletion(path, out var target))
-                return Forbid();
+                return StatusCode(403, new { error = "A selected item is outside your folder access or is a protected root." });
             targets.TryAdd(target, path);
         }
 
@@ -226,7 +234,7 @@ public class FilesController(FileBrowserService browser, ThumbnailService thumbn
             }
             catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
             {
-                failures.Add(new(path, "Could not delete this file or folder."));
+                failures.Add(new(path, FileDeletion.DescribeFailure(target, exception)));
             }
         }
         return Ok(new { deleted, failures });
