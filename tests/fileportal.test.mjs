@@ -188,6 +188,33 @@ test('FilePortal release integration', { timeout: 90_000 }, async t => {
     await request('/api/search', 401);
     const admin = await login('administrator');
     const legacy = await login('legacy');
+    await request('/api/ai/settings', 403, legacy);
+    const openAiSecret = 'sk-test-openai-secret-not-real';
+    const assemblyAiSecret = 'test-assemblyai-secret-not-real';
+    const aiSettings = await request('/api/ai/settings', 200, admin, { ...json({
+      enabled: true,
+      openAiApiKey: openAiSecret,
+      assemblyAiApiKey: assemblyAiSecret,
+      openAiModel: 'gpt-test-model',
+      assemblyAiSpeechModel: 'test-stt-model',
+      assemblyAiTtsModel: 'test-tts-model',
+      assemblyAiVoiceId: 'test-voice',
+      language: 'spanish'
+    }), method: 'PUT' });
+    const publicAiSettings = await aiSettings.json();
+    assert.equal(publicAiSettings.openAiConfigured, true);
+    assert.equal(publicAiSettings.assemblyAiConfigured, true);
+    assert.equal(publicAiSettings.openAiModel, 'gpt-test-model');
+    assert.equal(JSON.stringify(publicAiSettings).includes(openAiSecret), false);
+    assert.equal(JSON.stringify(publicAiSettings).includes(assemblyAiSecret), false);
+    const protectedAiSettings = readFileSync(path.join(data, 'ai-settings.json'), 'utf8');
+    assert.equal(protectedAiSettings.includes(openAiSecret), false);
+    assert.equal(protectedAiSettings.includes(assemblyAiSecret), false);
+    await request('/api/ai/settings/keys/openai', 204, admin, { method: 'DELETE' });
+    const afterKeyRemoval = await (await request('/api/ai/settings', 200, admin)).json();
+    assert.equal(afterKeyRemoval.enabled, false);
+    assert.equal(afterKeyRemoval.openAiConfigured, false);
+    assert.equal(afterKeyRemoval.assemblyAiConfigured, true);
     assert.deepEqual((await (await request('/api/files/search?q=NoTe.TxT', 200, legacy)).json())
       .map(item => item.path), [text]);
     assert.deepEqual(await (await request('/api/files/search?q=other.txt', 200, legacy)).json(), []);

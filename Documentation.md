@@ -35,7 +35,7 @@ The FileNest assistant will use a cascaded provider design: AssemblyAI converts 
 
 Implementation is divided into independently testable phases:
 
-1. **Secure provider configuration.** Add an administrator-only **AI & Voice** section in Settings. Encrypt OpenAI and AssemblyAI keys at rest with Windows Data Protection, never return saved keys to the browser, and support replace, remove, connection test, model refresh, enabled/disabled state, and saved model/voice defaults. Store the protected configuration in the FilePortal data directory outside `wwwroot`.
+1. **Secure provider configuration — complete in source.** Settings now has an administrator-only **AI & Voice** section. OpenAI and AssemblyAI keys are encrypted at rest with ASP.NET Core Data Protection backed by the machine-protected FilePortal key ring, never returned to the browser, and can be replaced or removed. Administrators can test each saved key, refresh OpenAI models available to that key, and save the enabled state plus OpenAI, AssemblyAI STT, AssemblyAI TTS, voice, and language defaults. The protected `ai-settings.json` store lives in the FilePortal data directory outside `wwwroot`.
 2. **OpenAI assistant foundation.** Add an authenticated conversation endpoint using the selected OpenAI model, bounded conversation history, clear errors, cancellation, and server-defined tools. Tool execution must reuse the current user's folder authorization and must never accept an unrestricted path supplied by the model.
 3. **AssemblyAI voice pipeline.** Add push-to-talk microphone capture, partial and final transcripts, short-lived server-minted streaming and TTS tokens, speech playback, stop/mute controls, interruption handling, language and voice selection, and visible listening/thinking/speaking states. Permanent provider keys must never be included in HTML, JavaScript, logs, URLs, or API responses.
 4. **Duplicate discovery.** Scan only folders authorized for the requesting user. Detect exact content matches locally with cryptographic hashes, then rank likely duplicates using filename similarity and content-derived signals appropriate to each file type. Cache fingerprints, show the evidence and confidence for each group, and keep discovery read-only. Deletion remains a separate existing FilePortal operation with an explicit visual confirmation; the assistant cannot silently delete files.
@@ -141,6 +141,18 @@ File endpoints require sign-in and enforce the caller's folder access.
 | GET | `/api/users/{username}/folders` | Administrator. Reads an account's assigned folders. |
 | POST | `/api/users/{username}/folders` | Administrator. Replaces folder assignments with a JSON array of paths. |
 
+### AI configuration
+
+All AI configuration endpoints require the administrator role. Responses expose only provider configuration status and non-secret identifiers; saved API keys are never returned.
+
+| Method | Route | Behavior |
+| --- | --- | --- |
+| GET | `/api/ai/settings` | Returns enabled state, selected models, voice/language defaults, and whether each provider key is configured. |
+| PUT | `/api/ai/settings` | Replaces non-secret defaults and optionally replaces either provider key. A blank key keeps the saved value. Enabling requires both keys. |
+| DELETE | `/api/ai/settings/keys/{provider}` | Removes the `openai` or `assemblyai` key and disables the assistant. |
+| GET | `/api/ai/settings/models` | Returns supported AssemblyAI model choices and, when configured, compatible model identifiers available to the OpenAI key. |
+| POST | `/api/ai/settings/test/{provider}` | Validates saved `openai` or `assemblyai` credentials without returning the key or provider token. |
+
 ### Gallery
 
 | Method | Route | Behavior |
@@ -177,6 +189,8 @@ Controls without backend support are disabled and described in the interface. Fi
 
 Administrators can open Settings to view every account and edit its first and last name after creation. Usernames are fixed identifiers. Role, password, and folder-access changes remain separate controls so their existing authorization and session protections continue to apply.
 
+The administrator-only **AI & Voice** settings panel stores provider keys in encrypted form in the protected data directory. Browsers can save, replace, or remove a key but cannot retrieve it. Model identifiers, voice ID, language, enabled state, and connection status are non-secret. Provider requests originate on the server, except that the later voice phase will mint short-lived browser tokens for AssemblyAI streaming sessions.
+
 Passwords are never stored in readable form and cannot be recovered. An administrator can use **Password → Generate temporary password** for another account. FilePortal displays the generated password only in that response so it can be copied and shared securely; the user store contains only its salted hash. Generation invalidates the account's existing sessions. After signing in with the temporary password, the user is redirected to Settings and all other API operations remain blocked until the temporary password is replaced.
 
 The assistant opens in its own dialog. It links users to existing file search while AI is unavailable. A future AI integration should use an authenticated server endpoint, authorize each requested file through the existing folder policy, keep provider credentials server-side, and obtain explicit authorization before sending private file contents to an external service. [Assistant module](wwwroot/filenest/assistant.js).
@@ -206,6 +220,8 @@ ZIP archives are prepared in the protected data directory, then downloaded by th
 | `Email__SmtpUsername` and `Email__SmtpPassword` | Optional SMTP credentials. For Gmail with an app password, use the Gmail address as the username and set the app password as `Email__SmtpPassword`. It is separate from your FilePortal sign-in password. |
 | `Email__FromEmail` and `Email__ToEmail` | Sender and recipient for optional sign-in notifications. |
 | `Email__SmtpHost`, `Email__SmtpPort`, and `Email__EnableSsl` | SMTP server, port, and TLS. The checked-in settings use `smtp.gmail.com`, port `587`, and TLS enabled. |
+
+OpenAI and AssemblyAI credentials are configured from the administrator Settings page rather than `appsettings.json`. Their encrypted values are stored in `ai-settings.json` under `FilePortal__DataDirectory`; copy the FilePortal Data Protection key ring with the data store when migrating the application to another server.
 
 Protect and back up the data directory. It holds `users.json`, Data Protection keys, gallery metadata, albums, favorites, and share records. It also holds temporary ZIP files, so allow disk space for archives and uploads.
 

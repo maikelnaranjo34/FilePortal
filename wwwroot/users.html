@@ -138,6 +138,56 @@
       <button onclick="addUser()">Add</button>
       <div id="msg" role="status" style="color:#f97373;margin-top:6px"></div>
     </section>
+
+    <section id="aiSettingsPanel" class="fn-settings-panel" hidden aria-labelledby="aiSettingsTitle">
+      <h2 id="aiSettingsTitle">AI &amp; Voice</h2>
+      <p class="fn-settings-help">OpenAI performs assistant work. AssemblyAI handles listening and speaking. Saved keys are encrypted on this server and cannot be displayed again.</p>
+      <div class="fn-provider-grid">
+        <fieldset>
+          <legend>OpenAI</legend>
+          <p id="openAiKeyStatus" class="fn-settings-help">Not configured</p>
+          <label for="openAiApiKey">Replace API key</label>
+          <input id="openAiApiKey" type="password" autocomplete="new-password" spellcheck="false" placeholder="Leave blank to keep the saved key">
+          <label for="openAiModel">Reasoning model</label>
+          <input id="openAiModel" list="openAiModels" autocomplete="off" spellcheck="false">
+          <datalist id="openAiModels">
+            <option value="gpt-5-mini"></option>
+            <option value="gpt-5"></option>
+          </datalist>
+          <button type="button" id="refreshAiModels">Refresh models</button>
+          <button type="button" id="testOpenAi">Test connection</button>
+          <button type="button" id="removeOpenAiKey">Remove OpenAI key</button>
+        </fieldset>
+        <fieldset>
+          <legend>AssemblyAI</legend>
+          <p id="assemblyAiKeyStatus" class="fn-settings-help">Not configured</p>
+          <label for="assemblyAiApiKey">Replace API key</label>
+          <input id="assemblyAiApiKey" type="password" autocomplete="new-password" spellcheck="false" placeholder="Leave blank to keep the saved key">
+          <label for="assemblyAiSpeechModel">Speech-to-text model</label>
+          <select id="assemblyAiSpeechModel">
+            <option value="assemblyai-stt-3-7-realtime-agent">AssemblyAI STT 3.7 Realtime Agent</option>
+            <option value="universal-3-6-pro">Universal 3.6 Pro Realtime</option>
+          </select>
+          <label for="assemblyAiTtsModel">Text-to-speech model</label>
+          <select id="assemblyAiTtsModel">
+            <option value="assemblyai-tts-1">AssemblyAI TTS 1</option>
+          </select>
+          <label for="assemblyAiVoiceId">Voice ID</label>
+          <input id="assemblyAiVoiceId" autocomplete="off" spellcheck="false">
+          <label for="assistantLanguage">Voice language</label>
+          <select id="assistantLanguage">
+            <option value="english">English</option><option value="spanish">Spanish</option>
+            <option value="french">French</option><option value="german">German</option>
+            <option value="italian">Italian</option><option value="portuguese">Portuguese</option>
+          </select>
+          <button type="button" id="testAssemblyAi">Test connection</button>
+          <button type="button" id="removeAssemblyAiKey">Remove AssemblyAI key</button>
+        </fieldset>
+      </div>
+      <label class="fn-settings-toggle"><input type="checkbox" id="aiEnabled"> Enable AI assistant after configuration</label>
+      <div class="fn-settings-actions"><button type="button" id="saveAiSettings">Save AI &amp; Voice settings</button></div>
+      <p id="aiSettingsStatus" role="status"></p>
+    </section>
   </main>
 
   <script>
@@ -162,6 +212,7 @@
       account.textContent = 'Signed in as ' + currentUser;
       document.getElementById('changeOwnPassword').hidden = false;
       document.getElementById('addUserPanel').hidden = !currentIsAdmin;
+      document.getElementById('aiSettingsPanel').hidden = !currentIsAdmin;
       const list = document.getElementById('list');
       list.hidden = !currentIsAdmin;
       if (profile.mustChangePassword) {
@@ -170,6 +221,8 @@
         return;
       }
       if (!currentIsAdmin) return;
+
+      await loadAiSettings();
 
       const res = await fetch('/api/users');
       if (!res.ok) { list.textContent = 'Failed to load users'; return; }
@@ -647,6 +700,93 @@
         }
       } catch (e) { msg.textContent = 'Request failed'; }
     }
+
+    async function loadAiSettings() {
+      const status = document.getElementById('aiSettingsStatus');
+      const response = await fetch('/api/ai/settings');
+      if (!response.ok) {
+        status.textContent = 'AI settings could not be loaded.';
+        return;
+      }
+      const settings = await response.json();
+      document.getElementById('aiEnabled').checked = settings.enabled;
+      document.getElementById('openAiModel').value = settings.openAiModel;
+      setSelectValue('assemblyAiSpeechModel', settings.assemblyAiSpeechModel);
+      setSelectValue('assemblyAiTtsModel', settings.assemblyAiTtsModel);
+      document.getElementById('assemblyAiVoiceId').value = settings.assemblyAiVoiceId;
+      setSelectValue('assistantLanguage', settings.language);
+      document.getElementById('openAiKeyStatus').textContent = settings.openAiConfigured ? 'Key configured' : 'Not configured';
+      document.getElementById('assemblyAiKeyStatus').textContent = settings.assemblyAiConfigured ? 'Key configured' : 'Not configured';
+      document.getElementById('removeOpenAiKey').disabled = !settings.openAiConfigured;
+      document.getElementById('removeAssemblyAiKey').disabled = !settings.assemblyAiConfigured;
+    }
+
+    function setSelectValue(id, value) {
+      const select = document.getElementById(id);
+      if (![...select.options].some(option => option.value === value))
+        select.add(new Option(value, value));
+      select.value = value;
+    }
+
+    async function saveAiSettings() {
+      const status = document.getElementById('aiSettingsStatus');
+      status.textContent = 'Saving…';
+      const body = {
+        enabled: document.getElementById('aiEnabled').checked,
+        openAiApiKey: document.getElementById('openAiApiKey').value,
+        assemblyAiApiKey: document.getElementById('assemblyAiApiKey').value,
+        openAiModel: document.getElementById('openAiModel').value,
+        assemblyAiSpeechModel: document.getElementById('assemblyAiSpeechModel').value,
+        assemblyAiTtsModel: document.getElementById('assemblyAiTtsModel').value,
+        assemblyAiVoiceId: document.getElementById('assemblyAiVoiceId').value,
+        language: document.getElementById('assistantLanguage').value
+      };
+      const response = await fetch('/api/ai/settings', {
+        method: 'PUT', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok) {
+        status.textContent = result?.error || 'AI settings could not be saved.';
+        return;
+      }
+      document.getElementById('openAiApiKey').value = '';
+      document.getElementById('assemblyAiApiKey').value = '';
+      status.textContent = 'AI & Voice settings saved securely.';
+      await loadAiSettings();
+    }
+
+    async function removeAiKey(provider) {
+      if (!confirm(`Remove the saved ${provider === 'openai' ? 'OpenAI' : 'AssemblyAI'} key and disable the assistant?`)) return;
+      const response = await fetch('/api/ai/settings/keys/' + provider, { method: 'DELETE', credentials: 'include' });
+      document.getElementById('aiSettingsStatus').textContent = response.ok ? 'Key removed. The assistant is disabled.' : 'The key could not be removed.';
+      if (response.ok) await loadAiSettings();
+    }
+
+    async function testAiProvider(provider) {
+      const status = document.getElementById('aiSettingsStatus');
+      status.textContent = `Testing ${provider === 'openai' ? 'OpenAI' : 'AssemblyAI'}…`;
+      const response = await fetch('/api/ai/settings/test/' + provider, { method: 'POST', credentials: 'include' });
+      const result = await response.json().catch(() => null);
+      status.textContent = response.ok ? `${provider === 'openai' ? 'OpenAI' : 'AssemblyAI'} connection succeeded.` : (result?.error || 'Connection test failed.');
+    }
+
+    async function refreshAiModels() {
+      const status = document.getElementById('aiSettingsStatus');
+      status.textContent = 'Refreshing available models…';
+      const response = await fetch('/api/ai/settings/models', { credentials: 'include' });
+      const result = await response.json().catch(() => null);
+      if (!response.ok) { status.textContent = result?.error || 'Models could not be refreshed.'; return; }
+      const list = document.getElementById('openAiModels');
+      if (result.openAi.length) list.replaceChildren(...result.openAi.map(model => new Option('', model)));
+      status.textContent = result.openAi.length ? `Loaded ${result.openAi.length} OpenAI models available to this key.` : 'No OpenAI model list was returned. Save and test the OpenAI key first.';
+    }
+
+    document.getElementById('saveAiSettings').addEventListener('click', saveAiSettings);
+    document.getElementById('refreshAiModels').addEventListener('click', refreshAiModels);
+    document.getElementById('testOpenAi').addEventListener('click', () => testAiProvider('openai'));
+    document.getElementById('testAssemblyAi').addEventListener('click', () => testAiProvider('assemblyai'));
+    document.getElementById('removeOpenAiKey').addEventListener('click', () => removeAiKey('openai'));
+    document.getElementById('removeAssemblyAiKey').addEventListener('click', () => removeAiKey('assemblyai'));
 
     function visibleDialog() {
       if (document.getElementById('editModal').style.display !== 'none')

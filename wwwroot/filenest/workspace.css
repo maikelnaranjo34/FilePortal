@@ -69,8 +69,18 @@
   background:#6cebe5; color:#062537; border:1px solid transparent; font-weight:650;
 }
 .fn-settings button:disabled:not(.fn-header button) { opacity:.5; }
-.fn-settings input,.fn-login input { background:var(--fn-surface); color:var(--fn-ink); border-color:var(--fn-line); }
+.fn-settings :is(input,select),.fn-login input { background:var(--fn-surface); color:var(--fn-ink); border:1px solid var(--fn-line); }
 .fn-settings .account-dialog { background:var(--fn-surface) !important; border-color:var(--fn-line) !important; }
+.fn-settings-panel { margin-top:18px; padding:16px; border:1px solid var(--fn-line); border-radius:14px; background:var(--fn-glass); }
+.fn-settings-panel h2 { margin-top:0; }
+.fn-settings-help { color:var(--fn-muted); font-size:.88rem; }
+.fn-provider-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.fn-provider-grid fieldset { min-width:0; border:1px solid var(--fn-line); border-radius:12px; padding:12px; }
+.fn-provider-grid legend { padding:0 6px; font-weight:750; }
+.fn-provider-grid select { box-sizing:border-box; width:100%; min-height:40px; padding:8px; margin:6px 0; border-radius:6px; font:inherit; }
+.fn-settings-toggle { display:block; margin:14px 0; color:var(--fn-muted); }
+.fn-settings-actions { display:flex; justify-content:flex-end; }
+@media (max-width:700px) { .fn-provider-grid { grid-template-columns:1fr; } }
 .fn-login { color:var(--fn-ink); background:radial-gradient(ellipse at 45% 10%,#08abc462,transparent 58%),var(--fn-bg); }
 .fn-login .card { border:1px solid var(--fn-line); border-radius:22px; background:var(--fn-glass); }
 .fn-login .logo img { object-fit:contain; }

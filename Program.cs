@@ -20,6 +20,8 @@ builder.Services.AddSingleton<AlbumStoreService>();
 builder.Services.AddSingleton<FavoriteStoreService>();
 builder.Services.AddSingleton<ShareStoreService>();
 builder.Services.AddSingleton<FileArchiveService>();
+builder.Services.AddSingleton<AiSettingsService>();
+builder.Services.AddHttpClient("AiProviders", client => client.Timeout = TimeSpan.FromSeconds(15));
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 var dataDirectory = UserStoreService.GetDirectoryPath(builder.Configuration);
