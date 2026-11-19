@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>User Management - FilePortal</title>
+  <title>Settings · FileNest</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background:#020617; color:#e5e7eb; padding:20px }
@@ -23,11 +23,15 @@
       input { font-size:16px }
     }
   </style>
+<link rel="stylesheet" href="/filenest/site.css">
+<link rel="stylesheet" href="/filenest/workspace.css">
+<script src="/theme.js"></script>
+<script src="/filenest/shell.js" defer></script>
 </head>
-<body>
-  <div class="box">
-    <a class="back" href="/">← Back</a>
-    <h1>User Management</h1>
+<body class="fn-workspace fn-settings">
+  <header id="fileNestHeader" data-page="settings"></header>
+  <main class="box">
+    <h1>Settings</h1>
 
     <p id="accountStatus" role="status"></p>
     <button id="changeOwnPassword" hidden onclick="openPwModal(currentUser)">Change my password</button>
@@ -90,7 +94,7 @@
       <button onclick="addUser()">Add</button>
       <div id="msg" style="color:#f97373;margin-top:6px"></div>
     </section>
-  </div>
+  </main>
 
   <script>
     let currentUser = null;
@@ -100,7 +104,7 @@
       const account = document.getElementById('accountStatus');
       const me = await fetch('/api/auth/me');
       if (me.status === 401) {
-        window.location.replace('/');
+        window.location.replace('/login.html?next=%2Fusers.html');
         return;
       }
       if (!me.ok) {

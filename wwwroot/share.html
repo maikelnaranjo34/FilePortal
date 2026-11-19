@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<title>Shared photos</title>
+<title>Shared media · FileNest</title>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <script src="/theme.js"></script>
 <script src="/preview.js"></script>
@@ -33,9 +33,12 @@ h2{margin:0 0 4px}.sub{color:var(--muted);font-size:13px;margin-bottom:18px}
 .lb .p{left:18px}.lb .n{right:18px}
 @media(max-width:700px){.wrap{padding:10px}.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.lb .p{left:6px}.lb .n{right:6px}}
 </style>
+<link rel="stylesheet" href="/filenest/site.css">
+<link rel="stylesheet" href="/filenest/workspace.css">
+<script src="/filenest/shell.js" defer></script>
 </head>
-<body>
-<div class="top"><div class="dot"></div><h1>Photos</h1></div>
+<body class="fn-workspace fn-public-share">
+<header id="fileNestHeader" data-public></header>
 <div class="wrap" id="wrap"><div class="empty">Loading…</div></div>
 
 <div class="lb" id="lb" role="dialog" aria-modal="true" aria-label="Shared media preview">

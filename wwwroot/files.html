@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>File Manager - FilePortal</title>
+  <title>My Files · FileNest</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     body {
@@ -345,18 +345,14 @@
       .image-viewer-nav.next { right:6px; }
     }
   </style>
+<link rel="stylesheet" href="/filenest/site.css">
+<link rel="stylesheet" href="/filenest/workspace.css">
+<script src="/theme.js"></script>
+<script src="/filenest/shell.js" defer></script>
 </head>
-<body>
-  <!-- Login Modal -->
-  <div id="loginOverlay" class="login-overlay">
-    <div class="login-box">
-      <h1>FilePortal</h1>
-      <div id="loginError" class="login-error"></div>
-      <input id="username" type="text" placeholder="Username" autocomplete="off" />
-      <input id="password" type="password" placeholder="Password" autocomplete="off" />
-      <button onclick="performLogin()">Sign In</button>
-    </div>
-  </div>
+<body class="fn-workspace fn-files">
+  <header id="fileNestHeader" data-page="files"></header>
+  <p id="explorerStatus" class="fn-status" role="status">Loading your folders…</p>
 
   <div class="app" style="display:none;" id="mainApp">
     <div class="sidebar" id="driveSidebar">
@@ -369,7 +365,11 @@
         <button id="filterDocuments" class="secondary" style="width:100%;justify-content:flex-start" onclick="filterByCategory('documents')">📄 Documents</button>
       </div>
     </div>
-    <div class="main">
+    <main class="main">
+      <div class="fn-explorer-title">
+        <h1>My Files</h1>
+        <nav id="fileBreadcrumbs" class="fn-breadcrumbs" aria-label="Current folder"></nav>
+      </div>
       <div class="toolbar">
         <div class="path" id="currentPathLabel">Select a drive…</div>
         <div class="buttons">
@@ -377,17 +377,21 @@
           <div style="position:relative;display:inline-block">
             <button id="uploadBtn" class="btn-like" type="button">⬆️ Upload</button>
             <div id="uploadMenu" style="display:none;position:absolute;right:0;margin-top:6px;background:#0b1220;border:1px solid #1f2937;border-radius:6px;padding:6px;z-index:50;min-width:140px">
-              <div id="uploadFilesOption" style="padding:8px;cursor:pointer;color:#e5e7eb">⬆️ Upload Files</div>
-              <div id="uploadFolderOption" style="padding:8px;cursor:pointer;color:#e5e7eb">📁 Upload Folder</div>
+              <button type="button" class="secondary" id="uploadFilesOption">⬆️ Upload Files</button>
+              <button type="button" class="secondary" id="uploadFolderOption">📁 Upload Folder</button>
             </div>
           </div>
+          <button class="secondary" type="button" disabled title="Folder creation is unavailable">New Folder</button>
           <button class="secondary" type="button" onclick="goUp()">⬆️ Up</button>
           <button id="viewTypeBtn" class="secondary" type="button" onclick="toggleViewType()">📋 View</button>
-          <a href="/" class="btn-like" style="background:#111827;color:#e5e7eb;padding:6px 10px;">Photos</a>
-          <a id="accountLink" href="/users.html" class="btn-like" style="background:#111827;color:#e5e7eb;padding:6px 10px;">👥 Manage Users</a>
-          <span id="currentUser" style="color:#9ca3af; font-size:13px; margin-left:8px; display:none;"></span>
-          <button id="logoutBtn" class="secondary" style="margin-left:8px; display:none;" type="button" onclick="performLogout()">Logout</button>
         </div>
+      </div>
+      <div class="fn-files-tools">
+        <label for="folderSearch" class="fn-visually-hidden">Search this folder</label>
+        <input id="folderSearch" type="search" placeholder="Search this folder…">
+        <label for="fileSort" class="fn-visually-hidden">Sort files</label>
+        <select id="fileSort"><option value="name">Name</option><option value="modified">Last modified</option><option value="size">Size</option></select>
+        <a class="fn-inline-link" href="/gallery.html#search">Search Gallery</a>
       </div>
       <div class="selection-toolbar" aria-label="Selection and deletion">
         <button id="selectBtn" class="secondary" type="button" aria-pressed="false">Select</button>
@@ -397,13 +401,24 @@
         <button id="deleteSelectedBtn" class="danger" type="button" onclick="deleteSelected()">Delete</button>
         <span id="selectedCountLabel" role="status"></span>
       </div>
+      <p id="uploadStatus" class="fn-status" role="status"></p>
       <div class="content">
         <div id="error" class="error" role="status"></div>
         <div id="items" class="grid"></div>
         <div id="emptyMsg" class="empty" style="display:none;">This folder is empty.</div>
       </div>
-    </div>
+    </main>
   </div>
+
+  <dialog id="filePreview" class="fn-dialog" aria-labelledby="filePreviewTitle">
+    <h2 id="filePreviewTitle"></h2>
+    <p id="filePreviewDescription" class="fn-muted"></p>
+    <div class="fn-dialog-actions">
+      <form method="dialog"><button class="fn-button" type="submit">Close</button></form>
+      <a id="previewOpen" class="fn-button" target="_blank" rel="noopener">Open file</a>
+      <a id="previewDownload" class="fn-button fn-button-primary">Download</a>
+    </div>
+  </dialog>
 
   <!-- Hidden inputs for files and folders -->
   <input id="fileInputFiles" type="file" multiple style="display:none" />
@@ -454,111 +469,63 @@
     let lastSearchLetter = '';
     let searchLetterIndex = 0;
 
+    const initial = new URLSearchParams(location.search);
+    const folderSearch = document.getElementById("folderSearch");
+    const sorter = document.getElementById("fileSort");
+    let entries = [];
+    let initialFolder = true;
+    let folderLoaded = false;
+    let accountUser;
+    folderSearch.value = initial.get("q") || "";
+
     let rootRequest = 0;
     let fileRequest = 0;
 
-    function showLogin() {
-      rootRequest++;
-      fileRequest++;
-      currentRoot = null;
-      currentPath = null;
-      currentFilter = null;
-      currentImageList = [];
-      setSelectionMode(false);
-      closeImageViewer();
-      closeVideoViewer();
-      document.getElementById("items").replaceChildren();
-      updateSelectedCount();
-      document.getElementById("driveList").replaceChildren();
-      document.getElementById("currentPathLabel").textContent = "Choose a folder";
-      document.getElementById("currentUser").textContent = "";
-      document.getElementById("loginOverlay").style.display = "flex";
-      document.getElementById("mainApp").style.display = "none";
-      document.getElementById("currentUser").style.display = "none";
-      document.getElementById("logoutBtn").style.display = "none";
-    }
-
-    // Check if user is authenticated on page load
     async function checkAuth() {
       try {
-        const res = await fetch("/api/auth/me", { credentials: "include" });
-        if (res.ok) {
-          const data = await res.json().catch(() => null);
-          const user = data?.user || '';
-          document.getElementById('accountLink').textContent = data?.isAdmin ? 'Manage Users' : 'My Account';
-          // User is authenticated, show main app
-          document.getElementById("loginOverlay").style.display = "none";
-          document.getElementById("mainApp").style.display = "flex";
-          if (user) {
-            const cu = document.getElementById("currentUser");
-            cu.textContent = `Hi, ${user}`;
-            cu.style.display = "inline-block";
-            document.getElementById("logoutBtn").style.display = "inline-flex";
-          }
-          loadDrives();
-        } else {
-          showLogin();
-        }
-      } catch (err) {
-        console.error("Auth check failed:", err);
-        showLogin();
+        const user = await FileNest.account();
+        if (!user) { location.replace(FileNest.signInUrl()); return; }
+        accountUser = user.user;
+        document.getElementById("explorerStatus").hidden = true;
+        document.getElementById("mainApp").style.display = "flex";
+        await loadDrives();
+      } catch (error) {
+        document.getElementById("explorerStatus").textContent = error.message;
       }
     }
 
-    async function performLogout() {
-      try {
-        await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
-      } catch (err) {
-        console.error('Logout failed', err);
-      }
-      showLogin();
+    function showLogin() { location.replace(FileNest.signInUrl()); }
+
+    function pathKey(path) {
+      return path.replaceAll("/", "\\").replace(/\\+$/, "").toLowerCase();
     }
 
-    async function performLogin() {
-      const username = document.getElementById("username").value.trim();
-      const password = document.getElementById("password").value;
-      const errorEl = document.getElementById("loginError");
-
-      if (!username || !password) {
-        errorEl.textContent = "Enter username and password.";
+    function showBreadcrumbs(path) {
+      const breadcrumb = document.getElementById("fileBreadcrumbs");
+      const item = [...document.querySelectorAll(".drive-item")].find(drive => drive.dataset.path === currentRoot);
+      if (!item || !currentRoot) {
+        breadcrumb.replaceChildren();
         return;
       }
 
-      errorEl.textContent = "";
-
-      const formData = new FormData();
-      formData.append("username", username);
-      formData.append("password", password);
-
-      try {
-        const res = await fetch("/api/auth/login", {
-          method: "POST",
-          body: formData,
-          credentials: "include"
-        });
-
-        if (!res.ok) {
-          const data = await res.json();
-          errorEl.textContent = data.message || "Login failed.";
-          return;
+      const base = currentRoot.replace(/[/\\]+$/, "");
+      const segments = path.slice(base.length).split(/[/\\]+/).filter(Boolean);
+      const names = [item.lastElementChild.textContent, ...segments];
+      breadcrumb.replaceChildren(...names.map((label, index) => {
+        const last = index === names.length - 1;
+        const crumb = document.createElement(last ? "span" : "button");
+        crumb.textContent = label;
+        if (last) crumb.setAttribute("aria-current", "page");
+        else {
+          crumb.type = "button";
+          crumb.addEventListener("click", () => {
+            const target = index ? base + "\\" + segments.slice(0, index).join("\\") : currentRoot;
+            loadFolder(target);
+          });
         }
-
-        // Login successful
-        document.getElementById("username").value = "";
-        document.getElementById("password").value = "";
-        checkAuth(); // Re-check auth to set up user display and load drives
-      } catch (err) {
-        console.error(err);
-        errorEl.textContent = "Network error: " + err.message;
-      }
+        return crumb;
+      }));
     }
-
-    // Allow Enter key to submit login
-    document.addEventListener("DOMContentLoaded", () => {
-      document.getElementById("password").addEventListener("keypress", (e) => {
-        if (e.key === "Enter") performLogin();
-      });
-    });
 
     async function loadDrives() {
       const request = ++rootRequest;
@@ -571,7 +538,7 @@
         if (!res.ok) {
           if (res.status === 401) {
             // Unauthorized - go back to login
-            checkAuth();
+            showLogin();
             return;
           }
           throw new Error("HTTP " + res.status);
@@ -580,8 +547,17 @@
         if (request !== rootRequest) return;
 
         listEl.textContent = roots.length ? "" : "No folders available";
-        roots.forEach((root, idx) => {
-          const div = document.createElement("div");
+        const requested = initialFolder ? initial.get("path") : null;
+        const matches = requested ? roots.filter(root => {
+          const key = pathKey(root.path);
+          return pathKey(requested) === key || pathKey(requested).startsWith(key + "\\");
+        }).sort((a, b) => b.path.length - a.path.length) : [];
+        const requestedPath = matches.length ? requested : null;
+        const selectedRoot = matches[0] || roots[0];
+
+        roots.forEach(root => {
+          const div = document.createElement("button");
+          div.type = "button";
           div.className = "drive-item";
           div.dataset.path = root.path;
           div.onclick = () => {
@@ -603,12 +579,16 @@
           div.appendChild(label);
           listEl.appendChild(div);
 
-          if (idx === 0) {
-            div.classList.add("active");
-            currentRoot = root.path;
-            loadFolder(root.path);
-          }
+          if (root === selectedRoot) div.classList.add("active");
         });
+
+        if (selectedRoot) {
+          currentRoot = selectedRoot.path;
+          await loadFolder(requestedPath || selectedRoot.path, initialFolder ? initial.get("preview") : null);
+          const category = initialFolder ? initial.get("category") : null;
+          if (["pictures", "videos", "documents", "pdfs", "notes"].includes(category)) await filterByCategory(category);
+        }
+        initialFolder = false;
       } catch (err) {
         if (request !== rootRequest) return;
         console.error(err);
@@ -617,11 +597,14 @@
       }
     }
 
-    async function loadFolder(path) {
+    async function loadFolder(path, previewPath) {
       if (!path) return;
       const request = ++fileRequest;
       currentPath = path;
       currentFilter = null;
+      folderLoaded = false;
+      entries = [];
+      showBreadcrumbs(path);
       document.getElementById("currentPathLabel").textContent = path;
       setError("");
       setSelectionMode(false);
@@ -637,7 +620,7 @@
         const res = await fetch("/api/files/folder?path=" + encodeURIComponent(path), { credentials: "include" });
         if (!res.ok) {
           if (res.status === 401) {
-            checkAuth();
+            showLogin();
             return;
           }
           const text = await res.text();
@@ -645,14 +628,13 @@
         }
         const items = await res.json();
         if (request !== fileRequest) return;
-        itemsEl.replaceChildren();
-
-        if (!items.length) {
-          emptyMsgEl.style.display = "block";
-          return;
+        entries = items;
+        folderLoaded = true;
+        applyFileFilters();
+        if (previewPath) {
+          const candidate = items.find(item => !item.isDirectory && pathKey(item.path) === pathKey(previewPath));
+          if (candidate) onItemClick(candidate);
         }
-
-        renderItems(items);
       } catch (err) {
         console.error(err);
         if (request !== fileRequest) return;
@@ -660,6 +642,33 @@
         itemsEl.innerHTML = "";
       }
     }
+
+    function applyFileFilters() {
+      if (!folderLoaded) return;
+      const query = folderSearch.value.trim().toLowerCase();
+      const matching = entries.filter(item => {
+        if (query && !item.name.toLowerCase().includes(query)) return false;
+        if (currentFilter === "pdfs") return item.extension?.toLowerCase() === ".pdf";
+        if (currentFilter === "notes") return [".txt", ".md", ".rtf"].includes(item.extension?.toLowerCase());
+        return true;
+      });
+      const compare = (a, b) => {
+        if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
+        if (sorter.value === "size" && a.size !== b.size) return (b.size || 0) - (a.size || 0);
+        if (sorter.value === "modified" && a.lastModified !== b.lastModified)
+          return (b.lastModified || "").localeCompare(a.lastModified || "");
+        return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
+      };
+      setSelectionMode(false);
+      matching.sort(compare);
+      renderItems(matching);
+      const empty = document.getElementById("emptyMsg");
+      empty.textContent = query || currentFilter ? "No matching files in this scope." : "This folder is empty.";
+      empty.style.display = matching.length ? "none" : "block";
+    }
+
+    folderSearch.addEventListener("input", applyFileFilters);
+    sorter.addEventListener("change", applyFileFilters);
 
     function renderItems(items) {
       const fragment = document.createDocumentFragment();
@@ -743,9 +752,13 @@
       if (item.isDirectory) {
         loadFolder(item.path);
       } else {
+        const clean = item.path.replace(/[/\\]+$/, "");
+        const parent = clean.slice(0, Math.max(clean.lastIndexOf("\\"), clean.lastIndexOf("/")));
+        const folder = pathKey(parent) === pathKey(currentRoot) ? currentRoot : parent;
+        FileNest.activity(accountUser, "recent", { path: item.path, folder });
         // Check if it's an image
         const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.heic', '.tiff', '.svg'];
-        const videoExtensions = ['.mp4', '.mkv', '.avi', '.mov', '.flv', '.wmv', '.webm', '.m4v', '.mpg', '.mpeg'];
+        const videoExtensions = ['.mp4', '.mkv', '.avi', '.mov', '.flv', '.wmv', '.webm', '.m4v', '.mpg', '.mpeg', '.3gp'];
         const ext = (item.extension || '').toLowerCase();
         if (imageExtensions.includes(ext)) {
           // Build image list from current view
@@ -760,11 +773,18 @@
               imageList.push(itemData.path);
             }
           });
-          showImageViewer(imageList, clickedIndex);
+          if (!imageList.includes(item.path)) showImageViewer([item.path], 0);
+          else showImageViewer(imageList, clickedIndex);
         } else if (videoExtensions.includes(ext)) {
           showVideoViewer(item.path);
         } else {
-          window.open("/api/files/file?path=" + encodeURIComponent(item.path), "_blank", "noopener");
+          const modal = document.getElementById("filePreview");
+          document.getElementById("filePreviewTitle").textContent = item.name;
+          document.getElementById("filePreviewDescription").textContent = FileNest.bytes(item.size);
+          const query = new URLSearchParams({ path: item.path });
+          document.getElementById("previewOpen").href = "/api/files/file?" + query;
+          document.getElementById("previewDownload").href = "/api/files/open?" + query;
+          modal.showModal();
         }
       }
     }
@@ -1050,7 +1070,7 @@
         });
         if (response.status === 401) {
           closePreview?.();
-          await checkAuth();
+          showLogin();
           return;
         }
         const result = await response.json();
@@ -1058,7 +1078,10 @@
 
         if (result.deleted.length) closePreview?.();
         if (viewAtStart === fileRequest) {
-          if (currentFilter) await filterByCategory(currentFilter);
+          if (currentFilter === "notes") {
+            await loadFolder(currentPath);
+            await filterByCategory("notes");
+          } else if (currentFilter) await filterByCategory(currentFilter);
           else await loadFolder(currentPath);
         }
         const count = result.deleted.length;
@@ -1134,6 +1157,8 @@
       }
       if (!files || !files.length) return;
 
+      const targetPath = currentPath;
+      document.getElementById("uploadStatus").textContent = "Uploading…";
       const form = new FormData();
       for (const f of files) {
         const rel = f.webkitRelativePath && f.webkitRelativePath.length > 0
@@ -1144,7 +1169,7 @@
 
       try {
         const res = await fetch(
-          "/api/files/upload?targetPath=" + encodeURIComponent(currentPath),
+          "/api/files/upload?targetPath=" + encodeURIComponent(targetPath),
           {
             method: "POST",
             body: form,
@@ -1153,18 +1178,24 @@
         );
         if (!res.ok) {
           if (res.status === 401) {
-            checkAuth();
+            showLogin();
             return;
           }
           const text = await res.text();
           throw new Error("HTTP " + res.status + " – " + text);
         }
-        await res.json().catch(() => null);
-        alert("Upload complete.");
-        loadFolder(currentPath);
+        await res.json();
+        const base = targetPath.replace(/[/\\]+$/, "");
+        for (const file of [...files].slice(-15)) {
+          const relative = (file.webkitRelativePath || file.name).split("/");
+          const folder = relative.length === 1 ? targetPath : [base, ...relative.slice(0, -1)].join("\\");
+          FileNest.activity(accountUser, "uploads", { folder, path: folder.replace(/[/\\]+$/, "") + "\\" + file.name });
+        }
+        if (currentPath === targetPath) await loadFolder(targetPath);
+        document.getElementById("uploadStatus").textContent = "Upload complete.";
       } catch (err) {
         console.error(err);
-        alert("Upload failed: " + err.message);
+        document.getElementById("uploadStatus").textContent = "Upload failed: " + err.message;
       } finally {
         input.value = "";
       }
@@ -1205,10 +1236,21 @@
         return;
       }
 
+      if (category === "notes") {
+        currentFilter = category;
+        document.getElementById("currentPathLabel").textContent = "Notes directly in the current folder";
+        applyFileFilters();
+        return;
+      }
+
       const request = ++fileRequest;
+      folderLoaded = false;
+      entries = [];
       currentFilter = category;
 
-      document.getElementById("currentPathLabel").textContent = currentRoot + ' - ' + category.charAt(0).toUpperCase() + category.slice(1);
+      const scopeLabel = category === "pdfs" ? "PDFs among the first 500 document results" :
+        category.charAt(0).toUpperCase() + category.slice(1) + " · up to 500 results";
+      document.getElementById("currentPathLabel").textContent = scopeLabel;
       setError("");
       setSelectionMode(false);
 
@@ -1219,10 +1261,10 @@
       emptyMsgEl.style.display = "none";
 
       try {
-        const res = await fetch("/api/files/category?path=" + encodeURIComponent(currentRoot) + "&category=" + encodeURIComponent(category), { credentials: "include" });
+        const res = await fetch("/api/files/category?path=" + encodeURIComponent(currentRoot) + "&category=" + encodeURIComponent(category === "pdfs" ? "documents" : category), { credentials: "include" });
         if (!res.ok) {
           if (res.status === 401) {
-            checkAuth();
+            showLogin();
             return;
           }
           const text = await res.text();
@@ -1230,15 +1272,9 @@
         }
         const items = await res.json();
         if (request !== fileRequest) return;
-        itemsEl.replaceChildren();
-
-        if (!items.length) {
-          emptyMsgEl.textContent = "No " + category + " found in this drive.";
-          emptyMsgEl.style.display = "block";
-          return;
-        }
-
-        renderItems(items);
+        entries = items;
+        folderLoaded = true;
+        applyFileFilters();
       } catch (err) {
         console.error(err);
         if (request !== fileRequest) return;
@@ -1291,8 +1327,8 @@
       }
     });
 
-    // Start: check authentication
-    checkAuth();
+    window.addEventListener("pageshow", event => { if (event.persisted) location.reload(); });
+    document.addEventListener("DOMContentLoaded", checkAuth);
   </script>
 </body>
 </html>

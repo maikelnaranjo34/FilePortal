@@ -26,7 +26,7 @@
   }
   async function apiJson(url, opts) {
     const r = await api(url, opts);
-    if (r.status === 401) { window.location.replace("/login.html"); throw new Error("unauth"); }
+    if (r.status === 401) { window.location.replace(FileNest.signInUrl()); throw new Error("unauth"); }
     if (!r.ok) { let e = {}; try { e = await r.json(); } catch {} throw new Error(e.error || ("HTTP " + r.status)); }
     return r.json();
   }
@@ -69,9 +69,14 @@
     timelineObserver?.disconnect();
     state.flat = [];
     state.view = view;
-    if (window.location.hash !== "#" + view) window.history.replaceState(null, "", "#" + view);
+    if (window.location.hash !== "#" + view) window.history.replaceState(null, "", location.pathname + location.search + "#" + view);
+    FileNest.activate(view === "favorites" ? "favorites" : "gallery");
     document.querySelectorAll(".nav a[data-view]").forEach(a =>
-      a.classList.toggle("active", a.dataset.view === view));
+      {
+        a.classList.toggle("active", a.dataset.view === view);
+        if (a.dataset.view === view) a.setAttribute("aria-current", "page");
+        else a.removeAttribute("aria-current");
+      });
     clearSelection();
     if (view === "photos" || view === "favorites" || view === "videos") renderTimeline(view);
     else if (view === "albums") renderAlbums();
@@ -83,12 +88,6 @@
       event.preventDefault();
       setView(a.dataset.view);
     }));
-
-  document.getElementById("navLogout").addEventListener("click", async event => {
-    event.preventDefault();
-    try { await api("/api/auth/logout", { method: "POST" }); } catch {}
-    window.location.replace("/login.html");
-  });
 
   // ---------- selection ----------
   const galleryRange = new RangeSelection();
@@ -229,6 +228,15 @@
     main.appendChild(sentinel);
 
     await loadTimelinePage();
+    const url = new URL(location.href);
+    const requestedId = url.searchParams.get("item");
+    if (requestedId && state.view === view) {
+      url.searchParams.delete("item");
+      history.replaceState(null, "", url.pathname + url.search + url.hash);
+      const itemIndex = state.flat.findIndex(photo => photo.id === requestedId);
+      if (itemIndex >= 0) openLightbox(requestedId);
+    }
+
 
     if (!sentinel.isConnected) return;
 
@@ -765,12 +773,10 @@
 
   (async () => {
     try {
-      state.me = await apiJson("/api/auth/me");
+      state.me = await FileNest.account();
+      if (!state.me) { window.location.replace(FileNest.signInUrl()); return; }
     } catch { return; }
-    document.getElementById("avatar").textContent = (state.me.user || "U").charAt(0).toUpperCase();
-    document.getElementById("avatar").title = state.me.user + (state.me.isAdmin ? " (admin)" : "");
     if (state.me.isAdmin) {
-      document.getElementById("navUsers").textContent = "Manage users";
       document.getElementById("scanBtn").style.display = "inline-block";
     }
     document.getElementById("scanBtn").onclick = async () => {
@@ -778,8 +784,12 @@
       try { const r = await apiJson("/api/photos/scan", { method: "POST" }); toast("Found " + r.count + " media files"); setView(state.view); }
       catch (e) { toast("Error: " + e.message); }
     };
-    const requestedView = window.location.hash.slice(1);
-    setView(["photos", "videos", "albums", "favorites", "search"].includes(requestedView) ? requestedView : "photos");
+    const restoreView = () => {
+      const requestedView = window.location.hash.slice(1);
+      setView(["photos", "videos", "albums", "favorites", "search"].includes(requestedView) ? requestedView : "photos");
+    };
+    window.addEventListener("hashchange", restoreView);
+    restoreView();
   })();
 
 })();

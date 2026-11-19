@@ -48,7 +48,7 @@
   }
 
   function injectButton() {
-    if (document.getElementById("themeToggleBtn")) return;
+    if (document.querySelector("#fileNestHeader, .fn-login, #themeToggleBtn")) return;
     btn = document.createElement("button");
     btn.id = "themeToggleBtn";
     btn.type = "button";

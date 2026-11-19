@@ -46,12 +46,15 @@ test('FilePortal release integration', { timeout: 90_000 }, async t => {
   assert.equal(build.status, 0, build.stdout + build.stderr);
   const webConfig = readFileSync(path.join(publish, 'web.config'), 'utf8');
   assert.equal(webConfig.match(/arguments="([^"]*)"/)?.[1], '.\\FilePortal.dll');
-  for (const name of ['index.html', 'files.html', 'login.html', 'users.html', 'share.html']) {
+  for (const name of ['index.html', 'gallery.html', 'files.html', 'login.html', 'users.html', 'share.html']) {
     const html = readFileSync(path.join(publish, 'wwwroot', name), 'utf8');
     for (const script of html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi))
       new Script(script[1], { filename: name });
   }
-  for (const name of ['app.js', 'theme.js', 'preview.js', 'range-selection.js'])
+  for (const name of [
+    'app.js', 'theme.js', 'preview.js', 'range-selection.js', 'filenest/route.js',
+    'filenest/shell.js', 'filenest/dashboard.js', 'filenest/assistant.js'
+  ])
     new Script(readFileSync(path.join(publish, 'wwwroot', name), 'utf8'), { filename: name });
 
   writeFileSync(path.join(publish, 'appsettings.json'), JSON.stringify({
@@ -127,9 +130,16 @@ test('FilePortal release integration', { timeout: 90_000 }, async t => {
     const landing = await request('/', 200);
     assert.match(landing.headers.get('cache-control'), /no-cache/);
     const landingHtml = await landing.text();
+    assert.match(landingHtml, /id="dashboard"/);
+    assert.match(landingHtml, /id="assistantPanel"/);
+    assert.match(landingHtml, /src="\/filenest\/route\.js"/);
+    const gallery = await request('/gallery.html', 200);
+    const galleryHtml = await gallery.text();
     for (const view of ['photos', 'videos', 'albums', 'favorites', 'search'])
-      assert.match(landingHtml, new RegExp('href="#' + view + '"'));
-    assert.match(landingHtml, /src="\/app\.js(?:\?[^"]+)?"/);
+      assert.match(galleryHtml, new RegExp('href="#' + view + '"'));
+    assert.match(galleryHtml, /src="\/app\.js(?:\?[^"]+)?"/);
+    for (const asset of ['shell.js', 'dashboard.js', 'assistant.js', 'site.css', 'workspace.css', 'mascot.png'])
+      await request('/filenest/' + asset, 200);
     const galleryScript = await request('/app.js', 200);
     assert.match(galleryScript.headers.get('cache-control'), /must-revalidate/);
     assert.match(galleryScript.headers.get('content-type'), /javascript/);

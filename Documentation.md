@@ -42,7 +42,9 @@ FilePortal is a photo and video gallery and file browser for Windows drives and 
 | [Services/FileBrowserService.cs](Services/FileBrowserService.cs) | Configured roots and filesystem authorization shared by file endpoints |
 | [Services/UserStoreService.cs](Services/UserStoreService.cs) | JSON persistence, password hashing, and atomic updates |
 | [Services/ThumbnailService.cs](Services/ThumbnailService.cs) | SkiaSharp image thumbnails, FFmpeg video stills, and a bounded in-memory cache |
-| [wwwroot/index.html](wwwroot/index.html), [wwwroot/app.js](wwwroot/app.js) | Photos landing page and navigation for Videos, Albums, Favorites, and Search |
+| [wwwroot/index.html](wwwroot/index.html), [wwwroot/filenest/dashboard.js](wwwroot/filenest/dashboard.js) | FileNest dashboard, recent activity, quick access, and share management |
+| [wwwroot/filenest/site.css](wwwroot/filenest/site.css), [wwwroot/filenest/workspace.css](wwwroot/filenest/workspace.css), [wwwroot/filenest/shell.js](wwwroot/filenest/shell.js) | Shared theme and responsive navigation |
+| [wwwroot/gallery.html](wwwroot/gallery.html), [wwwroot/app.js](wwwroot/app.js) | Media Gallery with Photos, Videos, Albums, Favorites, and Search |
 | [wwwroot/files.html](wwwroot/files.html) | File Manager |
 | [wwwroot/login.html](wwwroot/login.html) | Gallery sign-in |
 | [wwwroot/users.html](wwwroot/users.html) | Account settings and administrator controls |
@@ -118,7 +120,11 @@ File endpoints require sign-in and enforce the caller's folder access.
 
 ## Frontend and media
 
-`index.html` is the Photos landing page. It serves Photos, Videos, Albums, Favorites, and Search after sign-in. Videos shows only video files, with the same selection and preview controls. File Manager remains available at `/files.html`, and `/portal.html` redirects to the landing page. The frontend checks `/api/auth/me` on load. Letter keys cycle through matching items in File Manager. API responses use camelCase.
+The FileNest dashboard opens at `/`. It shows authorized roots, media favorites, and activity recorded by this browser for the signed-in account. Quick Access can pin available roots. The folder storage check reports the count and combined size of files directly in the selected folder. File Manager searches the current listing by name, and Gallery searches indexed photos and videos. File Manager is available at `/files.html`, and Gallery at `/gallery.html`. Older gallery bookmarks such as `/#videos` still open the corresponding view. Existing public media links continue to use `/share.html`.
+
+On phones, the sticky top navigation shows Home, My Files, Gallery, and More. More opens Shared, Favorites, Trash, and Settings. The upload dialog uses an authorized root as its destination. For a nested destination, open that folder in My Files and upload there. Shared lists outgoing photo and album links and lets owners revoke them. Deletion is permanent in the current backend, so Trash explains the limitation and disables recovery.
+
+The assistant opens in its own dialog. It links users to existing file search while AI is unavailable. A future AI integration should use an authenticated server endpoint, authorize each requested file through the existing folder policy, keep provider credentials server-side, and obtain explicit authorization before sending private file contents to an external service. [Assistant module](wwwroot/filenest/assistant.js).
 
 The gallery uses the same folder access policy as File Manager. Its metadata cache, albums, favorites, and share records are stored in the application data directory. Set `PhotoLibrary__ScanRoots__0` and subsequent entries to narrow the scanned folders to paths within configured roots. Automatic scans use all configured roots and skip system and program installation directories such as `Program Files`. Explicit scan roots can include media folders that automatic scans would skip.
 
@@ -199,6 +205,8 @@ dotnet list FilePortal.csproj package --vulnerable --include-transitive
 ```
 
 The integration suite publishes to a temporary directory and runs on loopback against disposable accounts and files. It covers legacy user data, concurrent account updates, authorization, session revocation, password changes, uploads, ZIP downloads, image thumbnails, and video byte ranges. With FFmpeg 8 on the test runner's PATH, it also checks frame selection, short clips, and JPEG thumbnails in the gallery, File Manager, and share links. [GitHub Actions workflow](.github/workflows/test.yml).
+
+Before deploying a redesigned build, test responsive navigation at 320–430 CSS pixels and in landscape, plus upload, download, file and video previews, deep links, and session handling with administrator and regular accounts. Test against disposable roots and app data.
 
 After deployment, verify the expected bindings, sign-in, access to each configured root and UNC share, uploads of representative size, and optional SMTP delivery. With video thumbnails enabled, open **Videos** and check that a thumbnail renders and the clip opens when tapped.
 
