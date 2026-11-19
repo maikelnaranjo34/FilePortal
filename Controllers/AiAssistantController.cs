@@ -13,7 +13,7 @@ namespace FilePortal.Controllers;
 [Authorize]
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
 public sealed class AiAssistantController(AiSettingsService settingsStore, IHttpClientFactory clients,
-    AuthorizedFileSearchService fileSearch) : ControllerBase
+    AuthorizedFileSearchService fileSearch, DuplicateFinderService duplicateFinder, FileBrowserService fileBrowser) : ControllerBase
 {
     public sealed class Message
     {
@@ -59,10 +59,11 @@ public sealed class AiAssistantController(AiSettingsService settingsStore, IHttp
             .Append(new { role = "user", content = message })
             .ToArray();
         var currentUser = (UserRecord)HttpContext.Items[typeof(UserRecord)]!;
+        var availableRoots = string.Join(", ", fileBrowser.GetRoots(currentUser).Select(root => root.Name));
         var body = new
         {
             model = settings.OpenAiModel,
-            instructions = "You are Nesti, the concise and friendly FilePortal assistant. Help the signed-in user manage and understand their files. Never claim to have read, moved, changed, or deleted a file unless a server tool explicitly reports that action. Never request API keys or passwords. Destructive actions always require a separate visual confirmation in FilePortal. The current user is " + currentUser.Username + ".",
+            instructions = "You are Nesti, the concise and friendly FilePortal assistant. Help the signed-in user manage and understand their files. Never claim to have read, moved, changed, or deleted a file unless a server tool explicitly reports that action. Never request API keys or passwords. Destructive actions always require a separate visual confirmation in FilePortal. Duplicate scans are read-only. The current user is " + currentUser.Username + ". Available root display names: " + availableRoots + ".",
             input,
             tools = new object[]
             {
@@ -76,6 +77,20 @@ public sealed class AiAssistantController(AiSettingsService settingsStore, IHttp
                         type = "object",
                         properties = new { query = new { type = "string", description = "A file or folder name, or part of one." } },
                         required = new[] { "query" },
+                        additionalProperties = false
+                    },
+                    strict = true
+                },
+                new
+                {
+                    type = "function",
+                    name = "find_duplicates",
+                    description = "Find exact content duplicates and similar filenames inside one FilePortal root available to the signed-in user. This is read-only and never deletes files.",
+                    parameters = new
+                    {
+                        type = "object",
+                        properties = new { rootName = new { type = "string", description = "The exact display name of an available FilePortal root." } },
+                        required = new[] { "rootName" },
                         additionalProperties = false
                     },
                     strict = true
@@ -97,12 +112,16 @@ public sealed class AiAssistantController(AiSettingsService settingsStore, IHttp
             var toolCalls = ExtractToolCalls(payload.RootElement).ToList();
             if (toolCalls.Count > 0)
             {
-                var outputs = toolCalls.Select(call => new
+                var outputs = new List<object>();
+                foreach (var call in toolCalls)
                 {
-                    type = "function_call_output",
-                    call_id = call.CallId,
-                    output = ExecuteTool(call, currentUser, cancellationToken)
-                }).ToArray();
+                    outputs.Add(new
+                    {
+                        type = "function_call_output",
+                        call_id = call.CallId,
+                        output = await ExecuteTool(call, currentUser, cancellationToken)
+                    });
+                }
                 var continuation = new
                 {
                     model = settings.OpenAiModel,
@@ -174,6 +193,27 @@ public sealed class AiAssistantController(AiSettingsService settingsStore, IHttp
         }
     }
 
+    [HttpGet("duplicates")]
+    public async Task<IActionResult> Duplicates([FromQuery] string? rootName, CancellationToken cancellationToken)
+    {
+        rootName = rootName?.Trim();
+        if (string.IsNullOrEmpty(rootName) || rootName.Length > 200)
+            return BadRequest(new { error = "Choose an available root name." });
+        var user = (UserRecord)HttpContext.Items[typeof(UserRecord)]!;
+        try
+        {
+            return Ok(await duplicateFinder.FindAsync(user, rootName, 5_000, cancellationToken));
+        }
+        catch (KeyNotFoundException exception)
+        {
+            return BadRequest(new { error = exception.Message });
+        }
+        catch (DirectoryNotFoundException exception)
+        {
+            return NotFound(new { error = exception.Message });
+        }
+    }
+
     private async Task<string> MintAssemblyToken(string url, string key, CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
@@ -197,23 +237,38 @@ public sealed class AiAssistantController(AiSettingsService settingsStore, IHttp
                 yield return new ToolCall(name.GetString() ?? "", callId.GetString() ?? "", arguments.GetString() ?? "{}");
     }
 
-    private string ExecuteTool(ToolCall call, UserRecord user, CancellationToken cancellationToken)
+    private async Task<string> ExecuteTool(ToolCall call, UserRecord user, CancellationToken cancellationToken)
     {
-        if (call.Name != "search_files") return JsonSerializer.Serialize(new { error = "Unsupported tool." });
         try
         {
             using var arguments = JsonDocument.Parse(call.Arguments);
-            var query = arguments.RootElement.GetProperty("query").GetString()?.Trim();
-            if (string.IsNullOrEmpty(query) || query.Length > 200)
-                return JsonSerializer.Serialize(new { error = "Search terms must contain 1 to 200 characters." });
-            var results = fileSearch.Search(user, query, 25, cancellationToken)
-                .Select(item => new { item.Name, item.Path, item.IsDirectory, item.Size, item.LastModified })
-                .ToList();
-            return JsonSerializer.Serialize(new { query, count = results.Count, results });
+            if (call.Name == "search_files")
+            {
+                var query = arguments.RootElement.GetProperty("query").GetString()?.Trim();
+                if (string.IsNullOrEmpty(query) || query.Length > 200)
+                    return JsonSerializer.Serialize(new { error = "Search terms must contain 1 to 200 characters." });
+                var results = fileSearch.Search(user, query, 25, cancellationToken)
+                    .Select(item => new { item.Name, item.Path, item.IsDirectory, item.Size, item.LastModified })
+                    .ToList();
+                return JsonSerializer.Serialize(new { query, count = results.Count, results });
+            }
+            if (call.Name == "find_duplicates")
+            {
+                var rootName = arguments.RootElement.GetProperty("rootName").GetString()?.Trim();
+                if (string.IsNullOrEmpty(rootName) || rootName.Length > 200)
+                    return JsonSerializer.Serialize(new { error = "Choose a valid root name." });
+                var report = await duplicateFinder.FindAsync(user, rootName, 5_000, cancellationToken);
+                return JsonSerializer.Serialize(report);
+            }
+            return JsonSerializer.Serialize(new { error = "Unsupported tool." });
         }
         catch (JsonException)
         {
-            return JsonSerializer.Serialize(new { error = "The search request was invalid." });
+            return JsonSerializer.Serialize(new { error = "The tool request was invalid." });
+        }
+        catch (Exception exception) when (exception is KeyNotFoundException or DirectoryNotFoundException)
+        {
+            return JsonSerializer.Serialize(new { error = exception.Message });
         }
     }
 

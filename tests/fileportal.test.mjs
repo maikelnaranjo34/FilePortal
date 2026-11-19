@@ -26,12 +26,14 @@ test('FilePortal release integration', { timeout: 90_000 }, async t => {
   for (const directory of [allowed, unassigned, data, outside]) mkdirSync(directory, { recursive: true });
 
   const text = path.join(allowed, 'note.txt');
+  const duplicateText = path.join(allowed, 'note copy.txt');
   const alphaReport = path.join(allowed, 'Alpha report.txt');
   const zetaReport = path.join(allowed, 'Zeta report.txt');
   const video = path.join(allowed, 'video.mp4');
   const photo = path.join(allowed, 'photo.png');
   const hidden = path.join(unassigned, 'other.txt');
   writeFileSync(text, 'assigned');
+  writeFileSync(duplicateText, 'assigned');
   writeFileSync(alphaReport, 'alpha');
   writeFileSync(zetaReport, 'zeta');
   writeFileSync(video, '0123456789');
@@ -219,6 +221,12 @@ test('FilePortal release integration', { timeout: 90_000 }, async t => {
     assert.equal(assistantStatus.available, false);
     await request('/api/ai/chat', 503, legacy, json({ message: 'Hello' }));
     await request('/api/ai/voice/tokens', 503, legacy);
+    const duplicateReport = await (await request('/api/ai/duplicates?rootName=Assigned', 200, legacy)).json();
+    assert.equal(duplicateReport.rootName, 'Assigned');
+    assert.ok(duplicateReport.exactContent.some(group => group.files.some(file => file.name === 'note.txt') &&
+      group.files.some(file => file.name === 'note copy.txt')));
+    assert.ok(duplicateReport.similarNames.some(group => group.normalizedName === 'note.txt'));
+    await request('/api/ai/duplicates?rootName=OtherMirror', 400, legacy);
     assert.deepEqual((await (await request('/api/files/search?q=NoTe.TxT', 200, legacy)).json())
       .map(item => item.path), [text]);
     assert.deepEqual(await (await request('/api/files/search?q=other.txt', 200, legacy)).json(), []);
@@ -238,7 +246,7 @@ test('FilePortal release integration', { timeout: 90_000 }, async t => {
 
     const listed = await request(at('/api/files/folder', allowed), 200, legacy);
     assert.deepEqual((await listed.json()).map(item => item.name).sort(),
-      ['Alpha report.txt', 'Zeta report.txt', 'note.txt', 'photo.png', 'video.mp4']);
+      ['Alpha report.txt', 'Zeta report.txt', 'note copy.txt', 'note.txt', 'photo.png', 'video.mp4']);
     await request(at('/api/files/browse', allowed), 403, legacy);
     await request(at('/api/files/browse', files), 200, admin);
     await request(at('/api/files/folder', unassigned), 403, legacy);
@@ -266,7 +274,7 @@ test('FilePortal release integration', { timeout: 90_000 }, async t => {
     assert.equal(Buffer.from(await thumbnail.arrayBuffer()).subarray(0, 2).toString('hex'), 'ffd8');
     const category = await request(at('/api/files/category', allowed) + '&category=documents', 200, legacy);
     assert.deepEqual((await category.json()).map(item => item.name).sort(),
-      ['Alpha report.txt', 'Zeta report.txt', 'note.txt']);
+      ['Alpha report.txt', 'Zeta report.txt', 'note copy.txt', 'note.txt']);
 
     await request('/api/photos/scan', 200, admin, { method: 'POST' });
     const bundledSearch = await request('/api/search?q=AppInterface.png', 200, admin);
