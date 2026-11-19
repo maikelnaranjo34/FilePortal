@@ -192,6 +192,8 @@ ZIP archives are prepared in the protected data directory, then downloaded by th
 
 Protect and back up the data directory. It holds `users.json`, Data Protection keys, gallery metadata, albums, favorites, and share records. It also holds temporary ZIP files, so allow disk space for archives and uploads.
 
+The checked-in root configuration includes **My_Apps F**, mapped to `F:\My_Apps`. Administrators can access configured roots automatically. Regular users receive access only after an administrator assigns that folder, or one of its subfolders, in Settings.
+
 Store SMTP credentials in the hosting environment or a secret manager. Revoke credentials exposed in Git history at their source and replace any reused passwords.
 
 For IIS or Windows-service deployments, place FFmpeg 8 at `tools\ffmpeg.exe` under the publish directory. The hosting identity inherits read/execute access from the published application directory. Alternatively, configure `VideoThumbnails__FfmpegPath` and grant the hosting identity read/execute access to the executable and every parent directory. Restart the app after changing its configuration. If FFmpeg is unavailable, video tiles use the video icon.
