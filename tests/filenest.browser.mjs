@@ -207,6 +207,9 @@ test('FileNest browser regression', { timeout: 120_000, skip: process.platform !
     await setViewport(320, 844, true);
     assert.equal(await evaluate('document.querySelector(".fn-nav").getBoundingClientRect().right <= innerWidth'), true);
     assert.equal(await evaluate('document.querySelector(".fn-header").getBoundingClientRect().height > 0'), true);
+    assert.equal(await evaluate('document.querySelector("#nestiCompanion") !== null'), true);
+    assert.equal(await evaluate('document.querySelector("#nestiVoiceToggle").getAttribute("aria-pressed") === "true"'), true);
+    assert.equal(await evaluate('(() => { const r=document.querySelector("#nestiCompanion").getBoundingClientRect(); return r.left >= 0 && r.top >= 0 && r.right <= innerWidth + 1 && r.bottom <= innerHeight + 1; })()'), true);
     await setViewport(360, 844, true);
     await setViewport(390, 844, true);
     await setViewport(430, 844, true);
@@ -218,6 +221,7 @@ test('FileNest browser regression', { timeout: 120_000, skip: process.platform !
     await navigate('/files.html');
     await until('location.pathname === "/files.html" && document.readyState === "complete"', 'File Manager did not load');
     await until('document.querySelectorAll("#driveList .drive-item").length === 1', 'File Manager folders did not load');
+    await until('document.querySelector("#nestiCompanion") && document.querySelector("#assistantPanel")', 'Global Nesti assistant did not load');
     await setViewport(1440, 900, false);
     assert.equal(await evaluate('getComputedStyle(document.querySelector("#mainApp")).display'), 'grid');
     assert.equal(await evaluate('getComputedStyle(document.querySelector("#driveSidebar")).display'), 'flex');

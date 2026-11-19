@@ -144,6 +144,33 @@
     }
   }
 
+  function ensureAssistant() {
+    if (!profile || !header) return;
+    if (!document.querySelector("#nestiCompanion")) {
+      document.body.insertAdjacentHTML("beforeend", `
+        <aside id="nestiCompanion" class="fn-nesti-companion" aria-label="Nesti voice assistant">
+          <button type="button" id="nestiVoiceToggle" class="fn-nesti-voice-toggle" aria-pressed="true">Voice On</button>
+          <button type="button" id="nestiFloatOpen" class="fn-nesti-float-open" aria-label="Open Nesti assistant"><img data-nesti src="${mascot}" alt="" width="112" height="112"></button>
+        </aside>
+        <dialog id="assistantPanel" class="fn-dialog" aria-labelledby="assistantTitle">
+          <div class="fn-assistant"><img data-nesti src="${mascot}" alt="" width="78" height="78"><div><h2 id="assistantTitle">FileNest Assistant</h2><p id="assistantAvailability">Checking assistant availabilityâ€¦</p></div></div>
+          <div id="assistantConversation" class="fn-assistant-conversation" role="log" aria-live="polite" aria-label="Conversation"></div>
+          <form id="assistantForm" class="fn-assistant-form"><label class="fn-visually-hidden" for="assistantMessage">Message Nesti</label><textarea id="assistantMessage" rows="2" maxlength="4000" placeholder="Ask Nesti about your filesâ€¦" required></textarea><button type="button" class="fn-button" id="assistantMic" aria-pressed="false" aria-label="Start voice input">Voice</button><button type="submit" class="fn-button fn-button-primary" id="assistantSend">Send</button></form>
+          <p id="assistantStatus" class="fn-muted" role="status"></p>
+          <div class="fn-dialog-actions"><form method="dialog"><button type="submit" class="fn-button">Close</button></form><button type="button" class="fn-button fn-button-primary" data-assistant-search>Find a file</button></div>
+        </dialog>`);
+    }
+    const load = (src, ready) => {
+      if (document.querySelector(`script[src="${src}"]`)) { ready?.(); return; }
+      const script = document.createElement("script");
+      script.src = src;
+      script.onload = () => ready?.();
+      document.head.append(script);
+    };
+    load("/filenest/nesti.js", () => load("/filenest/assistant.js"));
+  }
+  ensureAssistant();
+
   async function request(route, options) {
     const response = await fetch(route, { credentials: "same-origin", cache: "no-store", ...options });
     if (response.status === 401) {

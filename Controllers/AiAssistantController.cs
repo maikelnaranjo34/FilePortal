@@ -60,6 +60,7 @@ public sealed class AiAssistantController(AiSettingsService settingsStore, IHttp
             .ToArray();
         var currentUser = (UserRecord)HttpContext.Items[typeof(UserRecord)]!;
         var availableRoots = string.Join(", ", fileBrowser.GetRoots(currentUser).Select(root => root.Name));
+        var clientActions = new List<object>();
         var body = new
         {
             model = settings.OpenAiModel,
@@ -94,6 +95,42 @@ public sealed class AiAssistantController(AiSettingsService settingsStore, IHttp
                         additionalProperties = false
                     },
                     strict = true
+                },
+                new
+                {
+                    type = "function", name = "list_roots",
+                    description = "List the FilePortal roots currently available to the signed-in user.",
+                    parameters = new { type = "object", properties = new { }, additionalProperties = false }, strict = true
+                },
+                new
+                {
+                    type = "function", name = "list_folder",
+                    description = "List the immediate contents of an authorized folder path.",
+                    parameters = new { type = "object", properties = new { path = new { type = "string" } }, required = new[] { "path" }, additionalProperties = false }, strict = true
+                },
+                new
+                {
+                    type = "function", name = "open_page",
+                    description = "Navigate the user's browser to a FilePortal page.",
+                    parameters = new { type = "object", properties = new { page = new { type = "string", @enum = new[] { "home", "files", "gallery", "shared", "favorites", "trash", "settings" } } }, required = new[] { "page" }, additionalProperties = false }, strict = true
+                },
+                new
+                {
+                    type = "function", name = "open_file",
+                    description = "Ask the browser to open one authorized file in FilePortal.",
+                    parameters = new { type = "object", properties = new { path = new { type = "string" } }, required = new[] { "path" }, additionalProperties = false }, strict = true
+                },
+                new
+                {
+                    type = "function", name = "prepare_download",
+                    description = "Prepare a browser download for authorized files or folders. The browser presents the action to the user.",
+                    parameters = new { type = "object", properties = new { paths = new { type = "array", items = new { type = "string" }, minItems = 1, maxItems = 50 } }, required = new[] { "paths" }, additionalProperties = false }, strict = true
+                },
+                new
+                {
+                    type = "function", name = "prepare_delete",
+                    description = "Prepare deletion of authorized files or folders. This never deletes directly; FilePortal must show a visual confirmation first.",
+                    parameters = new { type = "object", properties = new { paths = new { type = "array", items = new { type = "string" }, minItems = 1, maxItems = 50 } }, required = new[] { "paths" }, additionalProperties = false }, strict = true
                 }
             },
             max_output_tokens = 1200
@@ -119,7 +156,7 @@ public sealed class AiAssistantController(AiSettingsService settingsStore, IHttp
                     {
                         type = "function_call_output",
                         call_id = call.CallId,
-                        output = await ExecuteTool(call, currentUser, cancellationToken)
+                        output = await ExecuteTool(call, currentUser, clientActions, cancellationToken)
                     });
                 }
                 var continuation = new
@@ -138,13 +175,13 @@ public sealed class AiAssistantController(AiSettingsService settingsStore, IHttp
                 var continuedReply = ExtractText(continuationPayload.RootElement);
                 return string.IsNullOrWhiteSpace(continuedReply)
                     ? StatusCode(StatusCodes.Status502BadGateway, new { error = "OpenAI returned no assistant message after searching." })
-                    : Ok(new { reply = continuedReply });
+                    : Ok(new { reply = continuedReply, actions = clientActions });
             }
 
             var reply = ExtractText(payload.RootElement);
             return string.IsNullOrWhiteSpace(reply)
                 ? StatusCode(StatusCodes.Status502BadGateway, new { error = "OpenAI returned no assistant message." })
-                : Ok(new { reply });
+                : Ok(new { reply, actions = clientActions });
         }
         catch (HttpRequestException)
         {
@@ -237,11 +274,13 @@ public sealed class AiAssistantController(AiSettingsService settingsStore, IHttp
                 yield return new ToolCall(name.GetString() ?? "", callId.GetString() ?? "", arguments.GetString() ?? "{}");
     }
 
-    private async Task<string> ExecuteTool(ToolCall call, UserRecord user, CancellationToken cancellationToken)
+    private async Task<string> ExecuteTool(ToolCall call, UserRecord user, List<object> clientActions,
+        CancellationToken cancellationToken)
     {
         try
         {
             using var arguments = JsonDocument.Parse(call.Arguments);
+            var roots = fileBrowser.GetRoots(user);
             if (call.Name == "search_files")
             {
                 var query = arguments.RootElement.GetProperty("query").GetString()?.Trim();
@@ -259,6 +298,54 @@ public sealed class AiAssistantController(AiSettingsService settingsStore, IHttp
                     return JsonSerializer.Serialize(new { error = "Choose a valid root name." });
                 var report = await duplicateFinder.FindAsync(user, rootName, 5_000, cancellationToken);
                 return JsonSerializer.Serialize(report);
+            }
+            if (call.Name == "list_roots")
+                return JsonSerializer.Serialize(new { roots = roots.Select(root => new { root.Name, root.Path }) });
+            if (call.Name == "list_folder")
+            {
+                var requestedPath = arguments.RootElement.GetProperty("path").GetString() ?? "";
+                if (!fileBrowser.TryResolve(requestedPath, roots, out var folder, allowMissing: false) || !Directory.Exists(folder))
+                    return JsonSerializer.Serialize(new { error = "That folder is unavailable or outside your access." });
+                var entries = new DirectoryInfo(folder).EnumerateFileSystemInfos()
+                    .Where(fileBrowser.CanList).OrderByDescending(entry => entry is DirectoryInfo)
+                    .ThenBy(entry => entry.Name, StringComparer.OrdinalIgnoreCase).Take(100)
+                    .Select(entry => new { entry.Name, entry.FullName, isDirectory = entry is DirectoryInfo,
+                        size = entry is FileInfo file ? file.Length : (long?)null, entry.LastWriteTime });
+                return JsonSerializer.Serialize(new { path = folder, entries });
+            }
+            if (call.Name == "open_page")
+            {
+                var page = arguments.RootElement.GetProperty("page").GetString() ?? "home";
+                var route = page switch { "files" => "/files.html", "gallery" => "/gallery.html", "shared" => "/#shared",
+                    "favorites" => "/gallery.html#favorites", "trash" => "/#trash", "settings" => "/users.html", _ => "/" };
+                clientActions.Add(new { type = "navigate", url = route });
+                return JsonSerializer.Serialize(new { prepared = true, page, route });
+            }
+            if (call.Name == "open_file")
+            {
+                var requestedPath = arguments.RootElement.GetProperty("path").GetString() ?? "";
+                if (!fileBrowser.TryResolve(requestedPath, roots, out var file, allowMissing: false) || !System.IO.File.Exists(file))
+                    return JsonSerializer.Serialize(new { error = "That file is unavailable or outside your access." });
+                clientActions.Add(new { type = "open_file", path = file });
+                return JsonSerializer.Serialize(new { prepared = true, path = file });
+            }
+            if (call.Name is "prepare_download" or "prepare_delete")
+            {
+                var requestedPaths = arguments.RootElement.GetProperty("paths").EnumerateArray()
+                    .Select(item => item.GetString()).Where(path => !string.IsNullOrWhiteSpace(path)).Cast<string>().Distinct(FileBrowserService.PathComparer).ToList();
+                if (requestedPaths is { Count: 0 } or { Count: > 50 })
+                    return JsonSerializer.Serialize(new { error = "Choose between 1 and 50 items." });
+                var safePaths = new List<string>();
+                foreach (var requestedPath in requestedPaths)
+                {
+                    if (!fileBrowser.TryResolve(requestedPath, roots, out var safePath, allowMissing: false) ||
+                        (!System.IO.File.Exists(safePath) && !Directory.Exists(safePath)))
+                        return JsonSerializer.Serialize(new { error = "At least one item is unavailable or outside your access." });
+                    safePaths.Add(safePath);
+                }
+                var actionType = call.Name == "prepare_delete" ? "confirm_delete" : "confirm_download";
+                clientActions.Add(new { type = actionType, paths = safePaths });
+                return JsonSerializer.Serialize(new { prepared = true, requiresUserConfirmation = true, count = safePaths.Count });
             }
             return JsonSerializer.Serialize(new { error = "Unsupported tool." });
         }
