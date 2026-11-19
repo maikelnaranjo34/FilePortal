@@ -115,6 +115,7 @@ File endpoints require sign-in and enforce the caller's folder access.
 | --- | --- | --- |
 | GET | `/api/users` | Administrator. Lists users. |
 | POST | `/api/users` | Administrator. Creates an account from required `username`, `password`, `firstName`, and `lastName` form fields plus optional `isAdmin`. |
+| PUT | `/api/users/{username}` | Administrator. Updates an existing account's required `firstName` and `lastName`; usernames remain immutable. |
 | DELETE | `/api/users/{username}` | Administrator. The signed-in account and the last administrator are protected. |
 | POST | `/api/users/{username}/promote` | Administrator. Grants the administrator role. |
 | POST | `/api/users/{username}/demote` | Administrator. Self-demotion and demotion of the last administrator are blocked. |
@@ -148,11 +149,15 @@ File endpoints require sign-in and enforce the caller's folder access.
 
 The FileNest dashboard opens at `/`. It shows authorized roots, media favorites, and activity recorded by this browser for the signed-in account. Quick Access can pin available roots. The folder storage check reports the count and combined size of files directly in the selected folder. Dashboard searches open authorized results from every available root in File Manager. File Manager can rerun that global search or filter the current folder or result set locally; Gallery searches indexed photos and videos. File Manager is available at `/files.html`, and Gallery at `/gallery.html`. Older gallery bookmarks such as `/#videos` still open the corresponding view. Existing public media links continue to use `/share.html`. The Back arrow on every page returns to the previous browser-history entry and falls back to Home when no previous entry exists.
 
+Dashboard category shortcuts appear in the order Images, Videos, PDFs, Notes, and Documents. Each shortcut opens the matching authorized recursive filter in My Files.
+
 My Files uses the FileNest workspace styling for its folder sidebar, breadcrumbs, upload and selection controls, search, and file tiles. On narrow screens the folder list is available through the **Drives** toggle, and the file grid reflows without horizontal scrolling.
 
 On phones, the sticky top navigation shows Home, My Files, Gallery, and More. More opens Shared, Favorites, Trash, and Settings. The upload dialog uses an authorized root as its destination. For a nested destination, open that folder in My Files and upload there. Shared lists outgoing photo and album links and lets owners revoke them. Deletion is permanent in the current backend, so Trash explains the limitation and disables recovery.
 
 Controls without backend support are disabled and described in the interface. FilePortal currently has no create-folder, rename, or move endpoint; no recycle-bin or restore endpoint; and no notification service. AI summarization and organization remain disabled until an authenticated, server-side provider integration is added. Right-click is temporarily disabled across FileNest and displays an accessible status message; keyboard and touch controls remain available.
+
+Administrators can open Settings to view every account and edit its first and last name after creation. Usernames are fixed identifiers. Role, password, and folder-access changes remain separate controls so their existing authorization and session protections continue to apply.
 
 The assistant opens in its own dialog. It links users to existing file search while AI is unavailable. A future AI integration should use an authenticated server endpoint, authorize each requested file through the existing folder policy, keep provider credentials server-side, and obtain explicit authorization before sending private file contents to an external service. [Assistant module](wwwroot/filenest/assistant.js).
 

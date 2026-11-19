@@ -16,6 +16,9 @@
     .folder-list { background:#111827; border:1px solid #1f2937; border-radius:6px; padding:10px; margin:10px 0; max-height:200px; overflow-y:auto }
     .folder-item { padding:6px; background:#0b1220; border-radius:4px; margin:4px 0; font-size:12px; color:#9ca3af; word-break:break-all }
     .account-dialog { box-sizing:border-box; width:min(500px, calc(100% - 24px)); min-width:0; }
+    .user-summary { display:grid; gap:2px; min-width:0; }
+    .user-summary strong, .user-summary small { overflow-wrap:anywhere; }
+    .user-summary small { color:#9ca3af; }
     @media (max-width:700px) {
       body { padding:12px }
       .user { flex-wrap:wrap; gap:6px }
@@ -37,6 +40,27 @@
     <button id="changeOwnPassword" hidden onclick="openPwModal(currentUser)">Change my password</button>
 
     <div id="list" hidden></div>
+
+    <!-- Edit User Modal -->
+    <div id="editModal" role="dialog" aria-modal="true" aria-labelledby="editTitle" style="display:none;position:fixed;inset:0;align-items:center;justify-content:center;background:rgba(2,6,23,0.6);z-index:1000">
+      <div id="editDialog" class="account-dialog" tabindex="-1" style="background:#0b1220;padding:16px;border:1px solid #1f2937;border-radius:8px">
+        <h3 id="editTitle" style="margin-top:0">Edit user</h3>
+        <div id="editMsg" role="alert" style="color:#f97373;margin-bottom:6px"></div>
+        <label for="editUsername">Username</label>
+        <input id="editUsername" readonly />
+        <label for="editFirstName">First name</label>
+        <input id="editFirstName" autocomplete="given-name" />
+        <label for="editLastName">Last name</label>
+        <input id="editLastName" autocomplete="family-name" />
+        <label for="editRole">Role</label>
+        <input id="editRole" readonly />
+        <p style="color:#9ca3af;font-size:12px">Use the row controls to change role, password, or folder access.</p>
+        <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end">
+          <button type="button" onclick="submitEditUser()">Save</button>
+          <button type="button" onclick="closeEditModal()" style="background:#374151;color:#e5e7eb">Cancel</button>
+        </div>
+      </div>
+    </div>
 
     <!-- Change Password Modal -->
     <div id="pwModal" role="dialog" aria-modal="true" aria-labelledby="pwTitle" style="display:none;position:fixed;inset:0;align-items:center;justify-content:center;background:rgba(2,6,23,0.6);z-index:1000">
@@ -141,13 +165,25 @@
         const div = document.createElement('div');
         div.className = 'user';
         const left = document.createElement('div');
+        left.className = 'user-summary';
         const displayName = u.firstName || u.lastName ? `${u.firstName} ${u.lastName}`.trim() + ` (${u.username})` : u.username;
-        left.textContent = displayName + (u.isAdmin ? ' - admin' : '');
+        const identity = document.createElement('strong');
+        identity.textContent = displayName;
+        const role = document.createElement('small');
+        role.textContent = u.isAdmin ? 'Administrator' : 'Standard user';
+        left.append(identity, role);
 
         const actions = document.createElement('div');
         actions.style.display = 'flex';
         actions.style.gap = '6px';
         actions.style.flexWrap = 'wrap';
+
+        const edit = document.createElement('button');
+        edit.type = 'button';
+        edit.textContent = 'Edit';
+        edit.dataset.editUser = u.username;
+        edit.onclick = () => openEditModal(u);
+        actions.appendChild(edit);
 
         // Promote / Demote
         if (u.isAdmin) {
@@ -238,6 +274,65 @@
       if (res.ok) load(); else {
         const txt = await res.json().catch(() => null);
         alert((txt && txt.error) || 'Failed to demote');
+      }
+    }
+
+    let editTarget = null;
+    let editReturnFocus = null;
+
+    function openEditModal(user) {
+      editReturnFocus = document.activeElement;
+      editTarget = user.username;
+      document.getElementById('editMsg').textContent = '';
+      document.getElementById('editUsername').value = user.username;
+      document.getElementById('editFirstName').value = user.firstName || '';
+      document.getElementById('editLastName').value = user.lastName || '';
+      document.getElementById('editRole').value = user.isAdmin ? 'Administrator' : 'Standard user';
+      document.getElementById('editModal').style.display = 'flex';
+      focusWhenVisible(document.getElementById('editFirstName'));
+    }
+
+    function closeEditModal(restore = true) {
+      if (document.getElementById('editModal').style.display === 'none') return;
+      document.getElementById('editModal').style.display = 'none';
+      editTarget = null;
+      const returnFocus = editReturnFocus;
+      editReturnFocus = null;
+      if (restore) restoreFocus(returnFocus);
+    }
+
+    async function submitEditUser() {
+      if (!editTarget) return;
+      const username = editTarget;
+      const firstName = document.getElementById('editFirstName').value.trim();
+      const lastName = document.getElementById('editLastName').value.trim();
+      const msg = document.getElementById('editMsg');
+      msg.textContent = '';
+      if (!firstName || !lastName) {
+        msg.textContent = 'First name and last name are required.';
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/users/' + encodeURIComponent(username), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ firstName, lastName })
+        });
+        if (!res.ok) {
+          const result = await res.json().catch(() => null);
+          msg.textContent = result?.error || 'Failed to update user.';
+          return;
+        }
+
+        closeEditModal(false);
+        await load();
+        document.getElementById('accountStatus').textContent = 'Updated ' + username + '.';
+        [...document.querySelectorAll('[data-edit-user]')]
+          .find(button => button.dataset.editUser === username)?.focus();
+      } catch {
+        msg.textContent = 'Request failed.';
       }
     }
 
@@ -477,6 +572,8 @@
     }
 
     function visibleDialog() {
+      if (document.getElementById('editModal').style.display !== 'none')
+        return { overlay: document.getElementById('editModal'), close: closeEditModal };
       if (document.getElementById('folderModal').style.display !== 'none')
         return { overlay: document.getElementById('folderModal'), close: closeFolderModal };
       if (document.getElementById('pwModal').style.display !== 'none')

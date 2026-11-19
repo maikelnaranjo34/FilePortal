@@ -161,6 +161,16 @@ public class UserStoreService
         return UserChange.Updated;
     });
 
+    public UserChange UpdateProfile(string username, string firstName, string lastName) => Update(users =>
+    {
+        var user = FindUser(users, username);
+        if (user is null) return UserChange.NotFound;
+
+        user.FirstName = firstName.Trim();
+        user.LastName = lastName.Trim();
+        return UserChange.Updated;
+    });
+
     public UserChange UpdatePassword(string username, string newPassword, string? currentPassword) => Update(users =>
     {
         var user = FindUser(users, username);

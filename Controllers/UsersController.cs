@@ -31,6 +31,24 @@ public class UsersController(UserStoreService store, FileBrowserService browser)
             : Conflict(new { error = "Username already exists." });
     }
 
+    public sealed class UpdateUserRequest
+    {
+        public string? FirstName { get; set; }
+        public string? LastName { get; set; }
+    }
+
+    [Authorize(Roles = "Admin")]
+    [HttpPut("{username}")]
+    public IActionResult Put(string username, [FromBody] UpdateUserRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.FirstName) || string.IsNullOrWhiteSpace(request.LastName))
+            return BadRequest(new { error = "First name and last name are required." });
+
+        return store.UpdateProfile(username, request.FirstName, request.LastName) == UserChange.Updated
+            ? Ok(new { username, firstName = request.FirstName.Trim(), lastName = request.LastName.Trim() })
+            : NotFound();
+    }
+
     [Authorize(Roles = "Admin")]
     [HttpDelete("{username}")]
     public IActionResult Delete(string username)

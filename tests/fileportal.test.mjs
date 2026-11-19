@@ -142,6 +142,9 @@ test('FilePortal release integration', { timeout: 90_000 }, async t => {
     assert.match(landingHtml, /id="dashboard"/);
     assert.match(landingHtml, /id="assistantPanel"/);
     assert.match(landingHtml, /src="\/filenest\/route\.js"/);
+    const categoryOrder = ['category=pictures', 'category=videos', 'category=pdfs', 'category=notes', 'category=documents'];
+    assert.deepEqual([...landingHtml.matchAll(/href="\/files\.html\?(category=[^"]+)"/g)]
+      .map(match => match[1]), categoryOrder);
     const gallery = await request('/gallery.html', 200);
     const galleryHtml = await gallery.text();
     for (const view of ['photos', 'videos', 'albums', 'favorites', 'search'])
@@ -176,6 +179,7 @@ test('FilePortal release integration', { timeout: 90_000 }, async t => {
     assert.equal((await request('/FileManager', 302)).headers.get('location'), '/files.html');
     await request('/api/unknown', 404);
     await request('/api/users/init', 404);
+    await request('/api/users/unknown', 401, null, { method: 'PUT', headers: { 'content-type': 'application/json' }, body: '{}' });
     await request('/api/auth/login', 401, null, form({ username: 'unknown', password }));
     await request('/api/files/roots', 401);
     await request('/api/files/search?q=note', 401);
@@ -397,8 +401,21 @@ test('FilePortal release integration', { timeout: 90_000 }, async t => {
       await request('/api/users', 201, admin, form({ username, password, firstName: 'Fixture', lastName: 'User' }));
     }
     await Promise.all(['viewer', 'second-user', 'third-user', 'fourth-user'].map(add));
+    await request('/api/users/viewer', 403, legacy, { ...json({ firstName: 'Not', lastName: 'Allowed' }), method: 'PUT' });
+    await request('/api/users/viewer', 400, admin, { ...json({ firstName: ' ', lastName: 'User' }), method: 'PUT' });
+    await request('/api/users/missing-user', 404, admin,
+      { ...json({ firstName: 'Missing', lastName: 'User' }), method: 'PUT' });
+    const updatedProfile = await request('/api/users/viewer', 200, admin,
+      { ...json({ firstName: ' Updated ', lastName: ' Viewer ' }), method: 'PUT' });
+    assert.deepEqual(await updatedProfile.json(), {
+      username: 'viewer', firstName: 'Updated', lastName: 'Viewer'
+    });
     const users = await request('/api/users', 200, admin);
-    assert.equal((await users.json()).length, 6);
+    const userList = await users.json();
+    assert.equal(userList.length, 6);
+    assert.deepEqual(userList.find(user => user.username === 'viewer'), {
+      username: 'viewer', firstName: 'Updated', lastName: 'Viewer', isAdmin: false
+    });
     await request('/api/users/viewer/folders', 200, admin, json([allowed]));
     await request('/api/users/viewer/folders', 400, admin, json([outside]));
     const viewer = await login('viewer');

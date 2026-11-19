@@ -201,6 +201,8 @@ test('FileNest browser regression', { timeout: 120_000, skip: process.platform !
     await setViewport(1440, 900, false);
     assert.equal(await evaluate('document.querySelectorAll("#quickRoots .fn-root").length'), 1);
     assert.equal(await evaluate('document.querySelector(".fn-nav").getBoundingClientRect().right <= innerWidth'), true);
+    assert.deepEqual(await evaluate('[...document.querySelectorAll("#categorySection .fn-category")].map(element => element.textContent.trim().replace(/›$/, ""))'),
+      ['Images', 'Videos', 'PDFs', 'Notes', 'Documents']);
 
     await setViewport(320, 844, true);
     assert.equal(await evaluate('document.querySelector(".fn-nav").getBoundingClientRect().right <= innerWidth'), true);
@@ -228,6 +230,18 @@ test('FileNest browser regression', { timeout: 120_000, skip: process.platform !
     assert.equal(await evaluate('getComputedStyle(document.querySelector("#mainApp")).display'), 'grid');
     assert.equal(await evaluate('getComputedStyle(document.querySelector("#driveSidebar")).display'), 'none');
     assert.equal(await evaluate('getComputedStyle(document.querySelector("#rootsToggle")).display !== "none"'), true);
+
+    await navigate('/users.html');
+    await until('document.querySelector("[data-edit-user=administrator]")', 'Settings user editor did not load');
+    await evaluate('document.querySelector("[data-edit-user=administrator]").click(); true');
+    await until('document.querySelector("#editModal").style.display === "flex"', 'User editor did not open');
+    await evaluate(
+      'document.querySelector("#editFirstName").value="Browser";' +
+      'document.querySelector("#editLastName").value="Administrator";' +
+      'document.querySelector("#editDialog button").click(); true'
+    );
+    await until('document.querySelector("#accountStatus").textContent === "Updated administrator."', 'User profile did not update');
+    assert.match(await evaluate('document.querySelector(".user-summary strong").textContent'), /Browser Administrator/);
 
     assert.deepEqual(runtimeErrors, []);
   } finally {
