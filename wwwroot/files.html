@@ -402,6 +402,13 @@
         <input id="folderSearch" type="search" placeholder="Search this folder…">
         <label for="fileSort" class="fn-visually-hidden">Sort files</label>
         <select id="fileSort"><option value="name">Name</option><option value="modified">Last modified</option><option value="size">Size</option></select>
+        <label for="duplicateFilter" class="fn-visually-hidden">Duplicate filter</label>
+        <select id="duplicateFilter">
+          <option value="all">All files</option>
+          <option value="confirmed">Confirmed duplicates</option>
+          <option value="candidates">Name + size candidates</option>
+        </select>
+        <span id="duplicateStatus" class="fn-muted" role="status"></span>
         <a class="fn-inline-link" href="/gallery.html#search">Search Gallery</a>
       </div>
       <div class="selection-toolbar fn-panel" aria-label="Selection and deletion">
@@ -487,6 +494,18 @@
     const initial = new URLSearchParams(location.search);
     const folderSearch = document.getElementById("folderSearch");
     const sorter = document.getElementById("fileSort");
+    const duplicateFilter = document.getElementById("duplicateFilter");
+    const duplicateStatus = document.getElementById("duplicateStatus");
+    const duplicateReports = new Map();
+    const categoryExtensions = {
+      pictures: new Set([".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".svg", ".ico", ".tiff", ".tif"]),
+      videos: new Set([".mp4", ".mkv", ".avi", ".mov", ".flv", ".wmv", ".webm", ".m4v", ".mpg", ".mpeg"]),
+      documents: new Set([".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt", ".rtf", ".odt", ".ods", ".odp"])
+    };
+    let duplicateRequest = 0;
+    let duplicatePaths = null;
+    let duplicateScanSummary = "";
+    let duplicateViewActive = false;
     let entries = [];
     let initialFolder = true;
     let folderLoaded = false;
@@ -682,6 +701,7 @@
         entries = items;
         folderLoaded = true;
         applyFileFilters();
+        if (duplicateFilter.value !== "all") await applyDuplicateMode();
         if (previewPath) {
           const candidate = items.find(item => !item.isDirectory && pathKey(item.path) === pathKey(previewPath));
           if (candidate) onItemClick(candidate);
@@ -739,6 +759,7 @@
         entries = items;
         folderLoaded = true;
         applyFileFilters();
+        if (duplicateFilter.value !== "all") await applyDuplicateMode();
       } catch (err) {
         console.error(err);
         if (request !== fileRequest) return;
@@ -752,8 +773,10 @@
       const query = folderSearch.value.trim().toLowerCase();
       const matching = entries.filter(item => {
         if (query && !item.name.toLowerCase().includes(query)) return false;
+        if (duplicatePaths && (item.isDirectory || !duplicatePaths.has(pathKey(item.path)))) return false;
         if (currentFilter === "pdfs") return item.extension?.toLowerCase() === ".pdf";
         if (currentFilter === "notes") return [".txt", ".md", ".rtf"].includes(item.extension?.toLowerCase());
+        if (categoryExtensions[currentFilter] && !categoryExtensions[currentFilter].has(item.extension?.toLowerCase())) return false;
         return true;
       });
       const compare = (a, b) => {
@@ -767,7 +790,13 @@
       matching.sort(compare);
       renderItems(matching);
       const empty = document.getElementById("emptyMsg");
-      empty.textContent = globalSearchQuery !== null ? "No files or folders matched this search." :
+      empty.textContent = duplicatePaths && duplicateScanSummary
+        ? (duplicateViewActive
+          ? ""
+          : `No files in this view match the selected duplicate evidence. The count above covers ${globalSearchQuery !== null ? "all scanned roots." : "the entire scanned root."}`)
+        : duplicateViewActive ? "No duplicate files found in the selected root."
+        : duplicatePaths ? "Could not apply the duplicate filter. See the status above." :
+        globalSearchQuery !== null ? "No files or folders matched this search." :
         query || currentFilter ? "No matching files in this scope." : "This folder is empty.";
       empty.style.display = matching.length ? "none" : "block";
     }
@@ -785,6 +814,72 @@
       loadGlobalSearch(query);
     });
     sorter.addEventListener("change", applyFileFilters);
+
+    async function applyDuplicateMode() {
+      const request = ++duplicateRequest;
+      const mode = duplicateFilter.value;
+      duplicatePaths = null;
+      duplicateScanSummary = "";
+      duplicateViewActive = mode !== "all";
+      duplicateStatus.textContent = "";
+      if (mode === "all") {
+        duplicateViewActive = false;
+        if (globalSearchQuery !== null) await loadGlobalSearch(globalSearchQuery);
+        else await loadFolder(currentPath);
+        return;
+      }
+      const scopedRoots = currentRoot ? availableRoots.filter(root => pathKey(root.path) === pathKey(currentRoot)) : availableRoots;
+      if (!scopedRoots.length) { duplicateStatus.textContent = "Choose a drive first."; applyFileFilters(); return; }
+      try {
+        const reports = await Promise.all(scopedRoots.map(async root => {
+          if (duplicateReports.has(root.name)) return duplicateReports.get(root.name);
+          const response = await fetch("/api/duplicates?" + new URLSearchParams({ rootName: root.name }), { credentials: "include" });
+          if (!response.ok) throw new Error((await response.json().catch(() => null))?.error || "Duplicate scan failed.");
+          const report = await response.json();
+          duplicateReports.set(root.name, report);
+          return report;
+        }));
+        if (request !== duplicateRequest) return;
+        const confirmed = new Set(reports.flatMap(report => report.exactContent.flatMap(group => group.files.map(file => pathKey(file.path)))));
+        const candidates = new Set(reports.flatMap(report => report.similarNames.flatMap(group => group.files.map(file => pathKey(file.path))))
+          .filter(path => !confirmed.has(path)));
+        duplicatePaths = mode === "confirmed" ? confirmed : candidates;
+        duplicateScanSummary = "";
+        duplicateStatus.textContent = "";
+        const duplicateItems = new Map();
+        const sourceItems = mode === "confirmed"
+          ? reports.flatMap(report => report.exactContent.flatMap(group => group.files))
+          : reports.flatMap(report => report.similarNames.flatMap(group => group.files));
+        sourceItems.forEach(file => {
+          const key = pathKey(file.path);
+          if (!duplicatePaths.has(key) || duplicateItems.has(key)) return;
+          duplicateItems.set(key, {
+            name: file.name,
+            path: file.path,
+            size: file.size,
+            extension: file.name.includes(".") ? "." + file.name.split(".").pop().toLowerCase() : "",
+            isDirectory: false
+          });
+        });
+        entries = Array.from(duplicateItems.values()).sort((a, b) =>
+          a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) || a.path.localeCompare(b.path));
+        folderLoaded = true;
+        duplicateStatus.textContent = "";
+        const partial = reports.some(report => report.truncated);
+        const matchType = mode === "confirmed" ? "confirmed duplicate files" : "candidate files";
+        const rootScope = scopedRoots.length === 1 ? "the scanned root" : "the scanned roots";
+        duplicateScanSummary = `${duplicatePaths.size} ${matchType} across ${rootScope}` +
+          (partial ? " — scan capped; results may be incomplete" : "");
+        applyFileFilters();
+      } catch (error) {
+        if (request !== duplicateRequest) return;
+        duplicatePaths = new Set();
+        duplicateScanSummary = "";
+        duplicateStatus.textContent = error.message;
+        applyFileFilters();
+      }
+    }
+    duplicateFilter.addEventListener("change", applyDuplicateMode);
 
     function renderItems(items) {
       const fragment = document.createDocumentFragment();
@@ -844,7 +939,7 @@
         meta.appendChild(left);
         meta.appendChild(right);
         infoContainer.appendChild(name);
-        if (globalSearchQuery !== null) {
+        if (globalSearchQuery !== null || duplicateViewActive) {
           const location = document.createElement("div");
           location.className = "item-location";
           location.textContent = locationForItem(item);
@@ -1230,6 +1325,10 @@
         }
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || "Could not delete the selection.");
+        if (result.deleted.length) {
+          duplicateReports.clear();
+          duplicatePaths = null;
+        }
 
         if (result.deleted.length) closePreview?.();
         if (viewAtStart === fileRequest) {
@@ -1239,7 +1338,8 @@
             await filterByCategory("notes");
           } else if (currentFilter) await filterByCategory(currentFilter);
           else await loadFolder(currentPath);
-        }
+        } else if (result.deleted.length && duplicateFilter.value !== "all")
+          await applyDuplicateMode();
         const count = result.deleted.length;
         const failures = result.failures.length;
         const firstFailure = result.failures[0];
@@ -1341,6 +1441,8 @@
           throw new Error("HTTP " + res.status + " – " + text);
         }
         await res.json();
+        duplicateReports.clear();
+        duplicatePaths = null;
         const base = targetPath.replace(/[/\\]+$/, "");
         for (const file of [...files].slice(-15)) {
           const relative = (file.webkitRelativePath || file.name).split("/");
@@ -1348,6 +1450,7 @@
           FileNest.activity(accountUser, "uploads", { folder, path: folder.replace(/[/\\]+$/, "") + "\\" + file.name });
         }
         if (currentPath === targetPath) await loadFolder(targetPath);
+        else if (duplicateFilter.value !== "all") await applyDuplicateMode();
         document.getElementById("uploadStatus").textContent = "Upload complete.";
       } catch (err) {
         console.error(err);
@@ -1435,6 +1538,7 @@
         currentFilter = category;
         document.getElementById("currentPathLabel").textContent = "Notes directly in the current folder";
         applyFileFilters();
+        if (duplicateFilter.value !== "all") await applyDuplicateMode();
         return;
       }
 
@@ -1470,6 +1574,7 @@
         entries = items;
         folderLoaded = true;
         applyFileFilters();
+        if (duplicateFilter.value !== "all") await applyDuplicateMode();
       } catch (err) {
         console.error(err);
         if (request !== fileRequest) return;

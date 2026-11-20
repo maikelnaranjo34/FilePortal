@@ -32,9 +32,17 @@ test('FileNest browser regression', { timeout: 120_000, skip: process.platform !
   const data = path.join(temp, 'data');
   const projects = path.join(files, 'Projects');
   mkdirSync(projects, { recursive: true });
+  mkdirSync(path.join(projects, 'Archive'), { recursive: true });
   mkdirSync(data, { recursive: true });
   writeFileSync(path.join(projects, 'Alpha report.txt'), 'alpha');
+  writeFileSync(path.join(projects, 'Alpha report copy.txt'), 'alpha');
   writeFileSync(path.join(projects, 'Release Notes.txt'), 'release');
+  writeFileSync(path.join(projects, 'Beta file.txt'), 'other');
+  writeFileSync(path.join(projects, 'Beta file copy.txt'), 'those');
+  writeFileSync(path.join(projects, 'Archive', 'Unique note.txt'), 'unique');
+  writeFileSync(path.join(projects, 'clip.mp4'), 'same-video-content');
+  writeFileSync(path.join(projects, 'Archive', 'clip copy.mp4'), 'same-video-content');
+  writeFileSync(path.join(projects, 'solo.mp4'), 'unique-video-content');
 
   const publishResult = spawnSync('dotnet', [
     'publish', 'FilePortal.csproj', '-c', 'Release', '-o', publish, '--nologo'
@@ -234,6 +242,26 @@ test('FileNest browser regression', { timeout: 120_000, skip: process.platform !
     assert.equal(await evaluate('getComputedStyle(document.querySelector("#mainApp")).display'), 'grid');
     assert.equal(await evaluate('getComputedStyle(document.querySelector("#driveSidebar")).display'), 'none');
     assert.equal(await evaluate('getComputedStyle(document.querySelector("#rootsToggle")).display !== "none"'), true);
+    assert.equal(await evaluate('document.querySelector("#duplicateFilter").options.length'), 3);
+    await evaluate('document.querySelector("#folderSearch").value=""; document.querySelector("#folderSearch").dispatchEvent(new Event("input")); true');
+    await until('document.querySelectorAll("#items .item-name").length === 8', 'File Manager did not show all duplicate test files');
+    await evaluate('document.querySelector("#duplicateFilter").value="confirmed"; document.querySelector("#duplicateFilter").dispatchEvent(new Event("change")); true');
+    await until('[...document.querySelectorAll("#items .item-name")].map(item=>item.textContent).sort().join("|")==="Alpha report copy.txt|Alpha report.txt|clip copy.mp4|clip.mp4"', 'Confirmed duplicate filter did not match identical files');
+    await evaluate('document.querySelector("#duplicateFilter").value="candidates"; document.querySelector("#duplicateFilter").dispatchEvent(new Event("change")); true');
+    await until('[...document.querySelectorAll("#items .item-name")].map(item=>item.textContent).sort().join("|")==="Beta file copy.txt|Beta file.txt"', 'Candidate filter did not match same-name, same-size files');
+    await evaluate('filterByCategory("videos")');
+    await evaluate('document.querySelector("#duplicateFilter").value="confirmed"; document.querySelector("#duplicateFilter").dispatchEvent(new Event("change")); true');
+    await until('[...document.querySelectorAll("#items .item-name")].map(item=>item.textContent).sort().join("|")==="clip copy.mp4|clip.mp4"', 'Duplicate filter showed non-duplicates or omitted nested video duplicates');
+
+    await navigate('/gallery.html#photos');
+    await until('document.querySelector("#galleryDuplicateFilter") && document.querySelector("#main")', 'Gallery duplicate filter did not load');
+    assert.equal(await evaluate('document.querySelector("#galleryDuplicateFilter").options.length'), 3);
+
+    await navigate('/files.html?path=' + encodeURIComponent(path.join(projects, 'Archive')));
+    await until('document.querySelector("#folderSearch") && [...document.querySelectorAll("#items .item-name")].some(item=>item.textContent==="Unique note.txt")', 'Nested folder did not load');
+    await evaluate('document.querySelector("#duplicateFilter").value="candidates"; document.querySelector("#duplicateFilter").dispatchEvent(new Event("change")); true');
+    assert.equal(await evaluate('document.querySelector("#duplicateStatus").textContent'), '');
+    await until('[...document.querySelectorAll("#items .item-name")].some(item=>item.textContent==="Beta file.txt")', 'Duplicate candidates from the selected root did not load');
 
     await navigate('/users.html');
     await until('document.querySelector("[data-edit-user=administrator]")', 'Settings user editor did not load');

@@ -12,7 +12,8 @@ public sealed class DuplicateFinderService(FileBrowserService browser)
 
     public sealed record DuplicateItem(string Name, string Path, long Size, DateTime LastModified);
     public sealed record ExactGroup(string Sha256, long Size, long ReclaimableBytes, IReadOnlyList<DuplicateItem> Files);
-    public sealed record NameGroup(string NormalizedName, IReadOnlyList<DuplicateItem> Files);
+    public sealed record NameGroup(string NormalizedName, long Size, IReadOnlyList<DuplicateItem> Files);
+    public sealed record Analysis(IReadOnlyList<ExactGroup> ExactContent, IReadOnlyList<NameGroup> SimilarNames);
     public sealed record Report(string RootName, string RootPath, int FilesScanned, bool Truncated,
         IReadOnlyList<ExactGroup> ExactContent, IReadOnlyList<NameGroup> SimilarNames);
 
@@ -28,6 +29,13 @@ public sealed class DuplicateFinderService(FileBrowserService browser)
         var files = EnumerateFiles(rootPath, roots, maximumFiles + 1, cancellationToken);
         var truncated = files.Count > maximumFiles;
         if (truncated) files.RemoveRange(maximumFiles, files.Count - maximumFiles);
+        var analysis = await AnalyzeAsync(files, cancellationToken);
+        return new Report(root.Name, rootPath, files.Count, truncated, analysis.ExactContent, analysis.SimilarNames);
+    }
+
+    public async Task<Analysis> AnalyzeAsync(IEnumerable<FileInfo> sourceFiles, CancellationToken cancellationToken)
+    {
+        var files = sourceFiles.Where(file => file.Exists).DistinctBy(file => file.FullName, FileBrowserService.PathComparer).ToList();
         var items = files.ToDictionary(file => file.FullName, ToItem, FileBrowserService.PathComparer);
 
         var exact = new List<ExactGroup>();
@@ -54,15 +62,14 @@ public sealed class DuplicateFinderService(FileBrowserService browser)
                 group.Value.Select(file => items[file.FullName]).ToList())));
         }
 
-        var names = files.GroupBy(file => NormalizeName(file.Name), StringComparer.OrdinalIgnoreCase)
+        var names = files.GroupBy(file => (Name: NormalizeName(file.Name), file.Length))
             .Where(group => group.Count() > 1)
-            .Select(group => new NameGroup(group.Key, group.Select(file => items[file.FullName]).ToList()))
+            .Select(group => new NameGroup(group.Key.Name, group.Key.Length, group.Select(file => items[file.FullName]).ToList()))
             .OrderByDescending(group => group.Files.Count)
             .ThenBy(group => group.NormalizedName, StringComparer.OrdinalIgnoreCase)
             .Take(100)
             .ToList();
-        return new Report(root.Name, rootPath, files.Count, truncated,
-            exact.OrderByDescending(group => group.ReclaimableBytes).ToList(), names);
+        return new Analysis(exact.OrderByDescending(group => group.ReclaimableBytes).ToList(), names);
     }
 
     private List<FileInfo> EnumerateFiles(string rootPath, IReadOnlyList<RootItem> roots, int maximumFiles,

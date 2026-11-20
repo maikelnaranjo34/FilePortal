@@ -186,6 +186,7 @@ test('FilePortal release integration', { timeout: 90_000 }, async t => {
     await request('/api/files/roots', 401);
     await request('/api/files/search?q=note', 401);
     await request('/api/photos/timeline', 401);
+    await request('/api/photos/duplicates', 401);
     await request('/api/albums', 401);
     await request('/api/search', 401);
     const admin = await login('administrator');
@@ -221,12 +222,12 @@ test('FilePortal release integration', { timeout: 90_000 }, async t => {
     assert.equal(assistantStatus.available, false);
     await request('/api/ai/chat', 503, legacy, json({ message: 'Hello' }));
     await request('/api/ai/voice/tokens', 503, legacy);
-    const duplicateReport = await (await request('/api/ai/duplicates?rootName=Assigned', 200, legacy)).json();
+    const duplicateReport = await (await request('/api/duplicates?rootName=Assigned', 200, legacy)).json();
     assert.equal(duplicateReport.rootName, 'Assigned');
     assert.ok(duplicateReport.exactContent.some(group => group.files.some(file => file.name === 'note.txt') &&
       group.files.some(file => file.name === 'note copy.txt')));
     assert.ok(duplicateReport.similarNames.some(group => group.normalizedName === 'note.txt'));
-    await request('/api/ai/duplicates?rootName=OtherMirror', 400, legacy);
+    await request('/api/duplicates?rootName=OtherMirror', 400, legacy);
     assert.deepEqual((await (await request('/api/files/search?q=NoTe.TxT', 200, legacy)).json())
       .map(item => item.path), [text]);
     assert.deepEqual(await (await request('/api/files/search?q=other.txt', 200, legacy)).json(), []);
@@ -277,6 +278,11 @@ test('FilePortal release integration', { timeout: 90_000 }, async t => {
       ['Alpha report.txt', 'Zeta report.txt', 'note copy.txt', 'note.txt']);
 
     await request('/api/photos/scan', 200, admin, { method: 'POST' });
+    const mediaDuplicates = await (await request('/api/photos/duplicates', 200, legacy)).json();
+    assert.ok(Array.isArray(mediaDuplicates.confirmedIds));
+    assert.ok(Array.isArray(mediaDuplicates.candidateIds));
+    assert.equal(typeof mediaDuplicates.filesScanned, 'number');
+    assert.equal(typeof mediaDuplicates.truncated, 'boolean');
     const bundledSearch = await request('/api/search?q=AppInterface.png', 200, admin);
     assert.equal((await bundledSearch.json()).total, 0);
     assert.equal(existsSync(bundledImage), true);

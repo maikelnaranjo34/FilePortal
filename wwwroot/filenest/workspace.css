@@ -16,6 +16,7 @@
 .fn-gallery .topbar { padding:7px clamp(11px,3vw,34px); min-height:54px; }
 .fn-gallery .brand { min-width:125px; }
 .fn-gallery .search { max-width:560px; }
+.fn-gallery #galleryDuplicateFilter { min-height:40px; max-width:210px; padding:7px 9px; border:1px solid var(--fn-line); border-radius:9px; color:var(--fn-ink); background:var(--fn-surface); font:inherit; }
 .fn-gallery .body { grid-template-columns:minmax(0,1fr); grid-template-rows:auto minmax(0,1fr); }
 .fn-gallery .body > .nav { display:flex; flex-direction:row; flex-wrap:wrap; border:0; border-bottom:1px solid var(--fn-line); padding:4px clamp(8px,3vw,34px); }
 .fn-gallery .body > .nav a { justify-content:center; min-height:40px; }
@@ -96,6 +97,7 @@
   .fn-gallery .topbar { min-height:46px; gap:4px; padding:3px 8px; }
   .fn-gallery .topbar .brand,.fn-gallery .topbar .spacer { display:none; }
   .fn-gallery .topbar .search { flex:1 1 0; order:0; min-width:0; max-width:none; }
+  .fn-gallery #galleryDuplicateFilter { order:1; max-width:150px; min-width:118px; font-size:.78rem; }
   .fn-gallery .body > .nav { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:3px; padding:3px 6px; }
   .fn-gallery .body > .nav a { padding:3px; font-size:.79rem; min-height:44px; }
   .fn-gallery .body > .nav a span { display:none; }

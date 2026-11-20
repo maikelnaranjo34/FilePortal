@@ -15,6 +15,8 @@
     deleting: false,
     lb: { index: -1, slideshow: null, infoOpen: false },
     albumsCache: null,
+    duplicateMode: "all",
+    duplicateEvidence: null,
   };
 
   const main = document.getElementById("main");
@@ -43,6 +45,19 @@
     return n.toFixed(n < 10 && i > 0 ? 1 : 0) + " " + u[i];
   }
   function fmtDate(d) { try { return new Date(d).toLocaleString(); } catch { return d; } }
+  async function ensureDuplicateEvidence() {
+    if (!state.duplicateEvidence) {
+      state.duplicateEvidence = await apiJson("/api/photos/duplicates");
+      if (state.duplicateEvidence.truncated)
+        toast(`Duplicate scan checked ${state.duplicateEvidence.filesScanned} media files; results may be incomplete.`, 6500);
+    }
+    return state.duplicateEvidence;
+  }
+  function filterDuplicateItems(items) {
+    if (state.duplicateMode === "all" || !state.duplicateEvidence) return items;
+    const ids = new Set(state.duplicateMode === "confirmed" ? state.duplicateEvidence.confirmedIds : state.duplicateEvidence.candidateIds);
+    return items.filter(item => ids.has(item.id));
+  }
   let toastTimer;
   function toast(msg, duration = 2600) {
     toastEl.textContent = msg; toastEl.classList.add("show");
@@ -107,6 +122,21 @@
       event.preventDefault();
       setView(a.dataset.view);
     }));
+
+  const galleryDuplicateFilter = document.getElementById("galleryDuplicateFilter");
+  galleryDuplicateFilter.addEventListener("change", async () => {
+    state.duplicateMode = galleryDuplicateFilter.value;
+    try {
+      if (state.duplicateMode !== "all") {
+        toast("Checking file size and content…", 8000);
+        await ensureDuplicateEvidence();
+      }
+      setView(state.view);
+    } catch (error) {
+      galleryDuplicateFilter.value = state.duplicateMode = "all";
+      toast("Duplicate filter failed: " + error.message, 5000);
+    }
+  });
 
   // ---------- selection ----------
   const galleryRange = new RangeSelection();
@@ -300,6 +330,8 @@
       }
 
       for (const sec of data.sections) {
+        const visiblePhotos = filterDuplicateItems(sec.photos);
+        if (!visiblePhotos.length) continue;
         // merge into last section if same day already rendered
         let secEl = container.querySelector(`.section[data-key="${sec.key}"]`);
         let grid;
@@ -311,11 +343,13 @@
         } else {
           grid = secEl.querySelector(".grid");
         }
-        for (const p of sec.photos) {
+        for (const p of visiblePhotos) {
           state.flat.push(p);
           grid.appendChild(makeTile(p));
         }
       }
+      if (!t.hasMore && !state.flat.length && !container.querySelector(".empty"))
+        container.appendChild(el("div", "empty", "No media in this tab matches the selected duplicate evidence."));
     } catch (e) {
       if (sp) sp.remove();
       if (e.message !== "unauth") toast("Error: " + e.message);
@@ -343,11 +377,19 @@
 
     const sp = el("div", "spinner"); main.appendChild(sp);
     try {
-      const albums = await apiJson("/api/albums");
+      const allAlbums = await apiJson("/api/albums");
       if (!sp.isConnected) return;
-      state.albumsCache = albums;
+      state.albumsCache = allAlbums;
+      let albums = allAlbums;
+      if (state.duplicateMode !== "all") {
+        await ensureDuplicateEvidence();
+        const evidenceIds = new Set(state.duplicateMode === "confirmed" ? state.duplicateEvidence.confirmedIds : state.duplicateEvidence.candidateIds);
+        const details = await Promise.all(allAlbums.map(album => apiJson("/api/albums/" + encodeURIComponent(album.id))));
+        const matchingIds = new Set(details.filter(album => album.photos.some(photo => evidenceIds.has(photo.id))).map(album => album.id));
+        albums = allAlbums.filter(album => matchingIds.has(album.id));
+      }
       sp.remove();
-      if (!albums.length) { main.appendChild(el("div", "empty", "No albums yet. Create one to get started.")); return; }
+      if (!albums.length) { main.appendChild(el("div", "empty", state.duplicateMode === "all" ? "No albums yet. Create one to get started." : "No albums contain media matching this duplicate evidence.")); return; }
       const grid = el("div", "albumgrid");
       for (const a of albums) {
         const card = el("div", "albumcard");
@@ -392,10 +434,11 @@
       main.appendChild(head);
       main.appendChild(selectionBar());
 
-      state.flat = a.photos.map(p => ({ id: p.id, fileName: p.fileName, isVideo: p.isVideo }));
-      if (!a.photos.length) { main.appendChild(el("div", "empty", "This album is empty. Add photos from the Photos tab.")); return; }
+      const visiblePhotos = filterDuplicateItems(a.photos);
+      state.flat = visiblePhotos.map(p => ({ id: p.id, fileName: p.fileName, isVideo: p.isVideo }));
+      if (!visiblePhotos.length) { main.appendChild(el("div", "empty", state.duplicateMode === "all" ? "This album is empty. Add photos from the Photos tab." : "This album has no media matching the selected duplicate evidence.")); return; }
       const grid = el("div", "grid");
-      for (const p of a.photos) grid.appendChild(makeTile(p));
+      for (const p of visiblePhotos) grid.appendChild(makeTile(p));
       main.appendChild(grid);
     } catch (e) { sp.remove(); if (e.message !== "unauth") toast("Error: " + e.message); }
   }
@@ -525,11 +568,12 @@
         const data = await apiJson("/api/search?" + params.toString());
         if (request !== latestSearch || !results.isConnected) return;
         sp.remove();
-        results.innerHTML = `<div class="sub" style="margin-bottom:10px">${data.total} result(s)</div>`;
-        state.flat = data.results;
-        if (!data.results.length) { results.appendChild(el("div", "empty", "No matches.")); return; }
+        const visibleResults = filterDuplicateItems(data.results);
+        results.innerHTML = `<div class="sub" style="margin-bottom:10px">${visibleResults.length} matching result(s)</div>`;
+        state.flat = visibleResults;
+        if (!visibleResults.length) { results.appendChild(el("div", "empty", "No matches for the current search and duplicate filter.")); return; }
         const grid = el("div", "grid");
-        data.results.forEach(p => grid.appendChild(makeTile(p)));
+        visibleResults.forEach(p => grid.appendChild(makeTile(p)));
         results.appendChild(grid);
       } catch (e) { sp.remove(); toast("Error: " + e.message); }
     };
@@ -596,6 +640,7 @@
     try {
       const result = await apiJson("/api/photos/batch/delete", { method: "POST",
         headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }) });
+      if (result.deletedIds?.length) state.duplicateEvidence = null;
       const deleted = new Set(result.deletedIds);
       if (deleted.has(state.flat[state.lb.index]?.id)) closeLightbox();
       state.flat = state.flat.filter(photo => !deleted.has(photo.id));
@@ -613,6 +658,7 @@
       const failures = result.errors.length;
       toast(result.deleted + (result.deleted === 1 ? " file deleted." : " files deleted.") +
         (failures ? " " + failures + " could not be deleted. " + result.errors[0] : ""), failures ? 6500 : 2600);
+      if (deleted.size && state.duplicateMode !== "all") setView(state.view);
     } catch (error) {
       if (error.message !== "unauth") toast(error.message);
     } finally {
@@ -821,8 +867,10 @@
         document.getElementById("modal").classList.contains("show"))
       return;
 
-    if (state.view === "photos" || state.view === "favorites" || state.view === "videos")
+    if (state.view === "photos" || state.view === "favorites" || state.view === "videos") {
+      if (state.duplicateMode !== "all") state.duplicateEvidence = null;
       setView(state.view);
+    }
   }
 
   document.addEventListener("visibilitychange", () => {
@@ -842,6 +890,7 @@
     }
     document.getElementById("scanBtn").onclick = async () => {
       toast("Scanning library…");
+      state.duplicateEvidence = null;
       try { const r = await apiJson("/api/photos/scan", { method: "POST" }); toast("Found " + r.count + " media files"); setView(state.view); }
       catch (e) { toast("Error: " + e.message); }
     };

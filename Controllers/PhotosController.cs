@@ -16,15 +16,17 @@ namespace FilePortal.Controllers
         private readonly ThumbnailService _thumbnails;
         private readonly FileArchiveService _archives;
         private readonly FileBrowserService _browser;
+        private readonly DuplicateFinderService _duplicates;
 
         public PhotosController(PhotoLibraryService library, FavoriteStoreService favorites, ThumbnailService thumbnails,
-            FileArchiveService archives, FileBrowserService browser)
+            FileArchiveService archives, FileBrowserService browser, DuplicateFinderService duplicates)
         {
             _library = library;
             _favorites = favorites;
             _thumbnails = thumbnails;
             _archives = archives;
             _browser = browser;
+            _duplicates = duplicates;
         }
 
         private string CurrentUser => User.Identity?.Name ?? string.Empty;
@@ -97,6 +99,37 @@ namespace FilePortal.Controllers
                 returned = page.Count,
                 hasMore = skip + page.Count < total,
                 sections
+            });
+        }
+
+        [HttpGet("duplicates")]
+        public async Task<IActionResult> GetDuplicates(CancellationToken cancellationToken)
+        {
+            const int maximumFiles = 5_000;
+            var photos = _library.GetVisiblePhotos(CurrentUser)
+                .Where(photo => System.IO.File.Exists(photo.FullPath))
+                .Take(maximumFiles + 1)
+                .ToList();
+            var truncated = photos.Count > maximumFiles;
+            if (truncated)
+                photos.RemoveRange(maximumFiles, photos.Count - maximumFiles);
+
+            var idsByPath = photos.GroupBy(photo => photo.FullPath, FileBrowserService.PathComparer)
+                .ToDictionary(group => group.Key, group => group.First().Id, FileBrowserService.PathComparer);
+            var analysis = await _duplicates.AnalyzeAsync(photos.Select(photo => new FileInfo(photo.FullPath)), cancellationToken);
+            var confirmedIds = analysis.ExactContent.SelectMany(group => group.Files)
+                .Select(file => idsByPath.GetValueOrDefault(file.Path)).Where(id => id is not null).Cast<string>().Distinct().ToHashSet();
+            var candidateIds = analysis.SimilarNames.SelectMany(group => group.Files)
+                .Select(file => idsByPath.GetValueOrDefault(file.Path)).Where(id => id is not null).Cast<string>()
+                .Where(id => !confirmedIds.Contains(id)).Distinct().ToList();
+            return Ok(new
+            {
+                confirmedIds,
+                candidateIds,
+                confirmedGroups = analysis.ExactContent.Count,
+                candidateGroups = analysis.SimilarNames.Count,
+                filesScanned = photos.Count,
+                truncated
             });
         }
 

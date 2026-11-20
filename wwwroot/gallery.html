@@ -182,6 +182,12 @@ a{color:inherit;text-decoration:none}
       <span class="icon">🔍</span>
       <input id="globalSearch" aria-label="Search media by name, camera, or folder" placeholder="Search by name, camera, folder…" />
     </div>
+    <label for="galleryDuplicateFilter" class="fn-visually-hidden">Duplicate filter</label>
+    <select id="galleryDuplicateFilter" aria-label="Duplicate filter">
+      <option value="all">All media</option>
+      <option value="confirmed">Confirmed duplicates</option>
+      <option value="candidates">Name + size candidates</option>
+    </select>
     <div class="spacer"></div>
     <button class="iconbtn" id="scanBtn" title="Rescan library" aria-label="Rescan media library" style="display:none">🔄</button>
   </div>

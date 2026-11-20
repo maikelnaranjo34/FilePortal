@@ -13,7 +13,7 @@ namespace FilePortal.Controllers;
 [Authorize]
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
 public sealed class AiAssistantController(AiSettingsService settingsStore, IHttpClientFactory clients,
-    AuthorizedFileSearchService fileSearch, DuplicateFinderService duplicateFinder, FileBrowserService fileBrowser) : ControllerBase
+    AuthorizedFileSearchService fileSearch, FileBrowserService fileBrowser) : ControllerBase
 {
     public sealed class Message
     {
@@ -78,20 +78,6 @@ public sealed class AiAssistantController(AiSettingsService settingsStore, IHttp
                         type = "object",
                         properties = new { query = new { type = "string", description = "A file or folder name, or part of one." } },
                         required = new[] { "query" },
-                        additionalProperties = false
-                    },
-                    strict = true
-                },
-                new
-                {
-                    type = "function",
-                    name = "find_duplicates",
-                    description = "Find exact content duplicates and similar filenames inside one FilePortal root available to the signed-in user. This is read-only and never deletes files.",
-                    parameters = new
-                    {
-                        type = "object",
-                        properties = new { rootName = new { type = "string", description = "The exact display name of an available FilePortal root." } },
-                        required = new[] { "rootName" },
                         additionalProperties = false
                     },
                     strict = true
@@ -239,27 +225,6 @@ public sealed class AiAssistantController(AiSettingsService settingsStore, IHttp
         }
     }
 
-    [HttpGet("duplicates")]
-    public async Task<IActionResult> Duplicates([FromQuery] string? rootName, CancellationToken cancellationToken)
-    {
-        rootName = rootName?.Trim();
-        if (string.IsNullOrEmpty(rootName) || rootName.Length > 200)
-            return BadRequest(new { error = "Choose an available root name." });
-        var user = (UserRecord)HttpContext.Items[typeof(UserRecord)]!;
-        try
-        {
-            return Ok(await duplicateFinder.FindAsync(user, rootName, 5_000, cancellationToken));
-        }
-        catch (KeyNotFoundException exception)
-        {
-            return BadRequest(new { error = exception.Message });
-        }
-        catch (DirectoryNotFoundException exception)
-        {
-            return NotFound(new { error = exception.Message });
-        }
-    }
-
     private async Task<string> MintAssemblyToken(string url, string key, CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
@@ -299,14 +264,6 @@ public sealed class AiAssistantController(AiSettingsService settingsStore, IHttp
                     .Select(item => new { item.Name, item.Path, item.IsDirectory, item.Size, item.LastModified })
                     .ToList();
                 return JsonSerializer.Serialize(new { query, count = results.Count, results });
-            }
-            if (call.Name == "find_duplicates")
-            {
-                var rootName = arguments.RootElement.GetProperty("rootName").GetString()?.Trim();
-                if (string.IsNullOrEmpty(rootName) || rootName.Length > 200)
-                    return JsonSerializer.Serialize(new { error = "Choose a valid root name." });
-                var report = await duplicateFinder.FindAsync(user, rootName, 5_000, cancellationToken);
-                return JsonSerializer.Serialize(report);
             }
             if (call.Name == "list_roots")
                 return JsonSerializer.Serialize(new { roots = roots.Select(root => new { root.Name, root.Path }) });
