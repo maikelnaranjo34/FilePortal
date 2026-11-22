@@ -47,7 +47,6 @@
   let requestingMicrophone = false;
   let nestiNavigation = false;
   let processingTurn = false;
-  let movedDuringPointer = false;
   let activeTtsSocket;
   let playbackContext;
   let playbackTimer;
@@ -400,44 +399,93 @@
       checkAvailability().then(() => available && input.focus());
     }
   }
-  floatOpen?.addEventListener("click", () => { if (!movedDuringPointer) openAssistant(); });
-
-  function moveCompanion() {
-    if (!companion || matchMedia("(prefers-reduced-motion: reduce)").matches || companion.classList.contains("dragging")) return;
-    const margin = 12;
-    const width = companion.offsetWidth;
-    const height = companion.offsetHeight;
-    companion.style.left = Math.round(margin + Math.random() * Math.max(0, innerWidth - width - margin * 2)) + "px";
-    companion.style.top = Math.round(Math.max(72, margin + Math.random() * Math.max(0, innerHeight - height - margin * 2))) + "px";
-    companion.classList.remove("user-positioned");
-  }
   if (companion && floatOpen) {
-    let pointerId;
-    let offsetX = 0;
-    let offsetY = 0;
+    const positionKey = "filenest:nesti-position";
+    let savedPosition;
+    let drag;
+    let suppressPointerClick = false;
+    try {
+      const stored = JSON.parse(localStorage.getItem(positionKey));
+      if (Number.isFinite(stored?.x) && Number.isFinite(stored?.y)) savedPosition = stored;
+    } catch {}
+
+    function placeCompanion(x, y) {
+      const maxX = Math.max(0, document.documentElement.clientWidth - companion.offsetWidth);
+      const maxY = Math.max(0, innerHeight - companion.offsetHeight);
+      const position = {
+        x: Math.max(0, Math.min(maxX, x)),
+        y: Math.max(0, Math.min(maxY, y))
+      };
+      companion.style.left = position.x + "px";
+      companion.style.top = position.y + "px";
+      return position;
+    }
+
+    if (savedPosition) {
+      companion.classList.add("user-positioned");
+      placeCompanion(savedPosition.x, savedPosition.y);
+    }
+
+    addEventListener("resize", () => {
+      if (drag) return;
+      if (savedPosition) {
+        placeCompanion(savedPosition.x, savedPosition.y);
+      } else if (companion.style.left) {
+        const box = companion.getBoundingClientRect();
+        placeCompanion(box.left, box.top);
+      }
+    });
+
+    floatOpen.addEventListener("click", event => {
+      if (suppressPointerClick && event.detail !== 0) {
+        suppressPointerClick = false;
+        return;
+      }
+      openAssistant();
+    });
+    floatOpen.addEventListener("dragstart", event => event.preventDefault());
     floatOpen.addEventListener("pointerdown", event => {
-      pointerId = event.pointerId;
-      movedDuringPointer = false;
+      if (drag || !event.isPrimary || event.button !== 0) return;
+      suppressPointerClick = false;
       const box = companion.getBoundingClientRect();
-      offsetX = event.clientX - box.left;
-      offsetY = event.clientY - box.top;
-      companion.classList.add("dragging");
-      floatOpen.setPointerCapture(pointerId);
+      drag = {
+        id: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        offsetX: event.clientX - box.left,
+        offsetY: event.clientY - box.top
+      };
+      floatOpen.setPointerCapture(event.pointerId);
     });
     floatOpen.addEventListener("pointermove", event => {
-      if (event.pointerId !== pointerId || !floatOpen.hasPointerCapture(pointerId)) return;
-      movedDuringPointer = true;
-      companion.style.left = Math.max(0, Math.min(innerWidth - companion.offsetWidth, event.clientX - offsetX)) + "px";
-      companion.style.top = Math.max(0, Math.min(innerHeight - companion.offsetHeight, event.clientY - offsetY)) + "px";
+      if (event.pointerId !== drag?.id) return;
+      if (!drag.position && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 5) return;
+      companion.classList.add("dragging");
+      drag.position = placeCompanion(event.clientX - drag.offsetX, event.clientY - drag.offsetY);
     });
-    const release = event => {
-      if (event.pointerId !== pointerId) return;
+
+    function finishDrag(event) {
+      if (event.pointerId !== drag?.id) return;
+      if (drag.position) {
+        suppressPointerClick = true;
+        savedPosition = drag.position;
+        companion.classList.add("user-positioned");
+        try { localStorage.setItem(positionKey, JSON.stringify(savedPosition)); } catch {}
+      }
+      drag = undefined;
       companion.classList.remove("dragging");
-      companion.classList.add("user-positioned");
-      pointerId = undefined;
-    };
-    floatOpen.addEventListener("pointerup", release);
-    floatOpen.addEventListener("pointercancel", release);
+    }
+    floatOpen.addEventListener("pointerup", finishDrag);
+    floatOpen.addEventListener("pointercancel", finishDrag);
+    floatOpen.addEventListener("lostpointercapture", finishDrag);
+
+    function moveCompanion() {
+      if (savedPosition || drag || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+      const margin = 12;
+      const x = margin + Math.random() * Math.max(0, innerWidth - companion.offsetWidth - margin * 2);
+      const y = margin + Math.random() * Math.max(0, innerHeight - companion.offsetHeight - margin * 2);
+      placeCompanion(Math.round(x), Math.round(Math.max(72, y)));
+    }
     setInterval(moveCompanion, 35000);
     setTimeout(moveCompanion, 8000);
   }

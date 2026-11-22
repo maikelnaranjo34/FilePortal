@@ -199,6 +199,21 @@ test('FileNest browser regression', { timeout: 120_000, skip: process.platform !
       assert.equal(noHorizontalOverflow, true, overflow);
     }
 
+    async function nestiDragPoints(left, top) {
+      return evaluate('(() => {' +
+        'const mascot = document.querySelector("#nestiFloatOpen").getBoundingClientRect();' +
+        'const companion = document.querySelector("#nestiCompanion").getBoundingClientRect();' +
+        'const x = Math.round(mascot.left + mascot.width / 2);' +
+        'const y = Math.round(mascot.top + mascot.height / 2);' +
+        'return {start:{x,y}, end:{x:x-companion.left+' + left + ', y:y-companion.top+' + top + '}};' +
+        '})()');
+    }
+
+    function nestiAt(left, top) {
+      return '(() => { const box = document.querySelector("#nestiCompanion").getBoundingClientRect();' +
+        'return Math.abs(box.left-' + left + ') <= 1 && Math.abs(box.top-' + top + ') <= 1; })()';
+    }
+
     await send('Page.enable');
     await send('Runtime.enable');
     await navigate('/');
@@ -216,15 +231,40 @@ test('FileNest browser regression', { timeout: 120_000, skip: process.platform !
     assert.deepEqual(await evaluate('[...document.querySelectorAll("#categorySection .fn-category")].map(element => element.textContent.trim().replace(/›$/, ""))'),
       ['Images', 'Videos', 'PDFs', 'Notes', 'Documents']);
 
+    await until('window.__fileNestAssistantLoaded', 'Nesti drag controls did not load');
+    const mouse = await nestiDragPoints(720, 435);
+    await send('Input.dispatchMouseEvent', { type: 'mousePressed', ...mouse.start, button: 'left', buttons: 1, clickCount: 1 });
+    await send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...mouse.end, button: 'left', buttons: 1 });
+    await send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...mouse.end, button: 'left', clickCount: 1 });
+    await until(nestiAt(720, 435), 'Nesti did not stay at the mouse drop position');
+    assert.equal(await evaluate('document.querySelector("#assistantPanel").open'), false);
+
     await setViewport(320, 844, true);
     assert.equal(await evaluate('document.querySelector(".fn-nav").getBoundingClientRect().right <= innerWidth'), true);
     assert.equal(await evaluate('document.querySelector(".fn-header").getBoundingClientRect().height > 0'), true);
     assert.equal(await evaluate('document.querySelector("#nestiCompanion") !== null'), true);
     assert.equal(await evaluate('document.querySelector("#nestiVoiceToggle").getAttribute("aria-pressed") === "true"'), true);
-    assert.equal(await evaluate('(() => { const r=document.querySelector("#nestiCompanion").getBoundingClientRect(); return r.left >= 0 && r.top >= 0 && r.right <= innerWidth + 1 && r.bottom <= innerHeight + 1; })()'), true);
+    await until('(() => { const r=document.querySelector("#nestiCompanion").getBoundingClientRect(); return r.left >= 0 && r.top >= 0 && r.right <= innerWidth + 1 && r.bottom <= innerHeight + 1; })()',
+      'Nesti moved outside the viewport after resizing');
     await setViewport(360, 844, true);
     await setViewport(390, 844, true);
     await setViewport(430, 844, true);
+
+    const touch = await nestiDragPoints(24, 173);
+    await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [touch.start] });
+    await send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [touch.end] });
+    await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await until(nestiAt(24, 173), 'Nesti did not stay at the touch drop position');
+    assert.equal(await evaluate('document.querySelector("#assistantPanel").open'), false);
+    await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve(true))))');
+    const tap = (await nestiDragPoints(24, 173)).start;
+    await send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [tap] });
+    await new Promise(resolve => setTimeout(resolve, 60));
+    await send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await until('document.querySelector("#assistantPanel").open', 'Nesti did not open when tapped after dragging');
+    await evaluate('document.querySelector("#assistantPanel form button").click(); true');
+    await new Promise(resolve => setTimeout(resolve, 8250));
+    assert.equal(await evaluate(nestiAt(24, 173)), true, 'Nesti moved away from the drop position');
 
     await evaluate('document.querySelector("#assistantLauncher").click(); true');
     await until('document.querySelector("#assistantPanel").open', 'Assistant dialog did not open');
@@ -234,6 +274,7 @@ test('FileNest browser regression', { timeout: 120_000, skip: process.platform !
     await until('location.pathname === "/files.html" && document.readyState === "complete"', 'File Manager did not load');
     await until('document.querySelectorAll("#driveList .drive-item").length === 1', 'File Manager folders did not load');
     await until('document.querySelector("#nestiCompanion") && document.querySelector("#assistantPanel")', 'Global Nesti assistant did not load');
+    await until(nestiAt(24, 173), 'Nesti did not restore the drop position after navigation');
     await setViewport(1440, 900, false);
     assert.equal(await evaluate('getComputedStyle(document.querySelector("#mainApp")).display'), 'grid');
     assert.equal(await evaluate('getComputedStyle(document.querySelector("#driveSidebar")).display'), 'flex');
