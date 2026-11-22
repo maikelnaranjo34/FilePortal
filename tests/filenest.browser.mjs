@@ -285,6 +285,79 @@ test('FileNest browser regression', { timeout: 120_000, skip: process.platform !
     await until('document.querySelector("#temporaryPassword").value.length === 18', 'Temporary password was not generated');
     assert.equal(await evaluate('document.querySelector("#temporaryPasswordResult").hidden'), false);
 
+    await send('Page.addScriptToEvaluateOnNewDocument', {
+      source: `(() => {
+        const nativeFetch = window.fetch.bind(window);
+        const json = value => new Response(JSON.stringify(value), { headers: { "Content-Type": "application/json" } });
+        window.fetch = (input, init) => {
+          const url = new URL(typeof input === "string" ? input : input.url, location.href);
+          if (url.pathname === "/api/ai/status")
+            return Promise.resolve(json({
+              available: true,
+              voiceAvailable: ["denied", "granted"].includes(sessionStorage.getItem("test-nesti-microphone")),
+              openAiModel: "browser-test"
+            }));
+          if (url.pathname === "/api/ai/voice/tokens")
+            return Promise.resolve(json({ sttToken: "test-stt", ttsToken: "" }));
+          if (url.pathname === "/api/ai/chat") {
+            const message = JSON.parse(init.body).message.toLowerCase();
+            const route = message.includes("gallery")
+              ? "/gallery.html#photos"
+              : "/files.html?path=" + encodeURIComponent(sessionStorage.getItem("test-nesti-root"));
+            return Promise.resolve(json({ reply: "Opening that location.", actions: [{ type: "navigate", url: route }] }));
+          }
+          return nativeFetch(input, init);
+        };
+        if (navigator.mediaDevices) {
+          Object.defineProperty(navigator.mediaDevices, "getUserMedia", {
+            configurable: true,
+            value: () => sessionStorage.getItem("test-nesti-microphone") === "denied"
+              ? Promise.reject(new DOMException("Permission denied", "NotAllowedError"))
+              : Promise.resolve({ getTracks: () => [] })
+          });
+        }
+        window.AudioContext = class { constructor() { throw new Error("Mock audio failure after microphone grant."); } };
+      })();`
+    });
+    await evaluate(
+      'sessionStorage.setItem("test-nesti-microphone","denied");' +
+      'sessionStorage.setItem("test-nesti-root",' + JSON.stringify(projects) + ');' +
+      'localStorage.setItem("filenest:nesti-voice","on"); true'
+    );
+    await navigate('/files.html');
+    await until('document.querySelector("#nestiVoiceToggle")?.textContent === "Resume voice"', 'Denied microphone did not show a resume state');
+    assert.match(await evaluate('document.querySelector("#assistantStatus").textContent'), /Microphone access was denied/);
+    await evaluate('document.querySelector("#nestiFloatOpen").click(); true');
+    await until('document.querySelector("#assistantPanel").open', 'Nesti panel did not open for continuity test');
+    await evaluate(
+      'document.querySelector("#assistantMessage").value="Go to the Easystore folder";' +
+      'document.querySelector("#assistantForm").requestSubmit(); true'
+    );
+    await until(
+      'location.pathname === "/files.html" && new URLSearchParams(location.search).get("path") === ' + JSON.stringify(projects) +
+        ' && document.querySelector("#assistantPanel").open && document.querySelectorAll("#assistantConversation .fn-assistant-message").length === 2',
+      'Nesti folder navigation did not restore its conversation'
+    );
+    await until('document.querySelector("#nestiVoiceToggle").textContent === "Resume voice"', 'Voice resume state was lost after folder navigation');
+    await until('[...document.querySelectorAll("#items .item-name")].some(item=>item.textContent==="Alpha report.txt")', 'Folder contents did not load after Nesti navigation');
+    assert.match(await evaluate('document.querySelector("#assistantStatus").textContent'), /Microphone access was denied/);
+    await evaluate(
+      'sessionStorage.setItem("test-nesti-microphone","granted");' +
+      'document.querySelector("#assistantMessage").value="Open the Gallery tab";' +
+      'document.querySelector("#assistantForm").requestSubmit(); true'
+    );
+    await until(
+      'location.pathname === "/gallery.html" && location.hash === "#photos" && ' +
+        'document.querySelector("#assistantPanel").open && document.querySelectorAll("#assistantConversation .fn-assistant-message").length === 4',
+      'Gallery navigation did not restore Nesti conversation'
+    );
+    await until(
+      'document.querySelector("#nestiVoiceToggle").textContent === "Voice On" && ' +
+        'document.querySelector("#assistantStatus").textContent === "Mock audio failure after microphone grant."',
+      'Voice did not automatically retry after Gallery navigation with microphone access'
+    );
+    assert.doesNotMatch(await evaluate('document.querySelector("#assistantStatus").textContent'), /Permission denied/);
+
     assert.deepEqual(runtimeErrors, []);
   } finally {
     socket?.close();

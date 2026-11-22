@@ -15,7 +15,22 @@
   const companion = document.querySelector("#nestiCompanion");
   const voiceToggle = document.querySelector("#nestiVoiceToggle");
   const floatOpen = document.querySelector("#nestiFloatOpen");
+  const navigationStateKey = "filenest:nesti-navigation";
+  let restoredState = null;
+  try {
+    const savedState = sessionStorage.getItem(navigationStateKey);
+    if (savedState) restoredState = JSON.parse(savedState);
+    sessionStorage.removeItem(navigationStateKey);
+  } catch (error) {
+    console.error("Could not restore Nesti navigation state.", error);
+  }
   const history = [];
+  const restoredHistory = Array.isArray(restoredState?.history) ? restoredState.history : [];
+  restoredHistory
+    .filter(item => item && (item.role === "user" || item.role === "assistant") &&
+      typeof item.content === "string" && item.content.length <= 4_000)
+    .slice(-12)
+    .forEach(item => history.push({ role: item.role, content: item.content }));
   let available = false;
   let voiceAvailable = false;
   let listening = false;
@@ -25,8 +40,12 @@
   let microphoneStream;
   let pendingTtsToken;
   let voiceConfiguration;
-  let continuousVoice = localStorage.getItem("filenest:nesti-voice") !== "off";
-  let permissionNeeded = false;
+  let continuousVoice = typeof restoredState?.continuousVoice === "boolean"
+    ? restoredState.continuousVoice
+    : localStorage.getItem("filenest:nesti-voice") !== "off";
+  let voiceResumeRequired = false;
+  let requestingMicrophone = false;
+  let nestiNavigation = false;
   let processingTurn = false;
   let movedDuringPointer = false;
   let activeTtsSocket;
@@ -61,11 +80,33 @@
     conversation.scrollTop = conversation.scrollHeight;
   }
 
+  function restoreNavigationState() {
+    for (const item of history) addMessage(item.role, item.content);
+    if (restoredState?.panelOpen) {
+      panel.returnValue = "";
+      panel.showModal();
+    }
+  }
+
+  function saveNavigationState() {
+    try {
+      sessionStorage.setItem(navigationStateKey, JSON.stringify({
+        history: history.slice(-12),
+        continuousVoice,
+        panelOpen: panel.open
+      }));
+    } catch (error) {
+      console.error("Could not preserve Nesti state for navigation.", error);
+    }
+    nestiNavigation = true;
+  }
+
   function handleActions(actions) {
     for (const action of actions || []) {
       if (action.type === "navigate" && typeof action.url === "string") {
         setNesti("moving");
         status.textContent = "Opening…";
+        saveNavigationState();
         setTimeout(() => location.assign(action.url), 650);
       } else if (action.type === "open_file" && typeof action.path === "string") {
         setNesti("moving");
@@ -143,10 +184,20 @@
       if (!tokenResponse.ok) throw new Error(tokens?.error || "Voice could not start.");
       pendingTtsToken = tokens.ttsToken;
       voiceConfiguration = tokens;
+      requestingMicrophone = true;
       microphoneStream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
       });
+      requestingMicrophone = false;
       captureContext = new AudioContext();
+      if (captureContext.state === "suspended") {
+        await captureContext.resume();
+        if (captureContext.state !== "running") {
+          const error = new Error("The browser requires an interaction to resume voice.");
+          error.name = "NotAllowedError";
+          throw error;
+        }
+      }
       await captureContext.audioWorklet.addModule("/filenest/pcm-worklet.js");
       const url = new URL("wss://streaming.assemblyai.com/v3/ws");
       url.searchParams.set("token", tokens.sttToken);
@@ -171,7 +222,7 @@
       sttSocket.onclose = event => {
         if (listening && event.code !== 1000) status.textContent = "Voice input ended unexpectedly.";
         stopCapture();
-        if (continuousVoice && !processingTurn && !permissionNeeded)
+        if (continuousVoice && !processingTurn && !voiceResumeRequired)
           setTimeout(startListening, 900);
       };
       await new Promise((resolve, reject) => {
@@ -188,7 +239,7 @@
         if (sttSocket?.readyState === WebSocket.OPEN) sttSocket.send(event.data);
       };
       listening = true;
-      permissionNeeded = false;
+      voiceResumeRequired = false;
       updateVoiceToggle();
       mic.setAttribute("aria-pressed", "true");
       mic.setAttribute("aria-label", "Stop voice input");
@@ -197,9 +248,15 @@
       setNesti("listening");
     } catch (error) {
       stopListening();
-      status.textContent = error.message || "Voice could not start.";
+      const browserRequiresGesture = error?.name === "NotAllowedError" || error?.name === "PermissionDeniedError";
+      const microphoneDenied = browserRequiresGesture && requestingMicrophone;
+      status.textContent = microphoneDenied
+        ? "Microphone access was denied. Allow microphone access for this site, then choose Resume voice."
+        : browserRequiresGesture
+          ? "Your browser needs an interaction to resume voice. Choose Resume voice."
+          : error.message || "Voice could not start.";
       setNesti("error");
-      if (error?.name === "NotAllowedError") permissionNeeded = true;
+      voiceResumeRequired = browserRequiresGesture;
       updateVoiceToggle();
     }
   }
@@ -309,23 +366,28 @@
   mic.addEventListener("click", () => listening ? stopListening() : startListening());
 
   function updateVoiceToggle() {
-    if (!voiceToggle) return;
-    voiceToggle.setAttribute("aria-pressed", String(continuousVoice));
-    voiceToggle.classList.toggle("needs-permission", permissionNeeded);
-    voiceToggle.textContent = permissionNeeded && continuousVoice ? "Tap to enable" : continuousVoice ? "Voice On" : "Voice Off";
+    if (voiceToggle) {
+      voiceToggle.setAttribute("aria-pressed", String(continuousVoice));
+      voiceToggle.classList.toggle("needs-permission", voiceResumeRequired);
+      voiceToggle.textContent = voiceResumeRequired && continuousVoice
+        ? "Resume voice"
+        : continuousVoice ? "Voice On" : "Voice Off";
+    }
+    if (!listening)
+      mic.setAttribute("aria-label", voiceResumeRequired && continuousVoice ? "Resume voice input" : "Start voice input");
   }
 
   voiceToggle?.addEventListener("click", event => {
     event.stopPropagation();
-    if (permissionNeeded && continuousVoice) {
-      permissionNeeded = false;
+    if (voiceResumeRequired && continuousVoice) {
+      voiceResumeRequired = false;
       updateVoiceToggle();
       startListening();
       return;
     }
     continuousVoice = !continuousVoice;
     localStorage.setItem("filenest:nesti-voice", continuousVoice ? "on" : "off");
-    permissionNeeded = false;
+    voiceResumeRequired = false;
     updateVoiceToggle();
     if (continuousVoice) checkAvailability().then(startListening);
     else { processingTurn = false; pendingTtsToken = undefined; stopListening(); stopSpeaking(); setNesti("idle"); }
@@ -380,9 +442,15 @@
     setTimeout(moveCompanion, 8000);
   }
 
+  restoreNavigationState();
   updateVoiceToggle();
   checkAvailability().then(() => { if (continuousVoice) startListening(); });
-  addEventListener("pagehide", () => { stopListening(); stopSpeaking(); }, { once: true });
+  addEventListener("pagehide", () => {
+    if (!nestiNavigation) {
+      stopListening();
+      stopSpeaking();
+    }
+  }, { once: true });
 
   form.addEventListener("submit", async event => {
     event.preventDefault();
