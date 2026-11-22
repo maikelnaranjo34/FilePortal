@@ -530,6 +530,17 @@
 
     function showLogin() { location.replace(FileNest.signInUrl()); }
 
+    function syncFolderUrl(path, category, previewPath) {
+      const url = new URL(location.href);
+      url.searchParams.delete("q");
+      url.searchParams.set("path", path);
+      if (category) url.searchParams.set("category", category);
+      else url.searchParams.delete("category");
+      if (previewPath) url.searchParams.set("preview", previewPath);
+      else url.searchParams.delete("preview");
+      if (url.href !== location.href) history.replaceState(null, "", url);
+    }
+
     function pathKey(path) {
       return path.replaceAll("/", "\\").replace(/\\+$/, "").toLowerCase();
     }
@@ -653,6 +664,11 @@
           const category = initialFolder ? initial.get("category") : null;
           if (["pictures", "videos", "documents", "pdfs", "notes"].includes(category)) await filterByCategory(category);
         }
+        const duplicateMode = initialFolder ? initial.get("duplicates") : null;
+        if (folderLoaded && (duplicateMode === "confirmed" || duplicateMode === "candidates")) {
+          duplicateFilter.value = duplicateMode;
+          await applyDuplicateMode();
+        }
         initialFolder = false;
       } catch (err) {
         if (request !== rootRequest) return;
@@ -700,6 +716,7 @@
         if (request !== fileRequest) return;
         entries = items;
         folderLoaded = true;
+        syncFolderUrl(path, null, previewPath);
         applyFileFilters();
         if (duplicateFilter.value !== "all") await applyDuplicateMode();
         if (previewPath) {
@@ -771,9 +788,17 @@
     function applyFileFilters() {
       if (!folderLoaded) return;
       const query = folderSearch.value.trim().toLowerCase();
+      const scanPending = duplicateViewActive && duplicatePaths === null;
+      const categoryFolder = currentFilter && currentPath ? pathKey(currentPath) + "\\" : null;
       const matching = entries.filter(item => {
+        if (scanPending) return false;
         if (query && !item.name.toLowerCase().includes(query)) return false;
-        if (duplicatePaths && (item.isDirectory || !duplicatePaths.has(pathKey(item.path)))) return false;
+        if (duplicatePaths) {
+          const key = pathKey(item.path);
+          if (item.isDirectory || !duplicatePaths.has(key)) return false;
+          if (categoryFolder && !key.startsWith(categoryFolder)) return false;
+          if (categoryFolder && currentFilter === "notes" && key.indexOf("\\", categoryFolder.length) !== -1) return false;
+        }
         if (currentFilter === "pdfs") return item.extension?.toLowerCase() === ".pdf";
         if (currentFilter === "notes") return [".txt", ".md", ".rtf"].includes(item.extension?.toLowerCase());
         if (categoryExtensions[currentFilter] && !categoryExtensions[currentFilter].has(item.extension?.toLowerCase())) return false;
@@ -790,7 +815,7 @@
       matching.sort(compare);
       renderItems(matching);
       const empty = document.getElementById("emptyMsg");
-      empty.textContent = duplicatePaths && duplicateScanSummary
+      empty.textContent = scanPending ? "Finding duplicates…" : duplicatePaths && duplicateScanSummary
         ? (duplicateViewActive
           ? ""
           : `No files in this view match the selected duplicate evidence. The count above covers ${globalSearchQuery !== null ? "all scanned roots." : "the entire scanned root."}`)
@@ -810,6 +835,7 @@
       const url = new URL(location.href);
       url.search = "";
       url.searchParams.set("q", query);
+      if (duplicateFilter.value !== "all") url.searchParams.set("duplicates", duplicateFilter.value);
       history.replaceState(null, "", url);
       loadGlobalSearch(query);
     });
@@ -817,19 +843,29 @@
 
     async function applyDuplicateMode() {
       const request = ++duplicateRequest;
+      const viewRequest = fileRequest;
       const mode = duplicateFilter.value;
       duplicatePaths = null;
       duplicateScanSummary = "";
       duplicateViewActive = mode !== "all";
       duplicateStatus.textContent = "";
       if (mode === "all") {
-        duplicateViewActive = false;
         if (globalSearchQuery !== null) await loadGlobalSearch(globalSearchQuery);
-        else await loadFolder(currentPath);
+        else {
+          const category = currentFilter;
+          if (!category || category === "notes") await loadFolder(currentPath);
+          if (category) await filterByCategory(category);
+        }
         return;
       }
       const scopedRoots = currentRoot ? availableRoots.filter(root => pathKey(root.path) === pathKey(currentRoot)) : availableRoots;
-      if (!scopedRoots.length) { duplicateStatus.textContent = "Choose a drive first."; applyFileFilters(); return; }
+      if (!scopedRoots.length) {
+        duplicatePaths = new Set();
+        duplicateStatus.textContent = "Choose a drive first.";
+        applyFileFilters();
+        return;
+      }
+      applyFileFilters();
       try {
         const reports = await Promise.all(scopedRoots.map(async root => {
           if (duplicateReports.has(root.name)) return duplicateReports.get(root.name);
@@ -839,7 +875,7 @@
           duplicateReports.set(root.name, report);
           return report;
         }));
-        if (request !== duplicateRequest) return;
+        if (request !== duplicateRequest || viewRequest !== fileRequest) return;
         const confirmed = new Set(reports.flatMap(report => report.exactContent.flatMap(group => group.files.map(file => pathKey(file.path)))));
         const candidates = new Set(reports.flatMap(report => report.similarNames.flatMap(group => group.files.map(file => pathKey(file.path))))
           .filter(path => !confirmed.has(path)));
@@ -872,14 +908,20 @@
           (partial ? " — scan capped; results may be incomplete" : "");
         applyFileFilters();
       } catch (error) {
-        if (request !== duplicateRequest) return;
+        if (request !== duplicateRequest || viewRequest !== fileRequest) return;
         duplicatePaths = new Set();
         duplicateScanSummary = "";
         duplicateStatus.textContent = error.message;
         applyFileFilters();
       }
     }
-    duplicateFilter.addEventListener("change", applyDuplicateMode);
+    duplicateFilter.addEventListener("change", () => {
+      const url = new URL(location.href);
+      if (duplicateFilter.value === "all") url.searchParams.delete("duplicates");
+      else url.searchParams.set("duplicates", duplicateFilter.value);
+      history.replaceState(null, "", url);
+      void applyDuplicateMode();
+    });
 
     function renderItems(items) {
       const fragment = document.createDocumentFragment();
@@ -1529,13 +1571,15 @@
 
     // Filter by category (Pictures, Videos, Documents)
     async function filterByCategory(category) {
-      if (!currentRoot) {
+      const folder = currentPath;
+      if (!folder) {
         alert('Please select a drive first');
         return;
       }
 
       if (category === "notes") {
         currentFilter = category;
+        syncFolderUrl(folder, category);
         document.getElementById("currentPathLabel").textContent = "Notes directly in the current folder";
         applyFileFilters();
         if (duplicateFilter.value !== "all") await applyDuplicateMode();
@@ -1560,7 +1604,7 @@
       emptyMsgEl.style.display = "none";
 
       try {
-        const res = await fetch("/api/files/category?path=" + encodeURIComponent(currentRoot) + "&category=" + encodeURIComponent(category === "pdfs" ? "documents" : category), { credentials: "include" });
+        const res = await fetch("/api/files/category?path=" + encodeURIComponent(folder) + "&category=" + encodeURIComponent(category === "pdfs" ? "documents" : category), { credentials: "include" });
         if (!res.ok) {
           if (res.status === 401) {
             showLogin();
@@ -1573,6 +1617,7 @@
         if (request !== fileRequest) return;
         entries = items;
         folderLoaded = true;
+        syncFolderUrl(folder, category);
         applyFileFilters();
         if (duplicateFilter.value !== "all") await applyDuplicateMode();
       } catch (err) {

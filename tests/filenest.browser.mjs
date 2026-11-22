@@ -31,17 +31,21 @@ test('FileNest browser regression', { timeout: 120_000, skip: process.platform !
   const files = path.join(temp, 'files');
   const data = path.join(temp, 'data');
   const projects = path.join(files, 'Projects');
+  const archive = path.join(projects, 'Archive');
   mkdirSync(projects, { recursive: true });
-  mkdirSync(path.join(projects, 'Archive'), { recursive: true });
+  mkdirSync(archive, { recursive: true });
   mkdirSync(data, { recursive: true });
   writeFileSync(path.join(projects, 'Alpha report.txt'), 'alpha');
   writeFileSync(path.join(projects, 'Alpha report copy.txt'), 'alpha');
   writeFileSync(path.join(projects, 'Release Notes.txt'), 'release');
   writeFileSync(path.join(projects, 'Beta file.txt'), 'other');
   writeFileSync(path.join(projects, 'Beta file copy.txt'), 'those');
-  writeFileSync(path.join(projects, 'Archive', 'Unique note.txt'), 'unique');
+  writeFileSync(path.join(archive, 'Unique note.txt'), 'unique');
+  writeFileSync(path.join(archive, 'archive photo.png'), 'archived picture');
+  writeFileSync(path.join(projects, 'photo.png'), 'picture');
+  writeFileSync(path.join(projects, 'report.pdf'), 'pdf');
   writeFileSync(path.join(projects, 'clip.mp4'), 'same-video-content');
-  writeFileSync(path.join(projects, 'Archive', 'clip copy.mp4'), 'same-video-content');
+  writeFileSync(path.join(archive, 'clip copy.mp4'), 'same-video-content');
   writeFileSync(path.join(projects, 'solo.mp4'), 'unique-video-content');
 
   const publishResult = spawnSync('dotnet', [
@@ -51,7 +55,7 @@ test('FileNest browser regression', { timeout: 120_000, skip: process.platform !
 
   writeFileSync(path.join(publish, 'appsettings.json'), JSON.stringify({
     FilePortal: { DataDirectory: data },
-    Roots: { Projects: projects },
+    Roots: { Easystore: projects },
     Email: { SmtpHost: '' }
   }));
 
@@ -244,7 +248,7 @@ test('FileNest browser regression', { timeout: 120_000, skip: process.platform !
     assert.equal(await evaluate('getComputedStyle(document.querySelector("#rootsToggle")).display !== "none"'), true);
     assert.equal(await evaluate('document.querySelector("#duplicateFilter").options.length'), 3);
     await evaluate('document.querySelector("#folderSearch").value=""; document.querySelector("#folderSearch").dispatchEvent(new Event("input")); true');
-    await until('document.querySelectorAll("#items .item-name").length === 8', 'File Manager did not show all duplicate test files');
+    await until('document.querySelectorAll("#items .item-name").length === 10', 'File Manager did not show all fixture entries');
     await evaluate('document.querySelector("#duplicateFilter").value="confirmed"; document.querySelector("#duplicateFilter").dispatchEvent(new Event("change")); true');
     await until('[...document.querySelectorAll("#items .item-name")].map(item=>item.textContent).sort().join("|")==="Alpha report copy.txt|Alpha report.txt|clip copy.mp4|clip.mp4"', 'Confirmed duplicate filter did not match identical files');
     await evaluate('document.querySelector("#duplicateFilter").value="candidates"; document.querySelector("#duplicateFilter").dispatchEvent(new Event("change")); true');
@@ -257,7 +261,7 @@ test('FileNest browser regression', { timeout: 120_000, skip: process.platform !
     await until('document.querySelector("#galleryDuplicateFilter") && document.querySelector("#main")', 'Gallery duplicate filter did not load');
     assert.equal(await evaluate('document.querySelector("#galleryDuplicateFilter").options.length'), 3);
 
-    await navigate('/files.html?path=' + encodeURIComponent(path.join(projects, 'Archive')));
+    await navigate('/files.html?path=' + encodeURIComponent(archive));
     await until('document.querySelector("#folderSearch") && [...document.querySelectorAll("#items .item-name")].some(item=>item.textContent==="Unique note.txt")', 'Nested folder did not load');
     await evaluate('document.querySelector("#duplicateFilter").value="candidates"; document.querySelector("#duplicateFilter").dispatchEvent(new Event("change")); true');
     assert.equal(await evaluate('document.querySelector("#duplicateStatus").textContent'), '');
@@ -300,10 +304,37 @@ test('FileNest browser regression', { timeout: 120_000, skip: process.platform !
           if (url.pathname === "/api/ai/voice/tokens")
             return Promise.resolve(json({ sttToken: "test-stt", ttsToken: "" }));
           if (url.pathname === "/api/ai/chat") {
-            const message = JSON.parse(init.body).message.toLowerCase();
-            const route = message.includes("gallery")
-              ? "/gallery.html#photos"
-              : "/files.html?path=" + encodeURIComponent(sessionStorage.getItem("test-nesti-root"));
+            const request = JSON.parse(init.body);
+            const message = request.message.toLowerCase();
+            sessionStorage.setItem("test-nesti-chat-context", JSON.stringify({
+              currentPath: request.currentPath,
+              currentCategory: request.currentCategory,
+              currentDuplicateMode: request.currentDuplicateMode,
+              currentPage: request.currentPage
+            }));
+            let route;
+            if (message.includes("gallery")) {
+              route = "/gallery.html#photos";
+            } else {
+              const targetPath = message.includes("open videos on easystore")
+                ? sessionStorage.getItem("test-nesti-root")
+                : request.currentPath || sessionStorage.getItem("test-nesti-root");
+              const query = new URLSearchParams({ path: targetPath });
+              const duplicateRequest = message.includes("duplicates") || message.includes("duplicate filter");
+              const category = duplicateRequest ? request.currentCategory
+                : message.includes("pictures") ? "pictures"
+                : message.includes("pdf") ? "pdfs"
+                : message.includes("documents") ? "documents"
+                : message.includes("show all") ? "all"
+                : message.includes("videos") ? "videos"
+                : null;
+              const duplicateMode = duplicateRequest
+                ? message.includes("clear") ? "all" : message.includes("potential") ? "candidates" : "confirmed"
+                : category === "all" || message.includes("easystore") ? null : request.currentDuplicateMode;
+              if (category && category !== "all") query.set("category", category);
+              if (duplicateMode && duplicateMode !== "all") query.set("duplicates", duplicateMode);
+              route = "/files.html?" + query.toString();
+            }
             return Promise.resolve(json({ reply: "Opening that location.", actions: [{ type: "navigate", url: route }] }));
           }
           return nativeFetch(input, init);
@@ -330,11 +361,12 @@ test('FileNest browser regression', { timeout: 120_000, skip: process.platform !
     await evaluate('document.querySelector("#nestiFloatOpen").click(); true');
     await until('document.querySelector("#assistantPanel").open', 'Nesti panel did not open for continuity test');
     await evaluate(
+      'window.testNestiBeforeNavigation=true;' +
       'document.querySelector("#assistantMessage").value="Go to the Easystore folder";' +
       'document.querySelector("#assistantForm").requestSubmit(); true'
     );
     await until(
-      'location.pathname === "/files.html" && new URLSearchParams(location.search).get("path") === ' + JSON.stringify(projects) +
+      '!window.testNestiBeforeNavigation && location.pathname === "/files.html" && new URLSearchParams(location.search).get("path") === ' + JSON.stringify(projects) +
         ' && document.querySelector("#assistantPanel").open && document.querySelectorAll("#assistantConversation .fn-assistant-message").length === 2',
       'Nesti folder navigation did not restore its conversation'
     );
@@ -357,6 +389,156 @@ test('FileNest browser regression', { timeout: 120_000, skip: process.platform !
       'Voice did not automatically retry after Gallery navigation with microphone access'
     );
     assert.doesNotMatch(await evaluate('document.querySelector("#assistantStatus").textContent'), /Permission denied/);
+
+    await navigate('/files.html?path=' + encodeURIComponent(projects) + '&category=videos');
+    await until(
+      '[...document.querySelectorAll("#items .item-name")].map(item=>item.textContent).sort().join("|")==="clip copy.mp4|clip.mp4|solo.mp4"',
+      'Initial Videos filter did not load'
+    );
+    await evaluate('document.querySelector("#nestiFloatOpen").click(); true');
+    await until('document.querySelector("#assistantPanel").open', 'Nesti panel did not open for category test');
+    await evaluate(
+      'document.querySelector("#assistantMessage").value="show only pictures";' +
+      'document.querySelector("#assistantForm").requestSubmit(); true'
+    );
+    await until(
+      'location.pathname === "/files.html" && new URLSearchParams(location.search).get("category") === "pictures" && ' +
+        'new URLSearchParams(location.search).get("path") === ' + JSON.stringify(projects) + ' && ' +
+        'document.querySelector("#assistantPanel").open && ' +
+        '[...document.querySelectorAll("#items .item-name")].map(item=>item.textContent).sort().join("|")==="archive photo.png|photo.png"',
+      'Nesti did not apply the Pictures filter to the current folder'
+    );
+    assert.deepEqual(await evaluate('JSON.parse(sessionStorage.getItem("test-nesti-chat-context"))'), {
+      currentPath: projects,
+      currentCategory: "videos",
+      currentDuplicateMode: null,
+      currentPage: "files.html"
+    });
+
+    await evaluate(
+      'document.querySelector("#assistantMessage").value="show only PDFs";' +
+      'document.querySelector("#assistantForm").requestSubmit(); true'
+    );
+    await until(
+      'new URLSearchParams(location.search).get("category") === "pdfs" && ' +
+        'new URLSearchParams(location.search).get("path") === ' + JSON.stringify(projects) + ' && ' +
+        '[...document.querySelectorAll("#items .item-name")].map(item=>item.textContent).join("|")==="report.pdf"',
+      'Nesti did not switch the current folder to PDFs'
+    );
+    assert.deepEqual(await evaluate('JSON.parse(sessionStorage.getItem("test-nesti-chat-context"))'), {
+      currentPath: projects,
+      currentCategory: "pictures",
+      currentDuplicateMode: null,
+      currentPage: "files.html"
+    });
+
+    await evaluate(
+      'document.querySelector("#assistantMessage").value="show all files";' +
+      'document.querySelector("#assistantForm").requestSubmit(); true'
+    );
+    await until(
+      'new URLSearchParams(location.search).get("path") === ' + JSON.stringify(projects) + ' && ' +
+        '!new URLSearchParams(location.search).has("category") && ' +
+        '["photo.png", "report.pdf", "clip.mp4"].every(name=>[...document.querySelectorAll("#items .item-name")].some(item=>item.textContent===name))',
+      'Nesti did not clear the category filter for all files'
+    );
+    assert.deepEqual(await evaluate('JSON.parse(sessionStorage.getItem("test-nesti-chat-context"))'), {
+      currentPath: projects,
+      currentCategory: "pdfs",
+      currentDuplicateMode: null,
+      currentPage: "files.html"
+    });
+
+    await evaluate(
+      'document.querySelector("#assistantMessage").value="open Videos on Easystore";' +
+      'document.querySelector("#assistantForm").requestSubmit(); true'
+    );
+    await until(
+      'new URLSearchParams(location.search).get("path") === ' + JSON.stringify(projects) + ' && ' +
+        'new URLSearchParams(location.search).get("category") === "videos" && ' +
+        '[...document.querySelectorAll("#items .item-name")].some(item=>item.textContent==="clip.mp4")',
+      'open_category did not navigate to Videos on Easystore'
+    );
+    assert.deepEqual(await evaluate('JSON.parse(sessionStorage.getItem("test-nesti-chat-context"))'), {
+      currentPath: projects,
+      currentCategory: null,
+      currentDuplicateMode: null,
+      currentPage: "files.html"
+    });
+
+    const duplicateScenarios = [
+      {
+        prompt: 'switch to duplicates only',
+        fromCategory: 'videos', fromMode: null, category: 'videos', mode: 'confirmed',
+        visibleFiles: ['clip copy.mp4', 'clip.mp4']
+      },
+      {
+        prompt: 'show only documents',
+        fromCategory: 'videos', fromMode: 'confirmed', category: 'documents', mode: 'confirmed',
+        visibleFiles: ['Alpha report copy.txt', 'Alpha report.txt']
+      },
+      {
+        prompt: 'show potential duplicates',
+        fromCategory: 'documents', fromMode: 'confirmed', category: 'documents', mode: 'candidates',
+        visibleFiles: ['Beta file copy.txt', 'Beta file.txt']
+      },
+      {
+        prompt: 'clear the duplicate filter',
+        fromCategory: 'documents', fromMode: 'candidates', category: 'documents', mode: null,
+        visibleFiles: ['Alpha report copy.txt', 'Alpha report.txt', 'Beta file copy.txt', 'Beta file.txt',
+          'Release Notes.txt', 'Unique note.txt', 'report.pdf']
+      }
+    ];
+    for (const scenario of duplicateScenarios) {
+      await evaluate(
+        'document.querySelector("#assistantMessage").value=' + JSON.stringify(scenario.prompt) + ';' +
+        'document.querySelector("#assistantForm").requestSubmit(); true'
+      );
+      await until(
+        'new URLSearchParams(location.search).get("path") === ' + JSON.stringify(projects) + ' && ' +
+          'new URLSearchParams(location.search).get("category") === ' + JSON.stringify(scenario.category) + ' && ' +
+          'new URLSearchParams(location.search).get("duplicates") === ' + JSON.stringify(scenario.mode) + ' && ' +
+          'document.querySelector("#duplicateFilter").value === ' + JSON.stringify(scenario.mode ?? 'all') + ' && ' +
+          'document.querySelector("#assistantPanel").open && ' +
+          '[...document.querySelectorAll("#items .item-name")].map(item=>item.textContent).sort().join("|")===' +
+          JSON.stringify(scenario.visibleFiles.join('|')),
+        'Nesti did not apply: ' + scenario.prompt
+      );
+      assert.deepEqual(await evaluate('JSON.parse(sessionStorage.getItem("test-nesti-chat-context"))'), {
+        currentPath: projects,
+        currentCategory: scenario.fromCategory,
+        currentDuplicateMode: scenario.fromMode,
+        currentPage: "files.html"
+      });
+    }
+
+    await navigate('/files.html');
+    await until('[...document.querySelectorAll("#items .item-name")].some(item=>item.textContent==="Archive")', 'Root folder did not load');
+    await evaluate('[...document.querySelectorAll("#items .item-name")].find(item=>item.textContent==="Archive").closest(".item").click(); true');
+    await until(
+      'new URLSearchParams(location.search).get("path") === ' + JSON.stringify(archive) + ' && ' +
+        '[...document.querySelectorAll("#items .item-name")].some(item=>item.textContent==="Unique note.txt")',
+      'Files URL did not follow the active Archive folder'
+    );
+    await until('document.querySelector("#nestiFloatOpen") && document.querySelector("#assistantPanel")', 'Nesti did not load in Archive');
+    await evaluate('if (!document.querySelector("#assistantPanel").open) document.querySelector("#nestiFloatOpen").click(); true');
+    await until('document.querySelector("#assistantPanel").open', 'Nesti panel did not open in Archive');
+    await evaluate(
+      'document.querySelector("#assistantMessage").value="show only pictures";' +
+      'document.querySelector("#assistantForm").requestSubmit(); true'
+    );
+    await until(
+      'new URLSearchParams(location.search).get("path") === ' + JSON.stringify(archive) + ' && ' +
+        'new URLSearchParams(location.search).get("category") === "pictures" && ' +
+        '[...document.querySelectorAll("#items .item-name")].map(item=>item.textContent).join("|")==="archive photo.png"',
+      'Nesti did not limit Pictures to the active Archive folder'
+    );
+    assert.deepEqual(await evaluate('JSON.parse(sessionStorage.getItem("test-nesti-chat-context"))'), {
+      currentPath: archive,
+      currentCategory: null,
+      currentDuplicateMode: null,
+      currentPage: "files.html"
+    });
 
     assert.deepEqual(runtimeErrors, []);
   } finally {

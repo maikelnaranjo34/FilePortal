@@ -464,9 +464,17 @@
     status.textContent = "Nesti is thinking…";
     setNesti("thinking");
     try {
+      const locationParams = new URLSearchParams(location.search);
       const response = await fetch("/api/ai/chat", {
         method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message, history: history.slice(-12) })
+        body: JSON.stringify({
+          message,
+          history: history.slice(-12),
+          currentPath: locationParams.get("path"),
+          currentCategory: locationParams.get("category"),
+          currentDuplicateMode: locationParams.get("duplicates"),
+          currentPage: location.pathname.split("/").pop() || "index.html"
+        })
       });
       const result = await response.json().catch(() => null);
       if (!response.ok) throw new Error(result?.error || "Nesti could not answer.");
