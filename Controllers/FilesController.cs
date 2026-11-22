@@ -1,796 +1,362 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Authorization;
-using System.Security.Cryptography;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.Processing;
-using SixLabors.ImageSharp.Formats.Jpeg;
-using System.IO.Compression;
-using System.ComponentModel.DataAnnotations;
+using FilePortal.Models;
 using FilePortal.Services;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 
-namespace FilePortal.Controllers
+namespace FilePortal.Controllers;
+
+[ApiController]
+[Route("api/[controller]")]
+[Authorize]
+[ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+public class FilesController(FileBrowserService browser, ThumbnailService thumbnails, FileArchiveService archives,
+    AuthorizedFileSearchService searchService) : ControllerBase
 {
-    [ApiController]
-    [Route("api/[controller]")]
-    [Authorize]
-    public class FilesController : ControllerBase
+    private static readonly Dictionary<string, HashSet<string>> Categories = new(StringComparer.OrdinalIgnoreCase)
     {
-        private readonly IConfiguration _configuration;
-        private readonly UserStoreService _userStore;
-        // 🔵 Phone (Syncthing) root
-        private static readonly string PhoneRoot = @"D:\Samsung S20_Cloud\WebsiteBrowser\Files";
+        ["pictures"] = new(StringComparer.OrdinalIgnoreCase)
+            { ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".svg", ".ico", ".tiff", ".tif" },
+        ["videos"] = new(StringComparer.OrdinalIgnoreCase)
+            { ".mp4", ".mkv", ".avi", ".mov", ".flv", ".wmv", ".webm", ".m4v", ".mpg", ".mpeg" },
+        ["documents"] = new(StringComparer.OrdinalIgnoreCase)
+            { ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt", ".rtf", ".odt", ".ods", ".odp" }
+    };
 
-        // File category extension mappings
-        private static readonly HashSet<string> ImageExtensions = new(StringComparer.OrdinalIgnoreCase)
-        {
-            ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".svg", ".ico", ".tiff", ".tif"
-        };
+    private List<RootItem>? _roots;
+    private List<RootItem> Roots => _roots ??= browser.GetRoots((UserRecord)HttpContext.Items[typeof(UserRecord)]!);
 
-        private static readonly HashSet<string> VideoExtensions = new(StringComparer.OrdinalIgnoreCase)
-        {
-            ".mp4", ".mkv", ".avi", ".mov", ".flv", ".wmv", ".webm", ".m4v", ".mpg", ".mpeg"
-        };
+    [HttpGet("roots")]
+    public ActionResult<List<RootItem>> GetRoots() => Ok(Roots);
 
-        private static readonly HashSet<string> DocumentExtensions = new(StringComparer.OrdinalIgnoreCase)
-        {
-            ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt", ".rtf", ".odt", ".ods", ".odp"
-        };
+    [HttpGet("folder")]
+    public IActionResult GetFolder([FromQuery] string path) => ListFolder(path, foldersOnly: false);
 
-        public class RootDto
-        {
-            public string Name { get; set; } = "";
-            public string Path { get; set; } = "";
-        }
+    [Authorize(Roles = "Admin")]
+    [HttpGet("browse")]
+    public IActionResult BrowseFolders([FromQuery] string path) => ListFolder(path, foldersOnly: true);
 
-        public class ItemDto
-        {
-            public string Name { get; set; } = "";
-            public string Path { get; set; } = "";
-            public bool IsDirectory { get; set; }
-            public long? Size { get; set; }
-            public DateTime? LastModified { get; set; }
-            public string? Extension { get; set; }
-        }
+    private IActionResult ListFolder(string path, bool foldersOnly)
+    {
+        if (!Resolve(path, out var folder))
+            return Forbid();
+        if (!Directory.Exists(folder))
+            return NotFound(new { error = "Folder not found." });
 
-        public FilesController(IConfiguration configuration, UserStoreService userStore)
-        {
-            _configuration = configuration;
-            _userStore = userStore;
-        }
+        var entries = new DirectoryInfo(folder).EnumerateFileSystemInfos()
+            .Where(entry => browser.CanList(entry) && (!foldersOnly || entry is DirectoryInfo))
+            .Select(ToItem)
+            .OrderByDescending(item => item.IsDirectory)
+            .ThenBy(item => item.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        return Ok(entries);
+    }
 
-        // Helper: Check if user has access to a path
-        private bool HasAccessToPath(string requestedPath)
+    [HttpGet("category")]
+    public IActionResult GetByCategory([FromQuery] string path, [FromQuery] string category, [FromQuery] int maxResults = 500)
+    {
+        if (!Resolve(path, out var folder))
+            return Forbid();
+        if (!Directory.Exists(folder))
+            return NotFound(new { error = "Folder not found." });
+        if (!Categories.TryGetValue(category, out var extensions) || maxResults is < 1 or > 10000)
+            return BadRequest(new { error = "Choose a supported category and a result limit between 1 and 10,000." });
+
+        var items = new List<FileItem>();
+        var directories = new Stack<DirectoryInfo>();
+        directories.Push(new DirectoryInfo(folder));
+        while (directories.TryPop(out var directory) && items.Count < maxResults)
         {
-            var username = User.Identity?.Name ?? string.Empty;
-            var isAdmin = User.IsInRole("Admin");
-            
-            if (isAdmin) return true; // Admins can access everything
-            
-            var user = _userStore.GetUser(username);
-            if (user == null) return false;
-            
-            // If AllowedFolders is empty, non-admins have no access
-            if (user.AllowedFolders.Count == 0) return false;
-            
-            // Check if requested path is within any allowed folder
-            var normalizedPath = Path.GetFullPath(requestedPath);
-            foreach (var allowedFolder in user.AllowedFolders)
+            HttpContext.RequestAborted.ThrowIfCancellationRequested();
+            if (!Resolve(directory.FullName, out _, allowMissing: false))
+                continue;
+
+            foreach (var entry in directory.EnumerateFileSystemInfos("*", new EnumerationOptions
             {
-                var normalizedAllowed = Path.GetFullPath(allowedFolder);
-                if (normalizedPath == normalizedAllowed || normalizedPath.StartsWith(normalizedAllowed + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
+                AttributesToSkip = FileAttributes.ReparsePoint,
+                IgnoreInaccessible = true
+            }))
+            {
+                HttpContext.RequestAborted.ThrowIfCancellationRequested();
+                if (!browser.CanList(entry))
+                    continue;
+
+                if (entry is DirectoryInfo child)
+                    directories.Push(child);
+                else if (extensions.Contains(entry.Extension))
+                    items.Add(ToItem(entry));
+
+                if (items.Count >= maxResults)
+                    break;
             }
-            
+        }
+
+        return Ok(items.OrderByDescending(item => item.LastModified));
+    }
+
+    [HttpGet("search")]
+    public IActionResult Search([FromQuery] string? q, [FromQuery] int maxResults = 500,
+        CancellationToken cancellationToken = default)
+    {
+        var query = q?.Trim();
+        if (string.IsNullOrEmpty(query) || query.Length > 200 || maxResults is < 1 or > 10000)
+            return BadRequest(new { error = "Enter a search term of 1 to 200 characters and a result limit between 1 and 10,000." });
+
+        var currentUser = (UserRecord)HttpContext.Items[typeof(UserRecord)]!;
+        return Ok(searchService.Search(currentUser, query, maxResults, cancellationToken));
+    }
+
+    [HttpGet("open")]
+    public IActionResult Open([FromQuery] string path) => ServeFile(path, download: true);
+
+    [HttpGet("file")]
+    public IActionResult GetFile([FromQuery] string path) => ServeFile(path, download: false);
+
+    private IActionResult ServeFile(string path, bool download)
+    {
+        if (!Resolve(path, out var file))
+            return Forbid();
+        if (!System.IO.File.Exists(file))
+            return NotFound();
+
+        var type = FileBrowserService.GetContentType(file);
+        if (type == "text/html" || type == "application/xhtml+xml" || type == "text/xml" || type == "application/xml")
+            type = "application/octet-stream";
+
+        Response.Headers.XContentTypeOptions = "nosniff";
+        if (type == "image/svg+xml")
+            Response.Headers.ContentSecurityPolicy = "sandbox; default-src 'none'";
+
+        var stream = FileBrowserService.OpenRead(file);
+        return File(stream, type, download ? Path.GetFileName(file) : null, enableRangeProcessing: true);
+    }
+
+    [HttpPost("upload")]
+    [RequestSizeLimit(10L * 1024 * 1024 * 1024)]
+    [RequestFormLimits(MultipartBodyLengthLimit = 10L * 1024 * 1024 * 1024)]
+    public async Task<IActionResult> Upload([FromQuery] string targetPath, CancellationToken cancellationToken)
+    {
+        if (!Resolve(targetPath, out var target))
+            return Forbid();
+        if (!Directory.Exists(target))
+            return NotFound(new { error = "Target folder not found." });
+        if (!Request.HasFormContentType)
+            return BadRequest(new { error = "Upload files using a multipart form." });
+
+        var files = (await Request.ReadFormAsync(cancellationToken)).Files.GetFiles("files");
+        if (files.Count == 0)
+            return BadRequest(new { error = "No files received." });
+
+        var destinations = new Dictionary<string, IFormFile>(FileBrowserService.PathComparer);
+        foreach (var file in files)
+        {
+            if (!browser.TryGetUploadDestination(target, file.FileName, Roots, out var destination))
+                return BadRequest(new { error = "Every upload must stay inside the target folder." });
+            if (Directory.Exists(destination) || !destinations.TryAdd(destination, file))
+                return Conflict(new { error = "Upload destinations must be unique file paths." });
+        }
+
+        foreach (var destination in destinations.Keys)
+        {
+            for (var parent = Path.GetDirectoryName(destination); parent is not null && !FileBrowserService.PathComparer.Equals(parent, target);
+                parent = Path.GetDirectoryName(parent))
+            {
+                if (destinations.ContainsKey(parent) || System.IO.File.Exists(parent))
+                    return Conflict(new { error = "An upload path is used as both a file and a folder." });
+            }
+        }
+
+        var staged = new List<(string TemporaryPath, string Destination)>();
+        try
+        {
+            foreach (var (destination, file) in destinations)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!browser.TryGetUploadDestination(target, file.FileName, Roots, out _))
+                    return Forbid();
+
+                var parent = Path.GetDirectoryName(destination)!;
+                Directory.CreateDirectory(parent);
+                var temporaryPath = Path.Combine(parent, ".fileportal-upload-" + Guid.NewGuid().ToString("N"));
+                await using var stream = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+                staged.Add((temporaryPath, destination));
+                await file.CopyToAsync(stream, cancellationToken);
+            }
+
+            foreach (var (temporaryPath, destination) in staged)
+            {
+                if (!Resolve(destination, out _))
+                    return Forbid();
+                System.IO.File.Move(temporaryPath, destination, overwrite: true);
+            }
+
+            return Ok(new { message = "Upload complete." });
+        }
+        finally
+        {
+            foreach (var (temporaryPath, _) in staged)
+                System.IO.File.Delete(temporaryPath);
+        }
+    }
+
+    [HttpDelete("delete")]
+    public IActionResult Delete([FromQuery] string path)
+    {
+        if (!TryResolveDeletion(path, out var target))
+            return Forbid();
+        try
+        {
+            var directory = Directory.Exists(target);
+            if (!DeletePath(target))
+                return NotFound(new { error = "Path not found." });
+            return Ok(new { message = directory ? "Directory deleted." : "File deleted." });
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            var error = FileDeletion.DescribeFailure(target, exception);
+            return StatusCode(exception is UnauthorizedAccessException ? 403 : 409, new { error });
+        }
+    }
+
+    [HttpPost("batch/delete")]
+    public IActionResult DeleteBatch([FromBody] DeleteBatchRequest request, CancellationToken cancellationToken)
+    {
+        if (request.Paths is null or { Count: 0 } || request.Paths.Any(string.IsNullOrWhiteSpace))
+            return BadRequest(new { error = "Select at least one file or folder." });
+
+        var targets = new Dictionary<string, string>(FileBrowserService.PathComparer);
+        foreach (var path in request.Paths)
+        {
+            if (!TryResolveDeletion(path, out var target))
+                return StatusCode(403, new { error = "A selected item is outside your folder access or is a protected root." });
+            targets.TryAdd(target, path);
+        }
+
+        var deleted = new List<string>();
+        var failures = new List<DeleteFailure>();
+        foreach (var (target, path) in targets.OrderByDescending(entry => entry.Key.Length))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                if (!TryResolveDeletion(target, out _))
+                    failures.Add(new(path, "Access denied."));
+                else if (DeletePath(target))
+                    deleted.Add(path);
+                else
+                    failures.Add(new(path, "The file or folder no longer exists."));
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                failures.Add(new(path, FileDeletion.DescribeFailure(target, exception)));
+            }
+        }
+        return Ok(new { deleted, failures });
+    }
+
+    private bool TryResolveDeletion(string path, out string target)
+    {
+        if (!Resolve(path, out target))
             return false;
-        }
+        var resolved = target;
+        return browser.CanDeleteTree(resolved) && !Roots.Any(root =>
+            FileBrowserService.PathComparer.Equals(Path.TrimEndingDirectorySeparator(root.Path), resolved));
+    }
 
-        // ================== ROOTS ==================
-        [HttpGet("roots")]
-        public ActionResult<IEnumerable<RootDto>> GetRoots()
+    private static bool DeletePath(string target)
+    {
+        if (Directory.Exists(target))
         {
-            var list = new List<RootDto>();
-            var username = User.Identity?.Name ?? string.Empty;
-            var isAdmin = User.IsInRole("Admin");
-
-            // For non-admins with AllowedFolders, show ONLY their allowed folders as roots
-            if (!isAdmin)
-            {
-                var user = _userStore.GetUser(username);
-                if (user?.AllowedFolders.Count > 0)
-                {
-                    foreach (var folder in user.AllowedFolders)
-                    {
-                        if (Directory.Exists(folder))
-                        {
-                            var folderName = Path.GetFileName(folder) ?? folder;
-                            list.Add(new RootDto { Name = folderName, Path = folder });
-                        }
-                    }
-                    return Ok(list);
-                }
-                // If no allowed folders, return empty list (user has no access)
-                return Ok(list);
-            }
-
-            // For admins, show configured roots
-            var rootsSection = _configuration.GetSection("Roots");
-            if (rootsSection.Exists())
-            {
-                foreach (var child in rootsSection.GetChildren())
-                {
-                    var name = child.Key;
-                    var path = child.Value ?? string.Empty;
-                    if (!string.IsNullOrWhiteSpace(path))
-                    {
-                        list.Add(new RootDto { Name = name, Path = path });
-                    }
-                }
-            }
-            else
-            {
-                // Fallback to enumerating drives (if config missing)
-                foreach (var drive in DriveInfo.GetDrives())
-                {
-                    if (!drive.IsReady) continue;
-                    if (drive.Name.StartsWith("C:", StringComparison.OrdinalIgnoreCase)) continue;
-
-                    var letter = drive.Name.TrimEnd('\\');
-                    list.Add(new RootDto { Name = letter, Path = drive.RootDirectory.FullName });
-                }
-                if (Directory.Exists(PhoneRoot))
-                {
-                    list.Add(new RootDto { Name = "Samsung S20", Path = PhoneRoot });
-                }
-            }
-
-            return Ok(list);
+            Directory.Delete(target, recursive: true);
+            return true;
         }
 
-        // ================== FOLDER LIST ==================
-        [HttpGet("folder")]
-        public ActionResult<IEnumerable<ItemDto>> GetFolder([FromQuery] string path)
+        if (!System.IO.File.Exists(target))
+            return false;
+
+        System.IO.File.Delete(target);
+        return true;
+    }
+
+    public class DeleteBatchRequest
+    {
+        public List<string> Paths { get; set; } = [];
+    }
+
+    private sealed record DeleteFailure(string Path, string Error);
+
+    [HttpGet("thumbnail")]
+    public async Task<IActionResult> GetThumbnail([FromQuery] string path, CancellationToken cancellationToken)
+    {
+        if (!Resolve(path, out var target))
+            return Forbid();
+        if (Directory.Exists(target))
+            return Icon("#707be8", "M10 14h16l4 6h24v29H10z");
+        if (!System.IO.File.Exists(target))
+            return NotFound();
+
+        var file = new FileInfo(target);
+        var isVideo = PhotoLibraryService.VideoExtensions.Contains(file.Extension);
+        var image = isVideo
+            ? await thumbnails.GetVideoThumbnailAsync(file, cancellationToken)
+            : thumbnails.GetThumbnail(file);
+        if (image is not null)
+            return File(image, "image/jpeg");
+        if (isVideo)
+            return Icon("#a78bfa", "M16 10h32v44H16z M27 21v22l15-11z");
+        if (FileBrowserService.GetContentType(target).StartsWith("audio/", StringComparison.Ordinal))
+            return Icon("#60a5fa", "M25 14v25a7 7 0 1 0 5 7V25l15-5v13a7 7 0 1 0 5 7V7z");
+        if (string.Equals(file.Extension, ".pdf", StringComparison.OrdinalIgnoreCase))
+            return Icon("#ef4444", "M16 10h21l11 11v33H16z M21 31h22v3H21z M21 39h15v3H21z");
+        return Icon("#9ca3af", "M16 10h21l11 11v33H16z M36 12v11h10z");
+    }
+
+    private ContentResult Icon(string color, string shape) => Content(
+        $"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><path fill='{color}' fill-rule='evenodd' d='{shape}'/></svg>",
+        "image/svg+xml");
+
+    [HttpPost("download-zip")]
+    public Task<IActionResult> DownloadZip([FromBody] DownloadZipRequest request, CancellationToken cancellationToken) =>
+        CreateZip(request.Paths, cancellationToken);
+
+    [HttpPost("download-zip-form")]
+    [RequestFormLimits(ValueCountLimit = 10_000)]
+    public Task<IActionResult> DownloadZipForm([FromForm] List<string> paths, CancellationToken cancellationToken) =>
+        CreateZip(paths, cancellationToken);
+
+    private async Task<IActionResult> CreateZip(List<string>? paths, CancellationToken cancellationToken)
+    {
+        if (paths is null or { Count: 0 } || paths.Any(string.IsNullOrWhiteSpace))
+            return BadRequest(new { error = "Select at least one file or folder." });
+
+        var sources = new HashSet<string>(FileBrowserService.PathComparer);
+        foreach (var path in paths)
         {
-            if (string.IsNullOrWhiteSpace(path))
-            {
-                ModelState.AddModelError("path", "The path field is required.");
-                return BadRequest(ModelState);
-            }
-
-            // Check folder access permission
-            if (!HasAccessToPath(path))
-            {
-                return StatusCode(403, new { error = "You do not have access to this folder" });
-            }
-
-            // Debug logging
-            Console.WriteLine($"GetFolder called with path: '{path}'");
-
-            if (!Directory.Exists(path))
-                return NotFound(new { error = "directory not found" });
-
-            // For UNC paths that fail to access, return a helpful message
-            if (path.StartsWith("\\\\"))
-            {
-                return Ok(new[] 
-                {
-                    new 
-                    {
-                        Name = "Network Share Access",
-                        Path = "",
-                        IsDirectory = false,
-                        Size = (long?)null,
-                        LastModified = (DateTime?)null,
-                        Extension = "",
-                        Message = "This network share is accessible through your mapped drives (Y: for Easystore, Z: for Data). Please use Windows Explorer to browse these locations directly."
-                    }
-                });
-            }
-
-            var items = new List<ItemDto>();
-
-            try
-            {
-                // Directories
-                foreach (var dir in Directory.GetDirectories(path))
-                {
-                    DirectoryInfo di;
-                    try { di = new DirectoryInfo(dir); }
-                    catch { continue; }
-
-                    items.Add(new ItemDto
-                    {
-                        Name = di.Name,
-                        Path = di.FullName,
-                        IsDirectory = true,
-                        Size = null,
-                        LastModified = di.LastWriteTime,
-                        Extension = null
-                    });
-                }
-
-                // Files
-                foreach (var file in Directory.GetFiles(path))
-                {
-                    FileInfo fi;
-                    try { fi = new FileInfo(file); }
-                    catch { continue; }
-
-                    items.Add(new ItemDto
-                    {
-                        Name = fi.Name,
-                        Path = fi.FullName,
-                        IsDirectory = false,
-                        Size = fi.Length,
-                        LastModified = fi.LastWriteTime,
-                        Extension = fi.Extension
-                    });
-                }
-            }
-            catch (UnauthorizedAccessException)
-            {
-                return StatusCode(403, new { error = "Access denied to network share. Please ensure IIS has permissions to access this location." });
-            }
-            catch (Exception ex)
-            {
-                // For UNC paths, provide a more user-friendly error
-                if (path.StartsWith("\\\\"))
-                {
-                    return StatusCode(500, new { error = $"Unable to access network share. The share may require different credentials or permissions. Details: {ex.Message}" });
-                }
-                return StatusCode(500, new { error = $"Failed to list directory contents: {ex.Message}" });
-            }
-
-            // Folders first, then files
-            items = items
-                .OrderByDescending(i => i.IsDirectory)
-                .ThenBy(i => i.Name, StringComparer.OrdinalIgnoreCase)
-                .ToList();
-
-            return Ok(items);
+            if (!Resolve(path, out var source))
+                return Forbid();
+            if (!System.IO.File.Exists(source) && !Directory.Exists(source))
+                return NotFound(new { error = "A selected path no longer exists." });
+            sources.Add(source);
         }
 
-        // ================== BROWSE FOLDERS (for folder picker) ==================
-        [HttpGet("browse")]
-        public ActionResult<IEnumerable<ItemDto>> BrowseFolders([FromQuery] string path)
-        {
-            // Allow browsing any path for admin (no permission check for browsing)
-            // Regular users still need to be authenticated
-            
-            if (string.IsNullOrWhiteSpace(path))
-            {
-                path = "C:\\";
-            }
-
-            if (!Directory.Exists(path))
-                return NotFound(new { error = "directory not found" });
-
-            var items = new List<ItemDto>();
-
-            try
-            {
-                // Return only directories (for folder selection)
-                foreach (var dir in Directory.GetDirectories(path))
-                {
-                    DirectoryInfo di;
-                    try { di = new DirectoryInfo(dir); }
-                    catch { continue; }
-
-                    items.Add(new ItemDto
-                    {
-                        Name = di.Name,
-                        Path = di.FullName,
-                        IsDirectory = true,
-                        Size = null,
-                        LastModified = di.LastWriteTime,
-                        Extension = null
-                    });
-                }
-            }
-            catch (UnauthorizedAccessException)
-            {
-                return StatusCode(403, new { error = "Access denied to this folder" });
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new { error = ex.Message });
-            }
-
-            // Sort by name
-            items = items
-                .OrderBy(i => i.Name, StringComparer.OrdinalIgnoreCase)
-                .ToList();
-
-            return Ok(items);
-        }
-
-        // ================== CATEGORY FILTER (NEW) ==================
-        [HttpGet("category")]
-        public ActionResult<IEnumerable<ItemDto>> GetByCategory(
-            [FromQuery] string path, 
-            [FromQuery] string category,
-            [FromQuery] int maxResults = 500)
-        {
-            if (string.IsNullOrWhiteSpace(path))
-                return BadRequest(new { error = "path is required" });
-
-            if (string.IsNullOrWhiteSpace(category))
-                return BadRequest(new { error = "category is required (pictures, videos, documents)" });
-
-            if (!Directory.Exists(path))
-                return NotFound(new { error = "directory not found" });
-
-            HashSet<string> allowedExtensions;
-            switch (category.ToLowerInvariant())
-            {
-                case "pictures":
-                    allowedExtensions = ImageExtensions;
-                    break;
-                case "videos":
-                    allowedExtensions = VideoExtensions;
-                    break;
-                case "documents":
-                    allowedExtensions = DocumentExtensions;
-                    break;
-                default:
-                    return BadRequest(new { error = "Invalid category. Use: pictures, videos, or documents" });
-            }
-
-            var items = new List<ItemDto>();
-
-            try
-            {
-                // Recursively search for files matching the category
-                SearchDirectoryRecursive(path, allowedExtensions, items, maxResults);
-            }
-            catch (UnauthorizedAccessException)
-            {
-                return StatusCode(StatusCodes.Status403Forbidden, new { error = "Access denied." });
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(StatusCodes.Status500InternalServerError, new { error = ex.Message });
-            }
-
-            // Sort by last modified (newest first)
-            items = items
-                .OrderByDescending(i => i.LastModified)
-                .ToList();
-
-            return Ok(items);
-        }
-
-        private void SearchDirectoryRecursive(string path, HashSet<string> allowedExtensions, List<ItemDto> results, int maxResults)
-        {
-            if (results.Count >= maxResults)
-                return;
-
-            try
-            {
-                // Add matching files from current directory
-                foreach (var file in Directory.GetFiles(path))
-                {
-                    if (results.Count >= maxResults)
-                        break;
-
-                    try
-                    {
-                        var fi = new FileInfo(file);
-                        if (allowedExtensions.Contains(fi.Extension))
-                        {
-                            results.Add(new ItemDto
-                            {
-                                Name = fi.Name,
-                                Path = fi.FullName,
-                                IsDirectory = false,
-                                Size = fi.Length,
-                                LastModified = fi.LastWriteTime,
-                                Extension = fi.Extension
-                            });
-                        }
-                    }
-                    catch
-                    {
-                        // Skip files we can't access
-                        continue;
-                    }
-                }
-
-                // Recurse into subdirectories
-                foreach (var dir in Directory.GetDirectories(path))
-                {
-                    if (results.Count >= maxResults)
-                        break;
-
-                    try
-                    {
-                        SearchDirectoryRecursive(dir, allowedExtensions, results, maxResults);
-                    }
-                    catch
-                    {
-                        // Skip directories we can't access
-                        continue;
-                    }
-                }
-            }
-            catch
-            {
-                // Silently skip problematic directories
-            }
-        }
-
-        // ================== OPEN FILE ==================
-        [HttpGet("open")]
-        public IActionResult Open([FromQuery] string path)
-        {
-            if (string.IsNullOrWhiteSpace(path) || !System.IO.File.Exists(path))
-                return NotFound();
-
-            string contentType = "application/octet-stream";
-            string ext = Path.GetExtension(path).ToLowerInvariant();
-
-            if (ext is ".jpg" or ".jpeg") contentType = "image/jpeg";
-            else if (ext is ".png") contentType = "image/png";
-            else if (ext is ".gif") contentType = "image/gif";
-            else if (ext is ".pdf") contentType = "application/pdf";
-            else if (ext is ".mp4") contentType = "video/mp4";
-
-            var fileName = Path.GetFileName(path);
-            var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
-
-            return File(stream, contentType, fileName);
-        }
-
-        // ================== UPLOAD ==================
-        [HttpPost("upload")]
-        [RequestSizeLimit(10L * 1024 * 1024 * 1024)] // 10 GB
-        [RequestFormLimits(MultipartBodyLengthLimit = 10L * 1024 * 1024 * 1024)]
-        public async Task<IActionResult> Upload(
-            [FromQuery] string targetPath,
-            [FromForm] List<IFormFile> files)
-        {
-            if (string.IsNullOrWhiteSpace(targetPath))
-                return BadRequest(new { error = "targetPath is required" });
-
-            if (!Directory.Exists(targetPath))
-                return NotFound(new { error = "Target directory not found" });
-
-            if (files == null || files.Count == 0)
-                return BadRequest(new { error = "No files received" });
-
-            foreach (var file in files)
-            {
-                // Preserve folder structure when uploading a folder
-                var relative = file.FileName
-                    .Replace('/', Path.DirectorySeparatorChar)
-                    .Replace('\\', Path.DirectorySeparatorChar);
-
-                var destFullPath = Path.Combine(targetPath, relative);
-
-                var destDir = Path.GetDirectoryName(destFullPath);
-                if (!string.IsNullOrEmpty(destDir))
-                {
-                    Directory.CreateDirectory(destDir);
-                }
-
-                await using var stream = new FileStream(
-                    destFullPath,
-                    FileMode.Create,
-                    FileAccess.Write,
-                    FileShare.None);
-
-                await file.CopyToAsync(stream);
-            }
-
-            return Ok(new { message = "Upload complete" });
-        }
-
-        // ================== DELETE FILE / FOLDER ==================
-        [HttpDelete("delete")]
-        public IActionResult Delete([FromQuery] string path)
-        {
-            if (string.IsNullOrWhiteSpace(path))
-                return BadRequest(new { error = "path is required" });
-
-            try
-            {
-                if (Directory.Exists(path))
-                {
-                    // Delete directory recursively
-                    Directory.Delete(path, recursive: true);
-                    return Ok(new { message = "Directory deleted" });
-                }
-
-                if (System.IO.File.Exists(path))
-                {
-                    System.IO.File.Delete(path);
-                    return Ok(new { message = "File deleted" });
-                }
-
-                return NotFound(new { error = "Path not found" });
-            }
-            catch (UnauthorizedAccessException)
-            {
-                return StatusCode(StatusCodes.Status403Forbidden, new { error = "Access denied" });
-            }
-            catch (IOException ex)
-            {
-                return StatusCode(StatusCodes.Status500InternalServerError, new { error = ex.Message });
-            }
-        }
-
-        // ================== THUMBNAIL ==================
-        [HttpGet("thumbnail")]
-        public IActionResult GetThumbnail([FromQuery] string path)
-        {
-            if (string.IsNullOrWhiteSpace(path))
-                return BadRequest(new { error = "path is required" });
-
-            try
-            {
-                // Folder icon (SVG) - Purple-blue background with folder icon
-                if (Directory.Exists(path))
-                {
-                    var folderSvg = "<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120'>" +
-                        "<rect width='120' height='120' fill='#707be8'/>" +
-                        "<path d='M50 30H25c-5.5 0-10 4.5-10 10v60c0 5.5 4.5 10 10 10h80c5.5 0 10-4.5 10-10V45c0-5.5-4.5-10-10-10H60L50 30z' fill='#ffffff' opacity='0.95'/>" +
-                        "</svg>";
-                    return Content(folderSvg, "image/svg+xml");
-                }
-
-                // Check if file exists
-                if (!System.IO.File.Exists(path))
-                    return NotFound();
-
-                string ext = Path.GetExtension(path).ToLowerInvariant();
-
-                // Image files: generate & cache thumbnail using ImageSharp
-                if (ext is ".jpg" or ".jpeg" or ".png" or ".gif" or ".bmp" or ".webp")
-                {
-                    var cacheDir = Path.Combine(Path.GetTempPath(), "FilePortalThumbnails");
-                    Directory.CreateDirectory(cacheDir);
-
-                    var lastWrite = System.IO.File.GetLastWriteTimeUtc(path).Ticks;
-                    using var sha = SHA1.Create();
-                    var keyRaw = System.Text.Encoding.UTF8.GetBytes(path + ":" + lastWrite);
-                    var hash = BitConverter.ToString(sha.ComputeHash(keyRaw)).Replace("-", "").ToLowerInvariant();
-                    var cachedFile = Path.Combine(cacheDir, hash + ".jpg");
-
-                    if (System.IO.File.Exists(cachedFile))
-                    {
-                        var fs = new FileStream(cachedFile, FileMode.Open, FileAccess.Read, FileShare.Read);
-                        return File(fs, "image/jpeg");
-                    }
-
-                    // Generate thumbnail
-                    using var image = Image.Load(path);
-                    var size = new SixLabors.ImageSharp.Size(240, 240);
-                    image.Mutate(x => x.Resize(new SixLabors.ImageSharp.Processing.ResizeOptions
-                    {
-                        Mode = SixLabors.ImageSharp.Processing.ResizeMode.Max,
-                        Size = size
-                    }));
-
-                    var encoder = new JpegEncoder { Quality = 80 };
-                    using (var outStream = System.IO.File.OpenWrite(cachedFile))
-                    {
-                        image.Save(outStream, encoder);
-                    }
-
-                    var fs2 = new FileStream(cachedFile, FileMode.Open, FileAccess.Read, FileShare.Read);
-                    return File(fs2, "image/jpeg");
-                }
-
-                // Video files: return file type icon
-                if (ext is ".mp4" or ".mkv" or ".avi" or ".mov" or ".flv" or ".wmv")
-                {
-                    var videoSvg = @"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23a78bfa'><path d='M18 3H6c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 9.5L9 17V7l4 5.5z'/></svg>";
-                    return Content(videoSvg, "image/svg+xml");
-                }
-
-                // Audio files
-                if (ext is ".mp3" or ".wav" or ".flac" or ".aac" or ".m4a" or ".ogg")
-                {
-                    var audioSvg = @"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2360a5fa'><path d='M12 3v9.28c-.47-.46-1.12-.75-1.84-.75-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V7h4V3h-4z'/></svg>";
-                    return Content(audioSvg, "image/svg+xml");
-                }
-
-                // PDF
-                if (ext is ".pdf")
-                {
-                    var pdfSvg = @"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23ef4444'><path d='M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-8-6zm0 18H6V4h5v5h3v11z'/><text x='9' y='15' font-size='6' fill='white' font-weight='bold'>PDF</text></svg>";
-                    return Content(pdfSvg, "image/svg+xml");
-                }
-
-                // Document files (Word, Excel, etc.)
-                if (ext is ".doc" or ".docx" or ".xlsx" or ".xls" or ".ppt" or ".pptx")
-                {
-                    var docSvg = @"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%234b5563'><path d='M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-8-6zM8 18h8v2H8zm0-4h8v2H8zm0-4h8v2H8zm0-4h5v2H8z'/></svg>";
-                    return Content(docSvg, "image/svg+xml");
-                }
-
-                // Default file icon
-                var fileSvg = @"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%239ca3af'><path d='M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-8-6zm0 18H6V4h5v5h3v11z'/></svg>";
-                return Content(fileSvg, "image/svg+xml");
-            }
-            catch (Exception ex)
-            {
-                return BadRequest(new { error = ex.Message });
-            }
-        }
-
-        // ================== FILE SERVING ==================
-        [HttpGet("file")]
-        public IActionResult GetFile([FromQuery] string path)
-        {
-            if (string.IsNullOrWhiteSpace(path))
-                return BadRequest(new { error = "path is required" });
-
-            try
-            {
-                if (!System.IO.File.Exists(path))
-                    return NotFound();
-
-                var fileStream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
-                var contentType = GetContentType(path);
-                return File(fileStream, contentType);
-            }
-            catch (Exception ex)
-            {
-                return BadRequest(new { error = ex.Message });
-            }
-        }
-
-        private string GetContentType(string path)
-        {
-            var ext = Path.GetExtension(path).ToLowerInvariant();
-            return ext switch
-            {
-                ".mp4" => "video/mp4",
-                ".mkv" => "video/x-matroska",
-                ".avi" => "video/x-msvideo",
-                ".mov" => "video/quicktime",
-                ".flv" => "video/x-flv",
-                ".wmv" => "video/x-ms-wmv",
-                ".webm" => "video/webm",
-                ".m4v" => "video/mp4",
-                ".mpg" => "video/mpeg",
-                ".mpeg" => "video/mpeg",
-                ".jpg" => "image/jpeg",
-                ".jpeg" => "image/jpeg",
-                ".png" => "image/png",
-                ".gif" => "image/gif",
-                ".bmp" => "image/bmp",
-                ".webp" => "image/webp",
-                ".svg" => "image/svg+xml",
-                ".ico" => "image/x-icon",
-                ".tiff" => "image/tiff",
-                ".tif" => "image/tiff",
-                ".mp3" => "audio/mpeg",
-                ".wav" => "audio/wav",
-                ".flac" => "audio/flac",
-                ".aac" => "audio/aac",
-                ".m4a" => "audio/mp4",
-                ".ogg" => "audio/ogg",
-                ".pdf" => "application/pdf",
-                ".doc" => "application/msword",
-                ".docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                ".xls" => "application/vnd.ms-excel",
-                ".xlsx" => "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                ".ppt" => "application/vnd.ms-powerpoint",
-                ".pptx" => "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                ".txt" => "text/plain",
-                ".rtf" => "application/rtf",
-                ".odt" => "application/vnd.oasis.opendocument.text",
-                ".ods" => "application/vnd.oasis.opendocument.spreadsheet",
-                ".odp" => "application/vnd.oasis.opendocument.presentation",
-                _ => "application/octet-stream"
-            };
-        }
-
-        [HttpPost("download-zip")]
-        public async Task<IActionResult> DownloadZip([FromBody] DownloadZipRequest request)
-        {
-            if (request?.Paths == null || request.Paths.Count == 0)
-            {
-                return BadRequest(new { error = "No paths provided" });
-            }
-
-            var memoryStream = new MemoryStream();
-            try
-            {
-                using (var archive = new ZipArchive(memoryStream, ZipArchiveMode.Create, leaveOpen: true))
-                {
-                    var fileCount = 0;
-                    var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                    
-                    foreach (var path in request.Paths)
-                    {
-                        if (string.IsNullOrWhiteSpace(path)) continue;
-
-                        var fullPath = Path.GetFullPath(path);
-
-                        if (System.IO.File.Exists(fullPath))
-                        {
-                            var fileName = Path.GetFileName(fullPath);
-                            // Ensure unique names in zip
-                            var entryName = fileName;
-                            var counter = 1;
-                            while (usedNames.Contains(entryName))
-                            {
-                                var nameWithoutExt = Path.GetFileNameWithoutExtension(fileName);
-                                var ext = Path.GetExtension(fileName);
-                                entryName = $"{nameWithoutExt}_{counter}{ext}";
-                                counter++;
-                            }
-                            usedNames.Add(entryName);
-
-                            var entry = archive.CreateEntry(entryName, CompressionLevel.Fastest);
-                            using var entryStream = entry.Open();
-                            using var fileStream = System.IO.File.OpenRead(fullPath);
-                            await fileStream.CopyToAsync(entryStream);
-                            fileCount++;
-                        }
-                        else if (Directory.Exists(fullPath))
-                        {
-                            // Add folder and its contents recursively
-                            await AddDirectoryToZip(archive, fullPath, Path.GetFileName(fullPath));
-                            fileCount++;
-                        }
-                    }
-
-                    if (fileCount == 0)
-                    {
-                        memoryStream.Dispose();
-                        return NotFound(new { error = "No valid files found" });
-                    }
-                }
-
-                memoryStream.Position = 0;
-                return File(memoryStream, "application/zip", "files.zip");
-            }
-            catch (Exception ex)
-            {
-                memoryStream.Dispose();
-                return StatusCode(500, new { error = ex.Message });
-            }
-        }
-
-        private async Task AddDirectoryToZip(ZipArchive archive, string directoryPath, string entryPrefix)
-        {
-            try
-            {
-                foreach (var file in Directory.GetFiles(directoryPath))
-                {
-                    var relativePath = Path.Combine(entryPrefix, Path.GetFileName(file)).Replace('\\', '/');
-                    var entry = archive.CreateEntry(relativePath, CompressionLevel.Fastest);
-                    using var entryStream = entry.Open();
-                    using var fileStream = System.IO.File.OpenRead(file);
-                    await fileStream.CopyToAsync(entryStream);
-                }
-
-                foreach (var subDir in Directory.GetDirectories(directoryPath))
-                {
-                    var relativePath = Path.Combine(entryPrefix, Path.GetFileName(subDir));
-                    await AddDirectoryToZip(archive, subDir, relativePath);
-                }
-            }
-            catch
-            {
-                // Skip inaccessible directories
-            }
-        }
-
-        public class DownloadZipRequest
-        {
-            public List<string> Paths { get; set; } = new();
-        }
+        var archive = await archives.CreateAsync(sources, Roots, cancellationToken);
+        return File(archive, "application/zip", "files.zip");
+    }
+
+    private bool Resolve(string path, out string fullPath, bool allowMissing = true) =>
+        browser.TryResolve(path, Roots, out fullPath, allowMissing);
+
+    private static FileItem ToItem(FileSystemInfo entry) => new()
+    {
+        Name = entry.Name,
+        Path = entry.FullName,
+        IsDirectory = entry is DirectoryInfo,
+        Size = entry is FileInfo file ? file.Length : null,
+        LastModified = entry.LastWriteTime,
+        Extension = entry is FileInfo ? entry.Extension : null
+    };
+
+    public class DownloadZipRequest
+    {
+        public List<string> Paths { get; set; } = [];
     }
 }

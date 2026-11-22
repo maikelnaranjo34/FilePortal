@@ -1,1229 +1,139 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <title>File Portal</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <style>
-    body {
-      margin: 0;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #020617;
-      color: #e5e7eb;
-    }
-    .item.selected { box-shadow: 0 0 0 2px rgba(14,165,233,0.18); border:1px solid #0ea5e9 }
-    .item.keyboard-selected { box-shadow: 0 0 0 3px #0ea5e9; background: rgba(14,165,233,0.15); }
-    .item input[type="checkbox"] { display:none }
-    .item.selection-mode input[type="checkbox"] { display:inline-block }
-    /* Image viewer modal */
-    .image-viewer { display:none; position:fixed; inset:0; background:rgba(2,6,23,0.95); z-index:9999; align-items:center; justify-content:center; }
-    .image-viewer img { max-width:90%; max-height:90vh; object-fit:contain; }
-    .image-viewer-close { position:absolute; top:20px; right:20px; background:#ef4444; color:#fff; border:none; border-radius:50%; width:40px; height:40px; font-size:24px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
-    .image-viewer-close:hover { background:#dc2626; }
-    .image-viewer-delete { position:absolute; top:20px; right:70px; background:#f59e0b; color:#fff; border:none; border-radius:50%; width:40px; height:40px; font-size:20px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
-    .image-viewer-delete:hover { background:#d97706; }
-    .image-viewer-nav { position:absolute; top:50%; transform:translateY(-50%); background:#0ea5e9; color:#fff; border:none; border-radius:50%; width:50px; height:50px; font-size:24px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
-    .image-viewer-nav:hover { background:#0284c7; }
-    .image-viewer-nav.prev { left:20px; }
-    .image-viewer-nav.next { right:20px; }
-    .app {
-      display: flex;
-      height: 100vh;
-    }
-    .sidebar {
-      width: 260px;
-      background: #020617;
-      border-right: 1px solid #1f2937;
-      display: flex;
-      flex-direction: column;
-    }
-    .sidebar-header {
-      padding: 16px;
-      border-bottom: 1px solid #1f2937;
-      font-weight: 600;
-      font-size: 18px;
-    }
-    .drive-list {
-      overflow: auto;
-      padding: 8px;
-    }
-    .drive-item {
-      padding: 8px 10px;
-      border-radius: 999px;
-      margin-bottom: 6px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      cursor: pointer;
-      font-size: 14px;
-    }
-    .drive-item span.icon {
-      font-size: 16px;
-    }
-    .drive-item.active {
-      background: #0ea5e9;
-      color: #0b1120;
-    }
-    .drive-item:not(.active):hover {
-      background: #111827;
-    }
-    .main {
-      flex: 1;
-      display: flex;
-      flex-direction: column;
-    }
-    .toolbar {
-      padding: 10px 16px;
-      border-bottom: 1px solid #1f2937;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-    }
-    .path {
-      font-size: 13px;
-      color: #9ca3af;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .buttons {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    button, .btn-like {
-      border: none;
-      border-radius: 999px;
-      padding: 6px 12px;
-      font-size: 13px;
-      cursor: pointer;
-      background: #0ea5e9;
-      color: #0b1120;
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-    }
-    button.secondary {
-      background: #111827;
-      color: #e5e7eb;
-      border: 1px solid #374151;
-    }
-    button:hover, .btn-like:hover {
-      opacity: 0.9;
-    }
-    .content {
-      flex: 1;
-      overflow: auto;
-      padding: 12px 16px;
-    }
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-      gap: 12px;
-    }
-    .grid.list-view {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-    .grid.list-view .item {
-      flex-direction: row;
-      height: 48px;
-      align-items: center;
-      padding: 0 12px;
-    }
-    .grid.list-view .item-thumbnail {
-      width: 32px;
-      height: 32px;
-      flex-shrink: 0;
-    }
-    .grid.list-view .item-info {
-      flex: 1;
-      flex-direction: row;
-      align-items: center;
-      justify-content: space-between;
-    }
-    .grid.list-view .item-name {
-      flex: 1;
-    }
-    .grid.list-view .item-meta {
-      flex-direction: row;
-      gap: 16px;
-    }
-    .grid.details-view {
-      display: flex;
-      flex-direction: column;
-      gap: 0;
-    }
-    .grid.details-view .item {
-      flex-direction: row;
-      height: 40px;
-      align-items: center;
-      padding: 0 12px;
-      border-radius: 0;
-      border-left: none;
-      border-right: none;
-      border-top: none;
-    }
-    .grid.details-view .item-thumbnail {
-      width: 24px;
-      height: 24px;
-      flex-shrink: 0;
-      margin-right: 8px;
-    }
-    .grid.details-view .item-info {
-      flex: 1;
-      flex-direction: row;
-      align-items: center;
-      gap: 16px;
-    }
-    .grid.details-view .item-name {
-      flex: 1;
-      min-width: 200px;
-    }
-    .grid.details-view .item-meta {
-      flex-direction: row;
-      gap: 24px;
-      min-width: 200px;
-    }
-    .item {
-      background: #020617;
-      border-radius: 12px;
-      padding: 0;
-      border: 1px solid #1f2937;
-      cursor: pointer;
-      display: flex;
-      flex-direction: column;
-      gap: 0;
-      overflow: hidden;
-      transition: all 0.2s ease;
-    }
-    .item:hover {
-      border-color: #0ea5e9;
-      box-shadow: 0 0 12px rgba(14, 165, 233, 0.3);
-    }
-    .item-thumbnail {
-      width: 100%;
-      height: 120px;
-      background: #111827;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      overflow: hidden;
-    }
-    .item-thumbnail img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-    }
-    .item-thumbnail svg {
-      width: 60%;
-      height: 60%;
-      filter: drop-shadow(0 0 2px rgba(0,0,0,0.5));
-    }
-    .item-info {
-      padding: 8px;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-    .item-name {
-      font-size: 12px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      color: #e5e7eb;
-    }
-    .item-meta {
-      font-size: 10px;
-      color: #9ca3af;
-      display: flex;
-      justify-content: space-between;
-    }
-    .empty {
-      font-size: 13px;
-      color: #6b7280;
-    }
-    .error {
-      font-size: 12px;
-      color: #f97373;
-      margin-top: 8px;
-    }
-    #fileInput {
-      display: none;
-    }
-    .login-overlay {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(0,0,0,0.8);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 1000;
-    }
-    .login-box {
-      background: #1f2937;
-      border: 1px solid #374151;
-      border-radius: 12px;
-      padding: 32px;
-      width: 100%;
-      max-width: 320px;
-      box-shadow: 0 20px 25px rgba(0,0,0,0.5);
-    }
-    .login-box h1 {
-      margin: 0 0 24px 0;
-      font-size: 24px;
-      color: #e5e7eb;
-    }
-    .login-box input {
-      width: 100%;
-      padding: 8px 12px;
-      margin-bottom: 12px;
-      background: #111827;
-      border: 1px solid #374151;
-      border-radius: 6px;
-      color: #e5e7eb;
-      font-size: 13px;
-      box-sizing: border-box;
-    }
-    .login-box input::placeholder {
-      color: #9ca3af;
-    }
-    .login-box button {
-      width: 100%;
-      margin-top: 8px;
-    }
-    .login-error {
-      color: #f97373;
-      font-size: 12px;
-      margin-bottom: 12px;
-    }
-  </style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FileNest</title>
+  <script src="/filenest/route.js"></script>
+  <script src="/theme.js"></script>
+  <link rel="stylesheet" href="/filenest/site.css">
+  <script src="/filenest/shell.js" defer></script>
+  <script src="/filenest/dashboard.js" defer></script>
+  <script src="/filenest/nesti.js" defer></script>
+  <script src="/filenest/assistant.js" defer></script>
 </head>
-<body>
-  <!-- Login Modal -->
-  <div id="loginOverlay" class="login-overlay">
-    <div class="login-box">
-      <h1>FilePortal</h1>
-      <div id="loginError" class="login-error"></div>
-      <input id="username" type="text" placeholder="Username" autocomplete="off" />
-      <input id="password" type="password" placeholder="Password" autocomplete="off" />
-      <button onclick="performLogin()">Sign In</button>
-    </div>
-  </div>
-
-  <div class="app" style="display:none;" id="mainApp">
-    <div class="sidebar">
-      <div class="sidebar-header">Drives & Sources</div>
-      <div id="driveList" class="drive-list"></div>
-      <div style="margin-top:16px;padding-top:16px;border-top:1px solid #1f2937">
-        <div style="font-size:12px;color:#9ca3af;margin-bottom:8px;font-weight:600">FILTERS</div>
-        <button id="filterPictures" class="secondary" style="width:100%;margin-bottom:6px;justify-content:flex-start" onclick="filterByCategory('pictures')">🖼️ Pictures</button>
-        <button id="filterVideos" class="secondary" style="width:100%;margin-bottom:6px;justify-content:flex-start" onclick="filterByCategory('videos')">🎬 Videos</button>
-        <button id="filterDocuments" class="secondary" style="width:100%;justify-content:flex-start" onclick="filterByCategory('documents')">📄 Documents</button>
-      </div>
-    </div>
-    <div class="main">
-      <div class="toolbar">
-        <div class="path" id="currentPathLabel">Select a drive…</div>
-        <div class="buttons">
-          <div style="position:relative;display:inline-block">
-            <button id="uploadBtn" class="btn-like" type="button">⬆️ Upload</button>
-            <div id="uploadMenu" style="display:none;position:absolute;right:0;margin-top:6px;background:#0b1220;border:1px solid #1f2937;border-radius:6px;padding:6px;z-index:50;min-width:140px">
-              <div id="uploadFilesOption" style="padding:8px;cursor:pointer;color:#e5e7eb">⬆️ Upload Files</div>
-              <div id="uploadFolderOption" style="padding:8px;cursor:pointer;color:#e5e7eb">📁 Upload Folder</div>
+<body class="fn-page">
+  <header id="fileNestHeader" data-page="home"></header>
+  <main class="fn-shell" id="dashboardMain">
+    <p id="dashboardStatus" class="fn-status" role="status">Loading your workspace…</p>
+    <section id="dashboard" aria-label="Home" hidden>
+      <div class="fn-hero">
+        <img class="fn-hero-mascot" data-nesti src="/filenest/mascot.png" alt="" width="320" height="320" style="height:auto">
+        <div class="fn-welcome">
+          <div class="fn-welcome-copy">
+            <h1>Welcome <span style="color:var(--fn-accent)">back!</span></h1>
+            <p>Find, organize, and manage your files.</p>
+          </div>
+          <div class="fn-panel fn-search-box">
+            <form id="dashboardSearchForm" class="fn-search" role="search">
+              <span data-icon="search"></span>
+              <input id="dashboardSearch" type="search" aria-label="Search files" placeholder="Search files by name…" required>
+              <button type="submit" aria-label="Search"><span data-icon="arrow"></span></button>
+            </form>
+            <div id="dropArea" class="fn-upload">
+              <button class="fn-button fn-button-primary" id="uploadFiles" type="button"><span data-icon="upload"></span>Upload Files</button>
+              <button class="fn-button" id="uploadFolder" type="button"><span data-icon="folder"></span>Upload Folder</button>
+              <span class="fn-hint">or drag and drop files here</span>
             </div>
           </div>
-          <button id="selectBtn" class="btn-like" type="button" style="margin-left:8px">☑️ Select</button>
-          <button id="selectAllBtn" class="btn-like" type="button" style="margin-left:8px;display:none" onclick="selectAll()">☑️ Select All</button>
-          <button id="downloadSelectedBtn" class="btn-like" type="button" style="margin-left:8px;background:#10b981;display:none" onclick="downloadSelected()">⬇️ Download</button>
-          <button id="deleteSelectedBtn" class="btn-like" type="button" style="margin-left:8px;background:#ef4444;display:none" onclick="deleteSelected()">🗑️ Delete Selected</button>
-          <span id="selectedCountLabel" style="color:#9ca3af;font-size:13px;margin-left:8px;display:none"></span>
-          <button class="secondary" type="button" onclick="goUp()">⬆️ Up</button>
-          <button id="viewTypeBtn" class="secondary" type="button" onclick="toggleViewType()">📋 View</button>
-          <a href="/users.html" class="btn-like" style="background:#111827;color:#e5e7eb;padding:6px 10px;">👥 Manage Users</a>
-          <span id="currentUser" style="color:#9ca3af; font-size:13px; margin-left:8px; display:none;"></span>
-          <button id="logoutBtn" class="secondary" style="margin-left:8px; display:none;" type="button" onclick="performLogout()">Logout</button>
+        </div>
+        <aside class="fn-storage fn-section fn-panel" aria-labelledby="storageHeading">
+          <div class="fn-title-row"><h2 id="storageHeading"><span data-icon="storage"></span>Storage Overview</h2></div>
+          <p class="fn-empty" id="storageSummary">Choose a folder to see its listed files and sizes.</p>
+        </aside>
+      </div>
+      <div class="fn-dashboard">
+        <div class="fn-stack" id="dashboardPrimary">
+          <section class="fn-panel fn-section" id="quickSection">
+            <div class="fn-title-row"><h2><span data-icon="folder"></span>Quick Access</h2><a href="/files.html">My Files →</a></div>
+            <div class="fn-roots" id="quickRoots"></div>
+          </section>
+          <section class="fn-categories" aria-label="File categories" id="categorySection">
+            <a class="fn-category" href="/files.html?category=pictures"><span class="fn-file-icon images" data-icon="gallery"></span><span>Images</span><span data-icon="chevron"></span></a>
+            <a class="fn-category" href="/files.html?category=videos"><span class="fn-file-icon video" data-icon="video"></span><span>Videos</span><span data-icon="chevron"></span></a>
+            <a class="fn-category" href="/files.html?category=pdfs"><span class="fn-file-icon pdf" data-icon="file"></span><span>PDFs</span><span data-icon="chevron"></span></a>
+            <a class="fn-category" href="/files.html?category=notes"><span class="fn-file-icon notes" data-icon="file"></span><span>Notes</span><span data-icon="chevron"></span></a>
+            <a class="fn-category" href="/files.html?category=documents"><span class="fn-file-icon" data-icon="file"></span><span>Documents</span><span data-icon="chevron"></span></a>
+          </section>
+          <section class="fn-panel fn-section" id="recentsSection">
+            <div class="fn-title-row"><h2><span data-icon="clock"></span>Recent Files</h2><a href="/#recent">View All →</a></div>
+            <div id="recentFiles"></div>
+          </section>
+          <section class="fn-panel fn-section" id="favoritesSection">
+            <div class="fn-title-row"><h2><span data-icon="star"></span>Favorites</h2><a href="/gallery.html#favorites">View All →</a></div>
+            <div id="favoriteFiles"></div>
+          </section>
+        </div>
+        <div class="fn-stack" id="dashboardSecondary">
+          <section class="fn-panel fn-section fn-assistant" id="assistantSection">
+            <img data-nesti src="/filenest/mascot.png" alt="" width="78" height="78">
+            <div><div class="fn-title-row"><h2>FileNest Assistant</h2></div><p class="fn-muted">Search tools and AI availability</p></div>
+            <button type="button" id="assistantLauncher" class="fn-button" aria-label="Open FileNest Assistant"><span data-icon="sparkle"></span></button>
+          </section>
+          <section class="fn-panel fn-section fn-stack" id="insightsSection" aria-label="File insights">
+            <div>
+              <div class="fn-title-row"><h2><span data-icon="pin"></span>Pinned Folders</h2></div>
+              <div class="fn-roots" id="pinnedFolders"></div>
+            </div>
+            <div>
+              <div class="fn-title-row"><h2><span data-icon="upload"></span>Recent Uploads</h2></div>
+              <div id="recentUploads"></div>
+            </div>
+            <div>
+              <div class="fn-title-row"><h2><span data-icon="storage"></span>Folder Storage</h2></div>
+              <form id="storageForm">
+                <label for="storageFolder" class="fn-muted">Files directly in a folder</label>
+                <div class="fn-actions" style="margin-top:6px">
+                  <select id="storageFolder" class="fn-button" aria-label="Storage folder"></select>
+                  <button id="storageButton" class="fn-button" type="submit">Check</button>
+                </div>
+              </form>
+              <p class="fn-empty" id="storageDetail" role="status"></p>
+            </div>
+          </section>
         </div>
       </div>
-      <div class="content">
-        <div id="error" class="error"></div>
-        <div id="items" class="grid"></div>
-        <div id="emptyMsg" class="empty" style="display:none;">This folder is empty.</div>
-      </div>
+    </section>
+    <section class="fn-subview" id="subview" hidden>
+      <h1 class="fn-view-title" id="subviewTitle" tabindex="-1"></h1>
+      <div class="fn-panel fn-section" id="subviewContent"></div>
+    </section>
+  </main>
+  <dialog id="uploadDialog" class="fn-dialog" aria-labelledby="uploadTitle">
+    <h2 id="uploadTitle">Upload destination</h2>
+    <p id="uploadSummary" class="fn-muted"></p>
+    <label for="uploadDestination">Choose a folder</label>
+    <select id="uploadDestination"></select>
+    <div class="fn-dialog-actions">
+      <form method="dialog"><button type="submit" class="fn-button">Cancel</button></form>
+      <button type="button" class="fn-button fn-button-primary" id="uploadConfirm">Continue</button>
     </div>
-  </div>
-
-  <!-- Hidden inputs for files and folders -->
-  <input id="fileInputFiles" type="file" multiple style="display:none" />
-  <input id="fileInputFolder" type="file" multiple webkitdirectory style="display:none" />
-
-  <!-- Image Viewer Modal -->
-  <div id="imageViewer" class="image-viewer">
-    <button class="image-viewer-close" onclick="closeImageViewer()">×</button>
-    <button class="image-viewer-delete" onclick="deleteCurrentImage()">🗑️</button>
-    <button class="image-viewer-nav prev" id="imagePrevBtn" onclick="navigateImage(-1)">‹</button>
-    <button class="image-viewer-nav next" id="imageNextBtn" onclick="navigateImage(1)">›</button>
-    <img id="imageViewerImg" src="" alt="" />
-  </div>
-
-  <!-- Video Viewer Modal -->
-  <div id="videoViewer" class="image-viewer">
-    <button class="image-viewer-close" onclick="closeVideoViewer()">×</button>
-    <button class="image-viewer-delete" onclick="deleteCurrentVideo()">🗑️</button>
-    <video id="videoViewerVideo" controls style="max-width:90%; max-height:90vh;"></video>
-  </div>
-
-  <script>
-    let currentRoot = null;
-    let currentPath = null;
-    let currentFilter = null;
-    let currentImageList = [];
-    let currentImageIndex = 0;
-    let imageZoom = 1;
-    let imagePanX = 0;
-    let imagePanY = 0;
-    let isPanning = false;
-    let panStartX = 0;
-    let panStartY = 0;
-    let lastSearchLetter = '';
-    let searchLetterIndex = 0;
-
-    // Check if user is authenticated on page load
-    async function checkAuth() {
-      try {
-        const res = await fetch("/api/auth/me", { credentials: "include" });
-        if (res.ok) {
-          const data = await res.json().catch(() => null);
-          const user = data?.user || '';
-          // User is authenticated, show main app
-          document.getElementById("loginOverlay").style.display = "none";
-          document.getElementById("mainApp").style.display = "flex";
-          if (user) {
-            const cu = document.getElementById("currentUser");
-            cu.textContent = `Hi, ${user}`;
-            cu.style.display = "inline-block";
-            document.getElementById("logoutBtn").style.display = "inline-flex";
-          }
-          loadDrives();
-        } else {
-          // Not authenticated, show login
-          document.getElementById("loginOverlay").style.display = "flex";
-          document.getElementById("mainApp").style.display = "none";
-          document.getElementById("currentUser").style.display = "none";
-          document.getElementById("logoutBtn").style.display = "none";
-        }
-      } catch (err) {
-        console.error("Auth check failed:", err);
-        // Default to login
-        document.getElementById("loginOverlay").style.display = "flex";
-        document.getElementById("mainApp").style.display = "none";
-      }
-    }
-
-    async function performLogout() {
-      try {
-        await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' });
-      } catch (err) {
-        console.error('Logout failed', err);
-      }
-      document.getElementById("loginOverlay").style.display = "flex";
-      document.getElementById("mainApp").style.display = "none";
-      document.getElementById("currentUser").style.display = "none";
-      document.getElementById("logoutBtn").style.display = "none";
-    }
-
-    async function performLogin() {
-      const username = document.getElementById("username").value.trim();
-      const password = document.getElementById("password").value.trim();
-      const errorEl = document.getElementById("loginError");
-
-      if (!username || !password) {
-        errorEl.textContent = "Enter username and password.";
-        return;
-      }
-
-      errorEl.textContent = "";
-
-      const formData = new FormData();
-      formData.append("username", username);
-      formData.append("password", password);
-
-      try {
-        const res = await fetch("/api/auth/login", {
-          method: "POST",
-          body: formData,
-          credentials: "include"
-        });
-
-        if (!res.ok) {
-          const data = await res.json();
-          errorEl.textContent = data.message || "Login failed.";
-          return;
-        }
-
-        // Login successful
-        document.getElementById("username").value = "";
-        document.getElementById("password").value = "";
-        checkAuth(); // Re-check auth to set up user display and load drives
-      } catch (err) {
-        console.error(err);
-        errorEl.textContent = "Network error: " + err.message;
-      }
-    }
-
-    // Allow Enter key to submit login
-    document.addEventListener("DOMContentLoaded", () => {
-      document.getElementById("password").addEventListener("keypress", (e) => {
-        if (e.key === "Enter") performLogin();
-      });
-    });
-
-    async function loadDrives() {
-      setError("");
-      const listEl = document.getElementById("driveList");
-      listEl.innerHTML = "Loading…";
-
-      try {
-        const res = await fetch("/api/files/roots", { credentials: "include" });
-        if (!res.ok) {
-          if (res.status === 401) {
-            // Unauthorized - go back to login
-            checkAuth();
-            return;
-          }
-          throw new Error("HTTP " + res.status);
-        }
-        const roots = await res.json();
-
-        listEl.innerHTML = "";
-        roots.forEach((root, idx) => {
-          const div = document.createElement("div");
-          div.className = "drive-item";
-          div.dataset.path = root.path;
-          div.onclick = () => {
-            document.querySelectorAll(".drive-item").forEach(d => d.classList.remove("active"));
-            div.classList.add("active");
-            currentRoot = root.path;
-            loadFolder(root.path);
-          };
-
-          const icon = document.createElement("span");
-          icon.className = "icon";
-          icon.textContent = "💽";
-
-          const label = document.createElement("span");
-          label.textContent = root.name;
-
-          div.appendChild(icon);
-          div.appendChild(label);
-          listEl.appendChild(div);
-
-          if (idx === 0) {
-            div.classList.add("active");
-            currentRoot = root.path;
-            loadFolder(root.path);
-          }
-        });
-      } catch (err) {
-        console.error(err);
-        listEl.innerHTML = "Failed to load drives.";
-        setError("Error loading drives: " + err.message);
-      }
-    }
-
-    async function loadFolder(path) {
-      if (!path) return;
-      currentPath = path;
-      currentFilter = null;
-      document.getElementById("currentPathLabel").textContent = path;
-      setError("");
-
-      const itemsEl = document.getElementById("items");
-      const emptyMsgEl = document.getElementById("emptyMsg");
-      itemsEl.innerHTML = "Loading…";
-      emptyMsgEl.style.display = "none";
-
-      try {
-        const res = await fetch("/api/files/folder?path=" + encodeURIComponent(path), { credentials: "include" });
-        if (!res.ok) {
-          if (res.status === 401) {
-            checkAuth();
-            return;
-          }
-          const text = await res.text();
-          throw new Error("HTTP " + res.status + " – " + text);
-        }
-        const items = await res.json();
-        itemsEl.innerHTML = "";
-
-        if (!items.length) {
-          emptyMsgEl.style.display = "block";
-          return;
-        }
-
-        items.forEach(item => {
-          const card = document.createElement("div");
-          card.className = "item";
-          card.dataset.path = item.path;
-          card.dataset.item = JSON.stringify(item);
-          card.onclick = () => {
-            if (selectionMode) {
-              // Toggle checkbox
-              const cb = card.querySelector('input[type="checkbox"]');
-              if (cb) cb.checked = !cb.checked;
-              updateSelectedCount();
-            } else {
-              onItemClick(item);
-            }
-          };
-
-          // Checkbox (only visible in selection mode)
-          const checkbox = document.createElement('input');
-          checkbox.type = 'checkbox';
-          checkbox.style.marginRight = '8px';
-          checkbox.style.cursor = 'pointer';
-          checkbox.onclick = (ev) => { ev.stopPropagation(); updateSelectedCount(); };
-
-          // Thumbnail container
-          const thumbContainer = document.createElement("div");
-          thumbContainer.className = "item-thumbnail";
-
-          const thumbImg = document.createElement("img");
-          thumbImg.src = "/api/files/thumbnail?path=" + encodeURIComponent(item.path);
-          thumbImg.alt = item.name;
-          thumbImg.onerror = () => {
-            thumbImg.style.display = "none";
-          };
-
-          thumbContainer.appendChild(thumbImg);
-
-          // Info container
-          const infoContainer = document.createElement("div");
-          infoContainer.className = "item-info";
-
-          const name = document.createElement("div");
-          name.className = "item-name";
-          name.textContent = item.name;
-          name.title = item.name;
-
-          const meta = document.createElement("div");
-          meta.className = "item-meta";
-
-          const left = document.createElement("span");
-          left.textContent = item.isDirectory ? "Folder" : (item.extension || "").toUpperCase();
-
-          const right = document.createElement("span");
-          right.textContent = item.isDirectory ? "" : formatSize(item.size);
-
-          meta.appendChild(left);
-          meta.appendChild(right);
-
-          infoContainer.appendChild(name);
-          infoContainer.appendChild(meta);
-
-          card.appendChild(checkbox);
-          card.appendChild(thumbContainer);
-          card.appendChild(infoContainer);
-          itemsEl.appendChild(card);
-        });
-      } catch (err) {
-        console.error(err);
-        setError("Failed to load folder: " + err.message);
-        itemsEl.innerHTML = "";
-      }
-    }
-
-    function onItemClick(item) {
-      if (item.isDirectory) {
-        loadFolder(item.path);
-      } else {
-        // Check if it's an image
-        const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.heic', '.tiff', '.svg'];
-        const videoExtensions = ['.mp4', '.mkv', '.avi', '.mov', '.flv', '.wmv', '.webm', '.m4v', '.mpg', '.mpeg'];
-        const ext = (item.extension || '').toLowerCase();
-        if (imageExtensions.includes(ext)) {
-          // Build image list from current view
-          const items = Array.from(document.querySelectorAll('.item'));
-          const imageList = [];
-          let clickedIndex = 0;
-          items.forEach((el) => {
-            const itemData = JSON.parse(el.getAttribute('data-item') || '{}');
-            const itemExt = (itemData.extension || '').toLowerCase();
-            if (imageExtensions.includes(itemExt)) {
-              if (itemData.path === item.path) clickedIndex = imageList.length;
-              imageList.push(itemData.path);
-            }
-          });
-          showImageViewer(imageList, clickedIndex);
-        } else if (videoExtensions.includes(ext)) {
-          showVideoViewer(item.path);
-        } else {
-          window.open("/api/files/file?path=" + encodeURIComponent(item.path), "_blank");
-        }
-      }
-    }
-
-    function showImageViewer(imageList, index) {
-      currentImageList = imageList;
-      currentImageIndex = index;
-      imageZoom = 1;
-      imagePanX = 0;
-      imagePanY = 0;
-      updateImageViewer();
-      const viewer = document.getElementById('imageViewer');
-      const img = document.getElementById('imageViewerImg');
-      viewer.style.display = 'flex';
-      document.addEventListener('keydown', handleImageViewerKeys);
-      img.addEventListener('wheel', handleImageZoom, { passive: false });
-      img.addEventListener('mousedown', handlePanStart);
-      document.addEventListener('mousemove', handlePanMove);
-      document.addEventListener('mouseup', handlePanEnd);
-    }
-
-    function updateImageViewer() {
-      const img = document.getElementById('imageViewerImg');
-      img.src = '/api/files/file?path=' + encodeURIComponent(currentImageList[currentImageIndex]);
-      img.style.transform = `scale(${imageZoom}) translate(${imagePanX}px, ${imagePanY}px)`;
-      img.style.cursor = imageZoom > 1 ? 'grab' : 'default';
-      document.getElementById('imagePrevBtn').style.display = currentImageIndex > 0 ? 'flex' : 'none';
-      document.getElementById('imageNextBtn').style.display = currentImageIndex < currentImageList.length - 1 ? 'flex' : 'none';
-    }
-
-    function showVideoViewer(videoPath) {
-      const viewer = document.getElementById('videoViewer');
-      const video = document.getElementById('videoViewerVideo');
-      video.src = '/api/files/file?path=' + encodeURIComponent(videoPath);
-      viewer.style.display = 'flex';
-    }
-
-    function navigateImage(direction) {
-      currentImageIndex += direction;
-      if (currentImageIndex < 0) currentImageIndex = 0;
-      if (currentImageIndex >= currentImageList.length) currentImageIndex = currentImageList.length - 1;
-      imageZoom = 1;
-      imagePanX = 0;
-      imagePanY = 0;
-      updateImageViewer();
-    }
-
-    function handleImageViewerKeys(e) {
-      if (e.key === 'ArrowLeft') navigateImage(-1);
-      else if (e.key === 'ArrowRight') navigateImage(1);
-      else if (e.key === 'Escape') closeImageViewer();
-    }
-
-    function handleImageZoom(e) {
-      e.preventDefault();
-      const delta = e.deltaY > 0 ? -0.1 : 0.1;
-      imageZoom = Math.max(0.5, Math.min(5, imageZoom + delta));
-      updateImageViewer();
-    }
-
-    function handlePanStart(e) {
-      if (imageZoom > 1) {
-        isPanning = true;
-        panStartX = e.clientX - imagePanX;
-        panStartY = e.clientY - imagePanY;
-        e.target.style.cursor = 'grabbing';
-      }
-    }
-
-    function handlePanMove(e) {
-      if (isPanning) {
-        imagePanX = e.clientX - panStartX;
-        imagePanY = e.clientY - panStartY;
-        updateImageViewer();
-      }
-    }
-
-    function handlePanEnd(e) {
-      if (isPanning) {
-        isPanning = false;
-        const img = document.getElementById('imageViewerImg');
-        img.style.cursor = imageZoom > 1 ? 'grab' : 'default';
-      }
-    }
-
-    function closeImageViewer() {
-      const viewer = document.getElementById('imageViewer');
-      const img = document.getElementById('imageViewerImg');
-      viewer.style.display = 'none';
-      img.src = '';
-      document.removeEventListener('keydown', handleImageViewerKeys);
-      img.removeEventListener('wheel', handleImageZoom);
-      img.removeEventListener('mousedown', handlePanStart);
-      document.removeEventListener('mousemove', handlePanMove);
-      document.removeEventListener('mouseup', handlePanEnd);
-    }
-
-    function closeVideoViewer() {
-      const viewer = document.getElementById('videoViewer');
-      const video = document.getElementById('videoViewerVideo');
-      viewer.style.display = 'none';
-      video.src = '';
-      video.pause();
-    }
-
-    async function deleteCurrentVideo() {
-      if (!confirm('Delete this video?')) return;
-      const videoPath = document.getElementById('videoViewerVideo').src.split('path=')[1];
-      if (!videoPath) return;
-      const decodedPath = decodeURIComponent(videoPath);
-      try {
-        const res = await fetch('/api/files/delete?path=' + encodeURIComponent(decodedPath), { method: 'DELETE', credentials: 'include' });
-        if (res.ok) {
-          closeVideoViewer();
-          if (currentFilter) filterByCategory(currentFilter);
-          else loadFolder(currentPath);
-        } else {
-          alert('Failed to delete video');
-        }
-      } catch (err) {
-        alert('Error deleting video: ' + err.message);
-      }
-    }
-
-    async function deleteCurrentImage() {
-      if (!confirm('Delete this image?')) return;
-      const imagePath = currentImageList[currentImageIndex];
-      try {
-        const res = await fetch('/api/files/delete?path=' + encodeURIComponent(imagePath), { method: 'DELETE', credentials: 'include' });
-        if (res.ok) {
-          currentImageList.splice(currentImageIndex, 1);
-          if (currentImageList.length === 0) {
-            closeImageViewer();
-            if (currentFilter) filterByCategory(currentFilter);
-            else loadFolder(currentPath);
-          } else {
-            if (currentImageIndex >= currentImageList.length) currentImageIndex = currentImageList.length - 1;
-            updateImageViewer();
-          }
-        } else {
-          alert('Failed to delete image');
-        }
-      } catch (err) {
-        alert('Error deleting image: ' + err.message);
-      }
-    }
-
-    // Selection mode
-    let selectionMode = false;
-    let viewType = 'tiles'; // 'tiles', 'list', 'details'
-
-    function toggleSelectionMode() {
-      selectionMode = !selectionMode;
-      const selectBtn = document.getElementById('selectBtn');
-      const selectAllBtn = document.getElementById('selectAllBtn');
-      const downloadBtn = document.getElementById('downloadSelectedBtn');
-      const deleteBtn = document.getElementById('deleteSelectedBtn');
-      const countLabel = document.getElementById('selectedCountLabel');
-      const items = document.querySelectorAll('.item');
-
-      if (selectionMode) {
-        selectBtn.style.background = '#0ea5e9';
-        selectBtn.style.color = '#081025';
-        selectAllBtn.style.display = 'inline-block';
-        downloadBtn.style.display = 'inline-block';
-        deleteBtn.style.display = 'inline-block';
-        countLabel.style.display = 'inline-block';
-        items.forEach(item => item.classList.add('selection-mode'));
-        updateSelectedCount();
-      } else {
-        selectBtn.style.background = '';
-        selectBtn.style.color = '';
-        selectAllBtn.style.display = 'none';
-        downloadBtn.style.display = 'none';
-        deleteBtn.style.display = 'none';
-        countLabel.style.display = 'none';
-        items.forEach(item => item.classList.remove('selection-mode'));
-        // Uncheck all
-        document.querySelectorAll('.item input[type="checkbox"]').forEach(cb => cb.checked = false);
-      }
-    }
-
-    function updateSelectedCount() {
-      const selected = document.querySelectorAll('.item input[type="checkbox"]:checked').length;
-      document.getElementById('selectedCountLabel').textContent = selected + ' selected';
-    }
-
-    function selectAll() {
-      const checkboxes = document.querySelectorAll('.item input[type="checkbox"]');
-      const allChecked = Array.from(checkboxes).every(cb => cb.checked);
-      checkboxes.forEach(cb => cb.checked = !allChecked);
-      updateSelectedCount();
-      document.getElementById('selectAllBtn').textContent = allChecked ? '☑️ Select All' : '◻️ Deselect All';
-    }
-
-    function toggleViewType() {
-      const views = ['tiles', 'list', 'details'];
-      const currentIndex = views.indexOf(viewType);
-      viewType = views[(currentIndex + 1) % views.length];
-      
-      const grid = document.getElementById('items');
-      grid.classList.remove('list-view', 'details-view');
-      
-      if (viewType === 'list') {
-        grid.classList.add('list-view');
-        document.getElementById('viewTypeBtn').textContent = '📝 List';
-      } else if (viewType === 'details') {
-        grid.classList.add('details-view');
-        document.getElementById('viewTypeBtn').textContent = '📊 Details';
-      } else {
-        document.getElementById('viewTypeBtn').textContent = '📋 Tiles';
-      }
-    }
-
-    async function downloadSelected() {
-      const selected = Array.from(document.querySelectorAll('.item input[type="checkbox"]:checked')).map(cb => cb.parentElement.dataset.path);
-      if (selected.length === 0) { alert('No items selected'); return; }
-      
-      if (selected.length === 1) {
-        // Single file - direct download
-        const link = document.createElement('a');
-        link.href = '/api/files/open?path=' + encodeURIComponent(selected[0]);
-        link.download = selected[0].split(/[\\\/]/).pop();
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      } else {
-        // Multiple files - create zip
-        try {
-          console.log('Creating ZIP with paths:', selected);
-          const response = await fetch('/api/files/download-zip', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'include',
-            body: JSON.stringify({ paths: selected })
-          });
-          
-          if (!response.ok) {
-            const errorText = await response.text();
-            console.error('ZIP creation failed:', response.status, errorText);
-            alert('Failed to create zip file: ' + response.status + ' - ' + errorText);
-            return;
-          }
-          
-          const blob = await response.blob();
-          console.log('ZIP blob received:', blob.size, 'bytes');
-          const url = window.URL.createObjectURL(blob);
-          const link = document.createElement('a');
-          link.href = url;
-          link.download = 'files.zip';
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-          window.URL.revokeObjectURL(url);
-          alert('Download started!');
-        } catch (err) {
-          console.error('Download error:', err);
-          alert('Error downloading files: ' + err.message);
-        }
-      }
-    }
-
-    async function deleteSelected() {
-      const selected = Array.from(document.querySelectorAll('.item input[type="checkbox"]:checked')).map(cb => cb.parentElement.dataset.path);
-      if (selected.length === 0) { alert('No items selected'); return; }
-      if (!confirm('Delete ' + selected.length + ' item(s)? This cannot be undone.')) return;
-
-      let errors = 0;
-      let lastError = '';
-      for (const path of selected) {
-        try {
-          console.log('Deleting:', path);
-          const res = await fetch('/api/files/delete?path=' + encodeURIComponent(path), { method: 'DELETE', credentials: 'include' });
-          if (!res.ok) {
-            if (res.status === 401) { checkAuth(); return; }
-            const errData = await res.json().catch(() => ({ error: 'HTTP ' + res.status }));
-            lastError = errData.error || 'HTTP ' + res.status;
-            console.error('Delete failed for', path, ':', lastError);
-            errors++;
-          }
-        } catch (err) {
-          lastError = err.message;
-          console.error('Delete error for', path, ':', err);
-          errors++;
-        }
-      }
-
-      if (errors > 0) alert('Failed to delete ' + errors + ' item(s). Error: ' + lastError);
-      else alert('Deleted ' + selected.length + ' item(s)');
-      // Refresh current view (filter or folder)
-      toggleSelectionMode();
-      if (currentFilter) {
-        filterByCategory(currentFilter);
-      } else {
-        loadFolder(currentPath || currentRoot);
-      }
-    }
-
-    // Wire up Select button
-    document.getElementById('selectBtn').addEventListener('click', toggleSelectionMode);
-
-    function goUp() {
-      if (!currentPath) return;
-
-      const trimmed = currentPath.replace(/[/\\]+$/, "");
-      const idxBackslash = trimmed.lastIndexOf("\\");
-      const idxSlash = trimmed.lastIndexOf("/");
-      const cut = Math.max(idxBackslash, idxSlash);
-
-      if (cut <= 2) {
-        // Go back to root
-        loadFolder(currentRoot);
-      } else {
-        const parent = trimmed.substring(0, cut + 1);
-        loadFolder(parent);
-      }
-    }
-
-    function formatSize(bytes) {
-      if (bytes == null) return "";
-      const units = ["B","KB","MB","GB","TB"];
-      let i = 0;
-      let v = bytes;
-      while (v >= 1024 && i < units.length - 1) {
-        v /= 1024;
-        i++;
-      }
-      return v.toFixed(1) + " " + units[i];
-    }
-
-    function setError(msg) {
-      document.getElementById("error").textContent = msg || "";
-    }
-
-    async function uploadSelectedFiles(evt) {
-      const input = evt.target;
-      const files = input.files;
-
-      if (!currentPath) {
-        alert("Select a drive / folder first.");
-        input.value = "";
-        return;
-      }
-      if (!files || !files.length) return;
-
-      const form = new FormData();
-      for (const f of files) {
-        const rel = f.webkitRelativePath && f.webkitRelativePath.length > 0
-          ? f.webkitRelativePath
-          : f.name;
-        form.append("files", f, rel);
-      }
-
-      try {
-        const res = await fetch(
-          "/api/files/upload?targetPath=" + encodeURIComponent(currentPath),
-          {
-            method: "POST",
-            body: form,
-            credentials: "include"
-          }
-        );
-        if (!res.ok) {
-          if (res.status === 401) {
-            checkAuth();
-            return;
-          }
-          const text = await res.text();
-          throw new Error("HTTP " + res.status + " – " + text);
-        }
-        await res.json().catch(() => null);
-        alert("Upload complete.");
-        loadFolder(currentPath);
-      } catch (err) {
-        console.error(err);
-        alert("Upload failed: " + err.message);
-      } finally {
-        input.value = "";
-      }
-    }
-
-    // Wire hidden inputs to upload handler
-    document.getElementById("fileInputFiles").addEventListener("change", uploadSelectedFiles);
-    document.getElementById("fileInputFolder").addEventListener("change", uploadSelectedFiles);
-
-    // Upload dropdown/menu logic
-    (function() {
-      const uploadBtn = document.getElementById('uploadBtn');
-      const uploadMenu = document.getElementById('uploadMenu');
-      const filesOpt = document.getElementById('uploadFilesOption');
-      const folderOpt = document.getElementById('uploadFolderOption');
-
-      if (!uploadBtn) return;
-
-      uploadBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        uploadMenu.style.display = uploadMenu.style.display === 'flex' ? 'none' : 'flex';
-        uploadMenu.style.flexDirection = 'column';
-      });
-
-      filesOpt.addEventListener('click', (e) => { e.stopPropagation(); document.getElementById('fileInputFiles').click(); uploadMenu.style.display = 'none'; });
-      folderOpt.addEventListener('click', (e) => { e.stopPropagation(); document.getElementById('fileInputFolder').click(); uploadMenu.style.display = 'none'; });
-
-      // Close menu when clicking outside
-      document.addEventListener('click', (e) => {
-        if (!uploadBtn.contains(e.target) && !uploadMenu.contains(e.target)) uploadMenu.style.display = 'none';
-      });
-    })();
-
-    // Filter by category (Pictures, Videos, Documents)
-    async function filterByCategory(category) {
-      if (!currentRoot) {
-        alert('Please select a drive first');
-        return;
-      }
-
-      currentFilter = category;
-
-      document.getElementById("currentPathLabel").textContent = currentRoot + ' - ' + category.charAt(0).toUpperCase() + category.slice(1);
-      setError("");
-
-      const itemsEl = document.getElementById("items");
-      const emptyMsgEl = document.getElementById("emptyMsg");
-      itemsEl.innerHTML = "Searching for " + category + "...";
-      emptyMsgEl.style.display = "none";
-
-      try {
-        const res = await fetch("/api/files/category?path=" + encodeURIComponent(currentRoot) + "&category=" + encodeURIComponent(category), { credentials: "include" });
-        if (!res.ok) {
-          if (res.status === 401) {
-            checkAuth();
-            return;
-          }
-          const text = await res.text();
-          throw new Error("HTTP " + res.status + " – " + text);
-        }
-        const items = await res.json();
-        itemsEl.innerHTML = "";
-
-        if (!items.length) {
-          emptyMsgEl.textContent = "No " + category + " found in this drive.";
-          emptyMsgEl.style.display = "block";
-          return;
-        }
-
-        items.forEach(item => {
-          const card = document.createElement("div");
-          card.className = "item";
-          card.dataset.path = item.path;
-          card.dataset.item = JSON.stringify(item);
-          card.dataset.item = JSON.stringify(item);
-          card.onclick = () => {
-            if (selectionMode) {
-              const cb = card.querySelector('input[type="checkbox"]');
-              if (cb) cb.checked = !cb.checked;
-              updateSelectedCount();
-            } else {
-              onItemClick(item);
-            }
-          };
-
-          const checkbox = document.createElement('input');
-          checkbox.type = 'checkbox';
-          checkbox.style.marginRight = '8px';
-          checkbox.style.cursor = 'pointer';
-          checkbox.onclick = (ev) => { ev.stopPropagation(); updateSelectedCount(); };
-
-          const thumbContainer = document.createElement("div");
-          thumbContainer.className = "item-thumbnail";
-
-          const thumbImg = document.createElement("img");
-          thumbImg.src = "/api/files/thumbnail?path=" + encodeURIComponent(item.path);
-          thumbImg.alt = item.name;
-          thumbImg.onerror = () => {
-            thumbImg.style.display = "none";
-          };
-
-          thumbContainer.appendChild(thumbImg);
-
-          const infoContainer = document.createElement("div");
-          infoContainer.className = "item-info";
-
-          const name = document.createElement("div");
-          name.className = "item-name";
-          name.textContent = item.name;
-          name.title = item.name;
-
-          const meta = document.createElement("div");
-          meta.className = "item-meta";
-
-          const left = document.createElement("span");
-          left.textContent = (item.extension || "").toUpperCase();
-
-          const right = document.createElement("span");
-          right.textContent = formatSize(item.size);
-
-          meta.appendChild(left);
-          meta.appendChild(right);
-
-          infoContainer.appendChild(name);
-          infoContainer.appendChild(meta);
-
-          card.appendChild(checkbox);
-          card.appendChild(thumbContainer);
-          card.appendChild(infoContainer);
-          itemsEl.appendChild(card);
-        });
-      } catch (err) {
-        console.error(err);
-        setError("Failed to search: " + err.message);
-        itemsEl.innerHTML = "";
-      }
-    }
-
-    // Keyboard letter navigation
-    document.addEventListener('keydown', (e) => {
-      // Ignore if typing in input fields, or if modifier keys pressed
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.ctrlKey || e.altKey || e.metaKey) return;
-      
-      // Only handle letter keys (a-z)
-      if (e.key.length === 1 && /[a-zA-Z]/.test(e.key)) {
-        e.preventDefault();
-        const letter = e.key.toLowerCase();
-        
-        // Get all visible items
-        const items = Array.from(document.querySelectorAll('.item'));
-        if (items.length === 0) return;
-        
-        // Filter items that start with this letter
-        const matchingItems = items.filter(item => {
-          const itemData = JSON.parse(item.getAttribute('data-item') || '{}');
-          const name = (itemData.name || '').toLowerCase();
-          return name.startsWith(letter);
-        });
-        
-        if (matchingItems.length === 0) return;
-        
-        // If same letter pressed, cycle to next match
-        if (letter === lastSearchLetter) {
-          searchLetterIndex = (searchLetterIndex + 1) % matchingItems.length;
-        } else {
-          // New letter, start at first match
-          lastSearchLetter = letter;
-          searchLetterIndex = 0;
-        }
-        
-        // Clear previous highlight
-        items.forEach(item => item.classList.remove('keyboard-selected'));
-        
-        // Highlight current match
-        const selectedItem = matchingItems[searchLetterIndex];
-        selectedItem.classList.add('keyboard-selected');
-        
-        // Scroll into view
-        selectedItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-      }
-    });
-
-    // Start: check authentication
-    checkAuth();
-  </script>
+  </dialog>
+  <input type="file" id="dashboardFiles" multiple hidden>
+  <input type="file" id="dashboardFolder" multiple webkitdirectory hidden>
+  <aside id="nestiCompanion" class="fn-nesti-companion" aria-label="Nesti voice assistant">
+    <button type="button" id="nestiVoiceToggle" class="fn-nesti-voice-toggle" aria-pressed="true">Voice On</button>
+    <button type="button" id="nestiFloatOpen" class="fn-nesti-float-open" aria-label="Open Nesti assistant">
+      <img data-nesti src="/filenest/mascot.png" alt="" width="112" height="112">
+    </button>
+  </aside>
+  <dialog id="assistantPanel" class="fn-dialog" aria-labelledby="assistantTitle">
+    <div class="fn-assistant"><img data-nesti src="/filenest/mascot.png" alt="" width="78" height="78"><div>
+      <h2 id="assistantTitle">FileNest Assistant</h2>
+      <p id="assistantAvailability">Checking assistant availability…</p>
+    </div></div>
+    <div id="assistantConversation" class="fn-assistant-conversation" role="log" aria-live="polite" aria-label="Conversation"></div>
+    <form id="assistantForm" class="fn-assistant-form">
+      <label class="fn-visually-hidden" for="assistantMessage">Message Nesti</label>
+      <textarea id="assistantMessage" rows="2" maxlength="4000" placeholder="Ask Nesti about your files…" required></textarea>
+      <button type="button" class="fn-button" id="assistantMic" aria-pressed="false" aria-label="Start voice input">🎙️</button>
+      <button type="submit" class="fn-button fn-button-primary" id="assistantSend">Send</button>
+    </form>
+    <p id="assistantStatus" class="fn-muted" role="status"></p>
+    <div class="fn-dialog-actions">
+      <form method="dialog"><button type="submit" class="fn-button">Close</button></form>
+      <button type="button" class="fn-button fn-button-primary" data-assistant-search>Find a file</button>
+    </div>
+  </dialog>
 </body>
 </html>

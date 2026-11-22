@@ -14,8 +14,6 @@ namespace FilePortal.Controllers
     [Route("api/[controller]")]
     public class AuthController : ControllerBase
     {
-        private readonly string _validUser;
-        private readonly string _validPass;
         private readonly UserStoreService _userStore;
         private readonly IConfiguration _configuration;
         private readonly ILogger<AuthController> _logger;
@@ -26,20 +24,6 @@ namespace FilePortal.Controllers
             _configuration = configuration;
             _logger = logger;
 
-            // Prefer environment variables (typical ASP.NET Core mapping uses __ for nested keys),
-            // fall back to configuration values, then to hard-coded defaults.
-            var envUser = Environment.GetEnvironmentVariable("Auth__Username")
-                          ?? Environment.GetEnvironmentVariable("AUTH__USERNAME");
-            var envPass = Environment.GetEnvironmentVariable("Auth__Password")
-                          ?? Environment.GetEnvironmentVariable("AUTH__PASSWORD");
-
-            _validUser = !string.IsNullOrEmpty(envUser)
-                ? envUser
-                : configuration["Auth:Username"] ?? "maikel";
-
-            _validPass = !string.IsNullOrEmpty(envPass)
-                ? envPass
-                : configuration["Auth:Password"] ?? "Cafeta0823$";
         }
 
         // POST /api/auth/login (no auth required)
@@ -47,60 +31,27 @@ namespace FilePortal.Controllers
         [HttpPost("login")]
         public async Task<IActionResult> Login([FromForm] string username, [FromForm] string password)
         {
-            // First-run: if no users exist, create the initial admin from the first login attempt
-                if (_userStore.IsEmpty())
-                {
-                    var created = _userStore.AddUser(username, password, isAdmin: true);
-                    if (!created) return StatusCode(500, new { message = "Failed to create initial admin." });
-                }
-
-                // First, try the user store
-                var user = _userStore.Authenticate(username, password);
-            bool isAdmin = false;
-
-            if (user != null)
-            {
-                isAdmin = user.IsAdmin;
-            }
-            else
-            {
-                // Fallback to env/config credentials (treated as admin)
-                if (username != _validUser || password != _validPass)
-                {
-                    return Unauthorized(new { message = "Invalid username or password" });
-                }
-                isAdmin = true;
-            }
+            var user = _userStore.Authenticate(username, password);
+            if (user is null)
+                return Unauthorized(new { message = "Invalid username or password" });
 
             var claims = new List<Claim>
             {
-                new Claim(ClaimTypes.Name, username)
+                new(ClaimTypes.Name, user.Username),
+                new(UserStoreService.SessionStampClaim, user.SecurityStamp.ToString())
             };
-            if (isAdmin)
-            {
+            if (user.IsAdmin)
                 claims.Add(new Claim(ClaimTypes.Role, "Admin"));
-            }
 
-            var identity = new ClaimsIdentity(
-                claims,
-                CookieAuthenticationDefaults.AuthenticationScheme);
-
-            var principal = new ClaimsPrincipal(identity);
-
+            var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
             await HttpContext.SignInAsync(
                 CookieAuthenticationDefaults.AuthenticationScheme,
-                principal,
-                new AuthenticationProperties
-                {
-                    IsPersistent = true,
-                    ExpiresUtc = DateTimeOffset.UtcNow.AddDays(7)
-                });
+                new ClaimsPrincipal(identity),
+                new AuthenticationProperties { IsPersistent = true });
 
-            // Send email notification
-            _logger.LogInformation("Login successful for user: {Username}, triggering email notification", username);
-            _ = Task.Run(() => SendLoginNotificationEmail(username, HttpContext.Connection.RemoteIpAddress?.ToString()));
-
-            return Ok(new { message = "Logged in" });
+            var ipAddress = HttpContext.Connection.RemoteIpAddress?.ToString();
+            _ = Task.Run(() => SendLoginNotificationEmail(user.Username, ipAddress));
+            return Ok(new { message = "Logged in", mustChangePassword = user.MustChangePassword });
         }
 
         // POST /api/auth/logout
@@ -117,15 +68,13 @@ namespace FilePortal.Controllers
         [HttpGet("me")]
         public IActionResult Me()
         {
-            var username = User.Identity?.Name ?? string.Empty;
-            var isAdmin = User.IsInRole("Admin");
-            var user = _userStore.GetUser(username);
-            var allowedFolders = user?.AllowedFolders ?? new List<string>();
-            
-            return Ok(new { 
-                user = username,
-                isAdmin = isAdmin,
-                allowedFolders = allowedFolders
+            var user = (FilePortal.Models.UserRecord)HttpContext.Items[typeof(FilePortal.Models.UserRecord)]!;
+            return Ok(new
+            {
+                user = user.Username,
+                isAdmin = user.IsAdmin,
+                allowedFolders = user.AllowedFolders,
+                mustChangePassword = user.MustChangePassword
             });
         }
 
@@ -161,7 +110,7 @@ namespace FilePortal.Controllers
                     fullName = $"{userRecord.FirstName} {userRecord.LastName}".Trim();
                 }
 
-                var mailMessage = new MailMessage
+                using var mailMessage = new MailMessage
                 {
                     From = new MailAddress(fromEmail ?? smtpUsername),
                     Subject = $"FilePortal Login: {username}",

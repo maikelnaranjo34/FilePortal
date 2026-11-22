@@ -2,99 +2,101 @@
 <html lang="en">
 <head>
     <meta charset="utf-8" />
-    <title>FilePortal - Login</title>
+    <title>Sign in · FileNest</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="/theme.js"></script>
     <style>
+        :root { --bg:#0f172a; --card:#0b1220; --line:#1f2937; --accent:#6366f1; --text:#e5e7eb; --muted:#9ca3af;
+            --grad:#1e293b; --inputbg:#060b16; }
+        html[data-theme="light"]{ --bg:#eef1f7; --card:#ffffff; --line:#dde2ec; --accent:#6366f1; --text:#1a2230; --muted:#5b6677;
+            --grad:#dbe3f0; --inputbg:#f4f6fb; }
+        * { box-sizing: border-box; }
         body {
-            margin: 0;
-            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-            background: #0f172a;
-            color: #e5e7eb;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            height: 100vh;
+            margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+            background: radial-gradient(1200px 600px at 50% -10%, var(--grad), var(--bg));
+            color: var(--text); display: flex; align-items: center; justify-content: center; min-height: 100vh; min-height: 100dvh;
         }
         .card {
-            background: #020617;
-            border-radius: 10px;
-            padding: 22px 24px;
-            width: 320px;
-            border: 1px solid #1f2937;
-            box-shadow: 0 16px 30px rgba(0,0,0,0.6);
+            background: var(--card); border-radius: 16px; padding: 30px 28px; width: min(360px, calc(100% - 24px));
+            border: 1px solid var(--line); box-shadow: 0 24px 60px rgba(0,0,0,0.55);
         }
-        h1 {
-            margin: 0 0 6px 0;
-            font-size: 20px;
-        }
-        p.desc {
-            margin: 0 0 16px 0;
-            font-size: 13px;
-            color: #9ca3af;
-        }
-        label {
-            display: block;
-            font-size: 12px;
-            margin-bottom: 4px;
-        }
-        input[type=text],
-        input[type=password] {
-            width: 100%;
-            padding: 8px 10px;
-            border-radius: 6px;
-            border: 1px solid #1f2937;
-            background: #020617;
-            color: #e5e7eb;
-            font-size: 13px;
-            margin-bottom: 10px;
-        }
-        button {
-            width: 100%;
-            padding: 8px 10px;
-            border-radius: 999px;
-            border: 1px solid #2563eb;
-            background: #3b82f6;
-            color: #fff;
-            font-size: 14px;
-            cursor: pointer;
-        }
-        button:hover {
-            background: #2563eb;
-        }
-        .error {
-            background: #451a1a;
-            border: 1px solid #b91c1c;
-            color: #fecaca;
-            padding: 6px 8px;
-            border-radius: 6px;
-            font-size: 12px;
-            margin-bottom: 10px;
-            display: none;
-        }
+        .logo { display:flex; align-items:center; gap:10px; margin-bottom:18px; }
+        .logo .dot { width:34px;height:34px;border-radius:50%;
+            background: conic-gradient(#ef4444,#f59e0b,#10b981,#3b82f6,#a855f7,#ef4444); }
+        .logo h1 { margin:0; font-size:20px; font-weight:600; }
+        p.desc { margin: 0 0 20px; font-size: 13px; color: var(--muted); }
+        label { display: block; font-size: 12px; margin-bottom: 6px; color: var(--muted); }
+        input { width: 100%; padding: 11px 12px; border-radius: 10px; border: 1px solid var(--line);
+            background: var(--inputbg); color: var(--text); font-size: 16px; margin-bottom: 14px; outline: none; }
+        input:focus { border-color: var(--accent); }
+        button { width: 100%; padding: 11px; border-radius: 999px; border: none;
+            background: var(--accent); color: #fff; font-size: 15px; font-weight: 600; cursor: pointer; }
+        button:hover { background: #4f46e5; }
+        .error { background:#3f1d1d;border:1px solid #7f1d1d;color:#fecaca;padding:9px 12px;border-radius:8px;
+            font-size:12px;margin-bottom:14px;display:none; }
+        .login-back { position:fixed; top:14px; left:14px; width:44px; height:44px; padding:0; border:1px solid var(--line);
+            border-radius:50%; background:var(--card); color:var(--text); display:grid; place-items:center; font-size:24px; line-height:1; }
+        .login-back:hover { background:var(--inputbg); border-color:var(--accent); }
     </style>
+<link rel="stylesheet" href="/filenest/site.css">
+<link rel="stylesheet" href="/filenest/workspace.css">
 </head>
-<body>
+<body class="fn-workspace fn-login">
+    <button id="loginBack" class="login-back" type="button" aria-label="Go back" title="Back">&#8592;</button>
     <div class="card">
-        <h1>Sign in</h1>
-        <p class="desc">Use username <strong>maikel</strong> to access your portal.</p>
-        <div id="errorBox" class="error">Invalid username or password.</div>
-        <form method="post" action="/login">
+        <div class="logo"><img src="/filenest/mascot.png" alt="" width="62" height="62"><h1>FileNest</h1></div>
+        <p class="desc" id="desc">Sign in to access your files and gallery.</p>
+        <div id="errorBox" class="error" role="alert"></div>
+        <form id="loginForm">
             <label for="username">Username</label>
-            <input id="username" name="username" type="text" value="maikel" autocomplete="username" />
+            <input id="username" name="username" type="text" autocomplete="username" autofocus />
             <label for="password">Password</label>
             <input id="password" name="password" type="password" autocomplete="current-password" />
-            <button type="submit">Login</button>
+            <button type="submit" id="submitBtn">Sign in</button>
         </form>
+        <button id="loginTheme" type="button">Switch theme</button>
     </div>
 
     <script>
-        (function () {
-            var params = new URLSearchParams(window.location.search);
-            if (params.get("error") === "1") {
-                var box = document.getElementById("errorBox");
-                if (box) box.style.display = "block";
+        const errorBox = document.getElementById("errorBox");
+        document.getElementById("loginBack").addEventListener("click", () => {
+            if (history.length > 1) history.back();
+            else location.assign("/");
+        });
+        document.getElementById("loginTheme").addEventListener("click", () => window.toggleSiteTheme());
+
+        function returnDestination() {
+            const requested = new URLSearchParams(location.search).get("next");
+            if (!requested) return "/";
+            try {
+                const next = new URL(requested, location.origin);
+                const allowed = ["/", "/files.html", "/gallery.html", "/users.html"];
+                if (next.origin === location.origin && allowed.includes(next.pathname))
+                    return next.pathname + next.search + next.hash;
+            } catch { /* Invalid return targets go to Home. */ }
+            return "/";
+        }
+        function showError(msg){ errorBox.textContent = msg; errorBox.style.display = "block"; }
+
+        document.getElementById("loginForm").addEventListener("submit", async (e) => {
+            e.preventDefault();
+            errorBox.style.display = "none";
+            const username = document.getElementById("username").value.trim();
+            const password = document.getElementById("password").value;
+            if (!username || !password) { showError("Username and password are required."); return; }
+
+            const body = new URLSearchParams();
+            body.set("username", username);
+            body.set("password", password);
+
+            try {
+                const res = await fetch("/api/auth/login", { method: "POST", body, credentials: "include" });
+                if (res.ok) { window.location.replace(returnDestination()); }
+                else { showError("Invalid username or password."); }
+            } catch (err) {
+                showError("Network error. Please try again.");
             }
-        })();
+        });
     </script>
 </body>
 </html>

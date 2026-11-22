@@ -2,68 +2,110 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>User Management - FilePortal</title>
+  <title>Settings · FileNest</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background:#020617; color:#e5e7eb; padding:20px }
     .box { max-width:720px; margin:0 auto }
-    input { width:100%; padding:8px; margin:6px 0; border-radius:6px; border:1px solid #374151; background:#111827; color:#e5e7eb }
+    input { box-sizing:border-box; width:100%; padding:8px; margin:6px 0; border-radius:6px; border:1px solid #374151; background:#111827; color:#e5e7eb }
+    input[type="checkbox"] { width:auto }
     button { background:#0ea5e9; color:#081025; padding:8px 12px; border-radius:8px; border:none; cursor:pointer; margin-right:6px }
     button:disabled { background:#6b7280; cursor:not-allowed }
     .user { display:flex; justify-content:space-between; align-items:center; padding:8px; border:1px solid #1f2937; border-radius:6px; margin-bottom:6px }
     a.back { color:#9ca3af; text-decoration:none; display:inline-block; margin-bottom:12px }
     .folder-list { background:#111827; border:1px solid #1f2937; border-radius:6px; padding:10px; margin:10px 0; max-height:200px; overflow-y:auto }
     .folder-item { padding:6px; background:#0b1220; border-radius:4px; margin:4px 0; font-size:12px; color:#9ca3af; word-break:break-all }
+    .account-dialog { box-sizing:border-box; width:min(500px, calc(100% - 24px)); min-width:0; }
+    .user-summary { display:grid; gap:2px; min-width:0; }
+    .user-summary strong, .user-summary small { overflow-wrap:anywhere; }
+    .user-summary small { color:#9ca3af; }
+    @media (max-width:700px) {
+      body { padding:12px }
+      .user { flex-wrap:wrap; gap:6px }
+      button, a.back { min-height:44px }
+      input { font-size:16px }
+    }
   </style>
+<link rel="stylesheet" href="/filenest/site.css">
+<link rel="stylesheet" href="/filenest/workspace.css">
+<script src="/theme.js"></script>
+<script src="/filenest/shell.js" defer></script>
 </head>
-<body>
-  <div class="box">
-    <a class="back" href="/">← Back</a>
-    <h1>User Management</h1>
+<body class="fn-workspace fn-settings">
+  <header id="fileNestHeader" data-page="settings"></header>
+  <main class="box">
+    <h1>Settings</h1>
 
-    <div id="setupForm" style="display:none">
-      <h2>Create Initial Admin</h2>
-      <p style="color:#9ca3af;margin-bottom:16px">No users exist yet. Create the initial admin account to continue.</p>
-      <div>
-        <input id="setupUser" placeholder="username" />
-        <input id="setupFirstName" placeholder="first name" />
-        <input id="setupLastName" placeholder="last name" />
-        <input id="setupPass" placeholder="password" type="password" />
-        <button onclick="createInitialAdmin()">Create Admin</button>
-        <div id="setupMsg" style="color:#f97373;margin-top:6px"></div>
+    <p id="accountStatus" role="status"></p>
+    <button id="changeOwnPassword" hidden onclick="openPwModal(currentUser)">Change my password</button>
+
+    <div id="list" hidden></div>
+
+    <!-- Edit User Modal -->
+    <div id="editModal" role="dialog" aria-modal="true" aria-labelledby="editTitle" style="display:none;position:fixed;inset:0;align-items:center;justify-content:center;background:rgba(2,6,23,0.6);z-index:1000">
+      <div id="editDialog" class="account-dialog" tabindex="-1" style="background:#0b1220;padding:16px;border:1px solid #1f2937;border-radius:8px">
+        <h3 id="editTitle" style="margin-top:0">Edit user</h3>
+        <div id="editMsg" role="alert" style="color:#f97373;margin-bottom:6px"></div>
+        <label for="editUsername">Username</label>
+        <input id="editUsername" readonly />
+        <label for="editFirstName">First name</label>
+        <input id="editFirstName" autocomplete="given-name" />
+        <label for="editLastName">Last name</label>
+        <input id="editLastName" autocomplete="family-name" />
+        <label for="editRole">Role</label>
+        <input id="editRole" readonly />
+        <p style="color:#9ca3af;font-size:12px">Use the row controls to change role, password, or folder access.</p>
+        <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end">
+          <button type="button" onclick="submitEditUser()">Save</button>
+          <button type="button" onclick="closeEditModal()" style="background:#374151;color:#e5e7eb">Cancel</button>
+        </div>
       </div>
     </div>
 
-    <div id="list"></div>
-
     <!-- Change Password Modal -->
-    <div id="pwModal" style="display:none;position:fixed;inset:0;align-items:center;justify-content:center;background:rgba(2,6,23,0.6);z-index:1000">
-      <div style="background:#0b1220;padding:16px;border:1px solid #1f2937;border-radius:8px;min-width:320px">
-        <h3 style="margin-top:0">Change password for <span id="pwFor"></span></h3>
-        <div id="pwMsg" style="color:#f97373;margin-bottom:6px"></div>
-        <div id="pwCurrentWrap" style="display:block">
-          <input id="pwCurrent" type="password" placeholder="Current password" />
+    <div id="pwModal" role="dialog" aria-modal="true" aria-labelledby="pwTitle" style="display:none;position:fixed;inset:0;align-items:center;justify-content:center;background:rgba(2,6,23,0.6);z-index:1000">
+      <div id="pwDialog" class="account-dialog" tabindex="-1" style="background:#0b1220;padding:16px;border:1px solid #1f2937;border-radius:8px">
+        <h3 id="pwTitle" style="margin-top:0">Change password for <span id="pwFor"></span></h3>
+        <div id="pwMsg" role="alert" style="color:#f97373;margin-bottom:6px"></div>
+        <div id="pwCurrentWrap">
+          <label for="pwCurrent">Current password</label>
+          <input id="pwCurrent" type="password" autocomplete="current-password" />
         </div>
-        <input id="pwNew" type="password" placeholder="New password" />
-        <input id="pwConfirm" type="password" placeholder="Confirm new password" />
+        <label for="pwNew">New password</label>
+        <input id="pwNew" type="password" autocomplete="new-password" />
+        <label for="pwConfirm">Confirm new password</label>
+        <input id="pwConfirm" type="password" autocomplete="new-password" />
+        <section id="temporaryPasswordSection" hidden style="margin-top:14px;padding-top:14px;border-top:1px solid #1f2937">
+          <button id="generateTemporaryPassword" type="button" onclick="generateTemporaryPassword()">Generate temporary password</button>
+          <p style="color:#9ca3af;font-size:12px">This signs the user out everywhere and requires a new password at the next sign-in.</p>
+          <div id="temporaryPasswordResult" hidden>
+            <label for="temporaryPassword">Temporary password — shown only once</label>
+            <div style="display:flex;gap:8px;align-items:center">
+              <input id="temporaryPassword" readonly style="font-family:ui-monospace,Consolas,monospace" />
+              <button type="button" onclick="copyTemporaryPassword()">Copy</button>
+            </div>
+            <p id="temporaryPasswordStatus" role="status"></p>
+          </div>
+        </section>
         <div style="margin-top:8px;display:flex;gap:8px;justify-content:flex-end">
-          <button onclick="submitChangePassword()">Save</button>
+          <button onclick="submitChangePassword()">Set password</button>
           <button onclick="closePwModal()" style="background:#374151;color:#e5e7eb">Cancel</button>
         </div>
       </div>
     </div>
 
     <!-- Folder Access Modal -->
-    <div id="folderModal" style="display:none;position:fixed;inset:0;align-items:center;justify-content:center;background:rgba(2,6,23,0.6);z-index:1000;overflow-y:auto">
-      <div style="background:#0b1220;padding:16px;border:1px solid #1f2937;border-radius:8px;min-width:500px;margin:40px auto;max-height:80vh;display:flex;flex-direction:column">
-        <h3 style="margin-top:0;margin-bottom:12px">Set Folder Access for <span id="folderFor"></span></h3>
+    <div id="folderModal" role="dialog" aria-modal="true" aria-labelledby="folderTitle" style="display:none;position:fixed;inset:0;align-items:center;justify-content:center;background:rgba(2,6,23,0.6);z-index:1000;overflow-y:auto">
+      <div id="folderDialog" class="account-dialog" tabindex="-1" style="background:#0b1220;padding:16px;border:1px solid #1f2937;border-radius:8px;margin:20px auto;max-height:88dvh;display:flex;flex-direction:column">
+        <h3 id="folderTitle" style="margin-top:0;margin-bottom:12px">Set Folder Access for <span id="folderFor"></span></h3>
         <p style="color:#9ca3af;font-size:12px;margin-bottom:12px">Browse and select folders. Click a folder name to navigate into it.</p>
         
-        <div id="folderMsg" style="color:#f97373;margin-bottom:6px"></div>
+        <div id="folderMsg" role="alert" style="color:#f97373;margin-bottom:6px"></div>
         
         <div style="display:flex;gap:6px;margin-bottom:12px">
+          <label class="fn-visually-hidden" for="browsePath">Current folder</label>
           <input id="browsePath" type="text" placeholder="Current path" readonly style="flex:1;padding:8px;border-radius:4px;border:1px solid #374151;background:#111827;color:#9ca3af;font-size:12px" />
-          <button onclick="goToRoots()" style="padding:8px 12px;background:#666;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px">Drives</button>
+          <button onclick="goToRoots()" style="padding:8px 12px;background:#666;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px">Roots</button>
         </div>
 
         <div id="folderBrowser" style="border:1px solid #1f2937;border-radius:4px;padding:8px;background:#111827;margin-bottom:12px;max-height:300px;overflow-y:auto;min-height:150px">
@@ -82,55 +124,110 @@
       </div>
     </div>
 
-    <h3>Add User</h3>
-    <div>
-      <input id="newUser" placeholder="username" />
-      <input id="newFirstName" placeholder="first name" />
-      <input id="newLastName" placeholder="last name" />
-      <input id="newPass" placeholder="password" type="password" />
+    <section id="addUserPanel" hidden>
+      <h3>Add User</h3>
+      <label for="newUser">Username</label>
+      <input id="newUser" autocomplete="off" />
+      <label for="newFirstName">First name</label>
+      <input id="newFirstName" autocomplete="given-name" />
+      <label for="newLastName">Last name</label>
+      <input id="newLastName" autocomplete="family-name" />
+      <label for="newPass">Password</label>
+      <input id="newPass" autocomplete="new-password" type="password" />
       <label style="display:block;margin:6px 0;color:#9ca3af"><input type="checkbox" id="newAdmin" /> Make admin</label>
       <button onclick="addUser()">Add</button>
-      <div id="msg" style="color:#f97373;margin-top:6px"></div>
-    </div>
-  </div>
+      <div id="msg" role="status" style="color:#f97373;margin-top:6px"></div>
+    </section>
+
+    <section id="aiSettingsPanel" class="fn-settings-panel" hidden aria-labelledby="aiSettingsTitle">
+      <h2 id="aiSettingsTitle">AI &amp; Voice</h2>
+      <p class="fn-settings-help">OpenAI performs assistant work. AssemblyAI handles listening and speaking. Saved keys are encrypted on this server and cannot be displayed again.</p>
+      <div class="fn-provider-grid">
+        <fieldset>
+          <legend>OpenAI</legend>
+          <p id="openAiKeyStatus" class="fn-settings-help">Not configured</p>
+          <label for="openAiApiKey">Replace API key</label>
+          <input id="openAiApiKey" type="password" autocomplete="new-password" spellcheck="false" placeholder="Leave blank to keep the saved key">
+          <label for="openAiModel">Reasoning model</label>
+          <input id="openAiModel" list="openAiModels" autocomplete="off" spellcheck="false">
+          <datalist id="openAiModels">
+            <option value="gpt-5-mini"></option>
+            <option value="gpt-5"></option>
+          </datalist>
+          <button type="button" id="refreshAiModels">Refresh models</button>
+          <button type="button" id="testOpenAi">Test connection</button>
+          <button type="button" id="removeOpenAiKey">Remove OpenAI key</button>
+        </fieldset>
+        <fieldset>
+          <legend>AssemblyAI</legend>
+          <p id="assemblyAiKeyStatus" class="fn-settings-help">Not configured</p>
+          <label for="assemblyAiApiKey">Replace API key</label>
+          <input id="assemblyAiApiKey" type="password" autocomplete="new-password" spellcheck="false" placeholder="Leave blank to keep the saved key">
+          <label for="assemblyAiSpeechModel">Speech-to-text model</label>
+          <select id="assemblyAiSpeechModel">
+            <option value="assemblyai-stt-3-7-realtime-agent">AssemblyAI STT 3.7 Realtime Agent</option>
+            <option value="universal-3-6-pro">Universal 3.6 Pro Realtime</option>
+          </select>
+          <label for="assemblyAiTtsModel">Text-to-speech model</label>
+          <select id="assemblyAiTtsModel">
+            <option value="assemblyai-tts-1">AssemblyAI TTS 1</option>
+          </select>
+          <label for="assemblyAiVoiceId">Voice ID</label>
+          <input id="assemblyAiVoiceId" autocomplete="off" spellcheck="false">
+          <label for="assistantLanguage">Voice language</label>
+          <select id="assistantLanguage">
+            <option value="english">English</option><option value="spanish">Spanish</option>
+            <option value="french">French</option><option value="german">German</option>
+            <option value="italian">Italian</option><option value="portuguese">Portuguese</option>
+          </select>
+          <button type="button" id="testAssemblyAi">Test connection</button>
+          <button type="button" id="removeAssemblyAiKey">Remove AssemblyAI key</button>
+        </fieldset>
+      </div>
+      <label class="fn-settings-toggle"><input type="checkbox" id="aiEnabled"> Enable AI assistant after configuration</label>
+      <div class="fn-settings-actions"><button type="button" id="saveAiSettings">Save AI &amp; Voice settings</button></div>
+      <p id="aiSettingsStatus" role="status"></p>
+    </section>
+  </main>
 
   <script>
     let currentUser = null;
+    let currentIsAdmin = false;
 
     async function load() {
-      // Check if first-run (no users exist)
-      try {
-        const initCheck = await fetch('/api/users/init', { credentials: 'include' });
-        if (initCheck.ok) {
-          const initData = await initCheck.json();
-          if (initData.isEmpty) {
-            // Show setup form, hide user list and add form
-            document.getElementById('setupForm').style.display = 'block';
-            document.getElementById('list').style.display = 'none';
-            document.querySelector('h3').style.display = 'none';
-            document.querySelector('.box > div:last-child').style.display = 'none';
-            return;
-          }
-        }
-      } catch {}
+      const account = document.getElementById('accountStatus');
+      const me = await fetch('/api/auth/me');
+      if (me.status === 401) {
+        window.location.replace('/login.html?next=%2Fusers.html');
+        return;
+      }
+      if (!me.ok) {
+        account.textContent = 'Failed to load your account.';
+        return;
+      }
 
-      // get current user
-      try {
-        const me = await fetch('/api/auth/me', { credentials: 'include' });
-        if (me.ok) {
-          const md = await me.json().catch(() => null);
-          currentUser = md?.user || null;
-        }
-      } catch {}
-
-      const res = await fetch('/api/users', { credentials: 'include' });
-      if (!res.ok) { document.getElementById('list').textContent = 'Failed to load users'; return; }
-      const users = await res.json();
+      const profile = await me.json();
+      currentUser = profile.user;
+      currentIsAdmin = profile.isAdmin;
+      account.textContent = 'Signed in as ' + currentUser;
+      document.getElementById('changeOwnPassword').hidden = false;
+      document.getElementById('addUserPanel').hidden = !currentIsAdmin;
+      document.getElementById('aiSettingsPanel').hidden = !currentIsAdmin;
       const list = document.getElementById('list');
-      list.innerHTML = '';
-      list.style.display = 'block';
-      document.querySelector('h3').style.display = 'block';
-      document.querySelector('.box > div:last-child').style.display = 'block';
+      list.hidden = !currentIsAdmin;
+      if (profile.mustChangePassword) {
+        account.textContent = 'Change your temporary password before continuing.';
+        openPwModal(currentUser);
+        return;
+      }
+      if (!currentIsAdmin) return;
+
+      await loadAiSettings();
+
+      const res = await fetch('/api/users');
+      if (!res.ok) { list.textContent = 'Failed to load users'; return; }
+      const users = await res.json();
+      list.replaceChildren();
 
       const adminCount = users.filter(u => u.isAdmin).length;
 
@@ -138,13 +235,26 @@
         const div = document.createElement('div');
         div.className = 'user';
         const left = document.createElement('div');
+        left.className = 'user-summary';
         const displayName = u.firstName || u.lastName ? `${u.firstName} ${u.lastName}`.trim() + ` (${u.username})` : u.username;
-        left.textContent = displayName + (u.isAdmin ? ' - admin' : '');
+        const identity = document.createElement('strong');
+        identity.textContent = displayName;
+        const role = document.createElement('small');
+        role.textContent = (u.isAdmin ? 'Administrator' : 'Standard user') +
+          (u.mustChangePassword ? ' · Password change required' : '');
+        left.append(identity, role);
 
         const actions = document.createElement('div');
         actions.style.display = 'flex';
         actions.style.gap = '6px';
         actions.style.flexWrap = 'wrap';
+
+        const edit = document.createElement('button');
+        edit.type = 'button';
+        edit.textContent = 'Edit';
+        edit.dataset.editUser = u.username;
+        edit.onclick = () => openEditModal(u);
+        actions.appendChild(edit);
 
         // Promote / Demote
         if (u.isAdmin) {
@@ -164,13 +274,15 @@
         // Change password button
         const cp = document.createElement('button'); 
         cp.textContent = 'Password';
-        cp.onclick = () => openPwModal(u.username, u.isAdmin);
+        cp.dataset.passwordUser = u.username;
+        cp.onclick = () => openPwModal(u.username);
         actions.appendChild(cp);
 
         // Manage folders button
         const folders = document.createElement('button');
         folders.textContent = 'Folders';
-        folders.onclick = () => openFolderModal(u.username, u.isAdmin);
+        folders.onclick = () => openFolderModal(u.username);
+        folders.disabled = u.isAdmin;
         actions.appendChild(folders);
 
         // Remove
@@ -185,29 +297,6 @@
         div.appendChild(actions);
         list.appendChild(div);
       });
-    }
-
-    async function createInitialAdmin() {
-      const u = document.getElementById('setupUser').value.trim();
-      const fn = document.getElementById('setupFirstName').value.trim();
-      const ln = document.getElementById('setupLastName').value.trim();
-      const p = document.getElementById('setupPass').value;
-      const msg = document.getElementById('setupMsg'); msg.textContent = '';
-      if (!u || !p) { msg.textContent = 'username and password required'; return; }
-      if (!fn || !ln) { msg.textContent = 'first name and last name required'; return; }
-      const fd = new FormData(); 
-      fd.append('username', u); 
-      fd.append('firstName', fn);
-      fd.append('lastName', ln);
-      fd.append('password', p);
-      const res = await fetch('/api/users/init', { method:'POST', body: fd, credentials:'include' });
-      if (res.status === 201) {
-        alert('Initial admin created successfully!');
-        window.location.href = '/';
-        return;
-      }
-      const txt = await res.json().catch(() => null);
-      msg.textContent = (txt && txt.error) || 'Failed to create admin';
     }
 
     async function addUser() {
@@ -260,68 +349,198 @@
       }
     }
 
+    let editTarget = null;
+    let editReturnFocus = null;
+
+    function openEditModal(user) {
+      editReturnFocus = document.activeElement;
+      editTarget = user.username;
+      document.getElementById('editMsg').textContent = '';
+      document.getElementById('editUsername').value = user.username;
+      document.getElementById('editFirstName').value = user.firstName || '';
+      document.getElementById('editLastName').value = user.lastName || '';
+      document.getElementById('editRole').value = user.isAdmin ? 'Administrator' : 'Standard user';
+      document.getElementById('editModal').style.display = 'flex';
+      focusWhenVisible(document.getElementById('editFirstName'));
+    }
+
+    function closeEditModal(restore = true) {
+      if (document.getElementById('editModal').style.display === 'none') return;
+      document.getElementById('editModal').style.display = 'none';
+      editTarget = null;
+      const returnFocus = editReturnFocus;
+      editReturnFocus = null;
+      if (restore) restoreFocus(returnFocus);
+    }
+
+    async function submitEditUser() {
+      if (!editTarget) return;
+      const username = editTarget;
+      const firstName = document.getElementById('editFirstName').value.trim();
+      const lastName = document.getElementById('editLastName').value.trim();
+      const msg = document.getElementById('editMsg');
+      msg.textContent = '';
+      if (!firstName || !lastName) {
+        msg.textContent = 'First name and last name are required.';
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/users/' + encodeURIComponent(username), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ firstName, lastName })
+        });
+        if (!res.ok) {
+          const result = await res.json().catch(() => null);
+          msg.textContent = result?.error || 'Failed to update user.';
+          return;
+        }
+
+        closeEditModal(false);
+        await load();
+        document.getElementById('accountStatus').textContent = 'Updated ' + username + '.';
+        [...document.querySelectorAll('[data-edit-user]')]
+          .find(button => button.dataset.editUser === username)?.focus();
+      } catch {
+        msg.textContent = 'Request failed.';
+      }
+    }
+
     // Password change modal logic
     let pwTarget = null;
-    let currentIsAdmin = false;
-    async function openPwModal(username, targetIsAdmin) {
+    let pwReturnFocus = null;
+
+    function focusWhenVisible(element) {
+      requestAnimationFrame(() => element?.focus());
+    }
+
+    function restoreFocus(element) {
+      if (element?.isConnected) focusWhenVisible(element);
+    }
+
+    function openPwModal(username) {
+      pwReturnFocus = document.activeElement;
       pwTarget = username;
       document.getElementById('pwFor').textContent = username;
       document.getElementById('pwMsg').textContent = '';
       document.getElementById('pwNew').value = '';
       document.getElementById('pwConfirm').value = '';
       document.getElementById('pwCurrent').value = '';
-      // determine whether current user is admin to hide/show current password
-      try {
-        const dbg = await fetch('/api/users/debug', { credentials: 'include' });
-        if (dbg.ok) {
-          const d = await dbg.json();
-          currentIsAdmin = !!d.currentUserIsAdmin;
-        }
-      } catch { currentIsAdmin = false; }
-
-      if (currentIsAdmin && pwTarget !== null && pwTarget !== (await getCurrentUser())) {
-        document.getElementById('pwCurrentWrap').style.display = 'none';
-      } else {
-        document.getElementById('pwCurrentWrap').style.display = 'block';
-      }
-
+      document.getElementById('pwCurrentWrap').hidden = currentIsAdmin && username !== currentUser;
+      const temporarySection = document.getElementById('temporaryPasswordSection');
+      temporarySection.hidden = !(currentIsAdmin && username !== currentUser);
+      document.getElementById('temporaryPasswordResult').hidden = true;
+      document.getElementById('temporaryPassword').value = '';
+      document.getElementById('temporaryPasswordStatus').textContent = '';
       document.getElementById('pwModal').style.display = 'flex';
+      const firstField = document.getElementById('pwCurrentWrap').hidden
+        ? document.getElementById('pwNew')
+        : document.getElementById('pwCurrent');
+      focusWhenVisible(firstField);
     }
 
-    function closePwModal() { document.getElementById('pwModal').style.display = 'none'; pwTarget = null; }
+    function closePwModal() {
+      if (document.getElementById('pwModal').style.display === 'none') return;
+      document.getElementById('pwModal').style.display = 'none';
+      pwTarget = null;
+      document.getElementById('temporaryPassword').value = '';
+      document.getElementById('temporaryPasswordResult').hidden = true;
+      document.getElementById('temporaryPasswordStatus').textContent = '';
+      const returnFocus = pwReturnFocus;
+      pwReturnFocus = null;
+      restoreFocus(returnFocus);
+    }
+
+    async function generateTemporaryPassword() {
+      if (!pwTarget || pwTarget === currentUser) return;
+      const button = document.getElementById('generateTemporaryPassword');
+      const msg = document.getElementById('pwMsg');
+      button.disabled = true;
+      msg.textContent = '';
+      try {
+        const res = await fetch('/api/users/' + encodeURIComponent(pwTarget) + '/temporary-password', {
+          method: 'POST', credentials: 'include'
+        });
+        const result = await res.json().catch(() => null);
+        if (!res.ok) {
+          msg.textContent = result?.error || 'Could not generate a temporary password.';
+          return;
+        }
+
+        document.getElementById('temporaryPassword').value = result.temporaryPassword;
+        document.getElementById('temporaryPasswordResult').hidden = false;
+        document.getElementById('temporaryPasswordStatus').textContent =
+          'Copy this password now. It cannot be viewed again.';
+        document.getElementById('accountStatus').textContent =
+          'Temporary password generated for ' + pwTarget + '.';
+        const editButton = [...document.querySelectorAll('[data-edit-user]')]
+          .find(item => item.dataset.editUser === pwTarget);
+        const role = editButton?.closest('.user')?.querySelector('.user-summary small');
+        if (role && !role.textContent.includes('Password change required'))
+          role.textContent += ' · Password change required';
+        document.getElementById('temporaryPassword').focus();
+      } catch {
+        msg.textContent = 'Request failed.';
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    async function copyTemporaryPassword() {
+      const field = document.getElementById('temporaryPassword');
+      const status = document.getElementById('temporaryPasswordStatus');
+      if (!field.value) return;
+      try {
+        await navigator.clipboard.writeText(field.value);
+        status.textContent = 'Temporary password copied.';
+      } catch {
+        field.select();
+        const copied = document.execCommand('copy');
+        field.setSelectionRange(0, 0);
+        status.textContent = copied ? 'Temporary password copied.' : 'Select and copy the password manually.';
+      }
+    }
 
     let folderTarget = null;
     let selectedFolders = [];
-    let currentBrowsePath = null;
+    let folderReturnFocus = null;
 
-    function openFolderModal(username, isAdmin) {
+    function openFolderModal(username) {
+      folderReturnFocus = document.activeElement;
       folderTarget = username;
       selectedFolders = [];
-      currentBrowsePath = null;
       document.getElementById('folderFor').textContent = username;
       document.getElementById('folderMsg').textContent = '';
       
+      document.getElementById('folderModal').style.display = 'flex';
+
       // Load current folders and show roots
       loadFoldersForUser(username);
       goToRoots();
-      document.getElementById('folderModal').style.display = 'flex';
+      focusWhenVisible(document.getElementById('folderDialog'));
     }
 
-    function closeFolderModal() { 
+    function closeFolderModal() {
+      if (document.getElementById('folderModal').style.display === 'none') return;
+      browseRequest++;
       document.getElementById('folderModal').style.display = 'none'; 
       folderTarget = null;
       selectedFolders = [];
-      currentBrowsePath = null;
+      const returnFocus = folderReturnFocus;
+      folderReturnFocus = null;
+      restoreFocus(returnFocus);
     }
 
     async function loadFoldersForUser(username) {
       try {
         // Get currently assigned folders
         const foldersRes = await fetch('/api/users/' + encodeURIComponent(username) + '/folders', { credentials: 'include' });
-        if (foldersRes.ok) {
-          const data = await foldersRes.json();
-          selectedFolders = data.folders || [];
-        }
+        if (!foldersRes.ok) throw new Error('Failed to load folder assignments');
+        const data = await foldersRes.json();
+        if (folderTarget !== username) return;
+        selectedFolders = data.folders || [];
         
         renderSelectedFolders();
       } catch (e) {
@@ -329,126 +548,49 @@
       }
     }
 
-    async function goToRoots() {
-      currentBrowsePath = null;
-      document.getElementById('browsePath').value = 'Drives';
-      await browseFolders(null);
+    function goToRoots() {
+      return browseFolders(null);
     }
 
+    let browseRequest = 0;
     async function browseFolders(path) {
+      const request = ++browseRequest;
       const msg = document.getElementById('folderMsg');
-      msg.textContent = '';
       const browser = document.getElementById('folderBrowser');
-      browser.innerHTML = '';
-      
-      if (path === null || path === undefined) {
-        // Show drives (no API call needed)
-        const drives = ['C:\\', 'D:\\', 'E:\\', 'F:\\', 'G:\\', 'H:\\', 'I:\\', 'J:\\', 'K:\\', 'L:\\'];
-        drives.forEach(drive => {
-          const div = document.createElement('div');
-          div.style.padding = '8px';
-          div.style.cursor = 'pointer';
-          div.style.borderRadius = '4px';
-          div.style.marginBottom = '4px';
-          div.style.backgroundColor = '#1f2937';
-          div.style.display = 'flex';
-          div.style.justifyContent = 'space-between';
-          div.style.alignItems = 'center';
-          
-          const nameSpan = document.createElement('span');
-          nameSpan.textContent = drive;
-          nameSpan.style.flex = '1';
-          nameSpan.style.cursor = 'pointer';
-          nameSpan.onclick = () => browseFolders(drive);
-          
-          const selectBtn = document.createElement('button');
-          selectBtn.textContent = '+';
-          selectBtn.style.padding = '4px 8px';
-          selectBtn.style.background = '#0ea5e9';
-          selectBtn.style.color = '#081025';
-          selectBtn.style.border = 'none';
-          selectBtn.style.borderRadius = '4px';
-          selectBtn.style.cursor = 'pointer';
-          selectBtn.onclick = () => {
-            if (!selectedFolders.some(f => f.toLowerCase() === drive.toLowerCase())) {
-              selectedFolders.push(drive);
+      msg.textContent = '';
+      browser.replaceChildren();
+
+      try {
+        const url = path ? '/api/files/browse?path=' + encodeURIComponent(path) : '/api/files/roots';
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const folders = await res.json();
+        if (request !== browseRequest) return;
+        document.getElementById('browsePath').value = path || 'Configured roots';
+        if (!folders.length) browser.textContent = path ? 'No subfolders' : 'No folders are configured';
+
+        for (const folder of folders) {
+          const row = document.createElement('div');
+          row.className = 'user';
+          const name = document.createElement('button');
+          name.textContent = folder.name;
+          name.onclick = () => browseFolders(folder.path);
+
+          const select = document.createElement('button');
+          select.textContent = 'Add';
+          select.onclick = () => {
+            if (!selectedFolders.includes(folder.path)) {
+              selectedFolders.push(folder.path);
               renderSelectedFolders();
             }
           };
-          
-          div.appendChild(nameSpan);
-          div.appendChild(selectBtn);
-          browser.appendChild(div);
-        });
-        return;
-      }
 
-      // For actual paths, fetch subfolders from API
-      try {
-        const url = '/api/files/browse?path=' + encodeURIComponent(path);
-        console.log('Browsing path:', path, 'URL:', url);
-        const res = await fetch(url, { credentials: 'include' });
-        
-        if (!res.ok) {
-          const errText = await res.text();
-          console.error('Browse error:', res.status, errText);
-          msg.textContent = 'Failed to load folder contents: ' + res.status;
-          return;
+          row.append(name, select);
+          browser.append(row);
         }
-        
-        const folders = await res.json();
-        console.log('Folders loaded:', folders.length);
-        
-        if (folders.length === 0) {
-          const empty = document.createElement('div');
-          empty.textContent = 'No subfolders';
-          empty.style.padding = '8px';
-          empty.style.color = '#6b7280';
-          browser.appendChild(empty);
-        } else {
-          folders.forEach(folder => {
-            const div = document.createElement('div');
-            div.style.padding = '8px';
-            div.style.cursor = 'pointer';
-            div.style.borderRadius = '4px';
-            div.style.marginBottom = '4px';
-            div.style.backgroundColor = '#1f2937';
-            div.style.display = 'flex';
-            div.style.justifyContent = 'space-between';
-            div.style.alignItems = 'center';
-            
-            const nameSpan = document.createElement('span');
-            nameSpan.textContent = folder.name;
-            nameSpan.style.flex = '1';
-            nameSpan.style.cursor = 'pointer';
-            nameSpan.onclick = () => browseFolders(folder.path);
-            
-            const selectBtn = document.createElement('button');
-            selectBtn.textContent = '+';
-            selectBtn.style.padding = '4px 8px';
-            selectBtn.style.background = '#0ea5e9';
-            selectBtn.style.color = '#081025';
-            selectBtn.style.border = 'none';
-            selectBtn.style.borderRadius = '4px';
-            selectBtn.style.cursor = 'pointer';
-            selectBtn.onclick = () => {
-              if (!selectedFolders.some(f => f.toLowerCase() === folder.path.toLowerCase())) {
-                selectedFolders.push(folder.path);
-                renderSelectedFolders();
-              }
-            };
-            
-            div.appendChild(nameSpan);
-            div.appendChild(selectBtn);
-            browser.appendChild(div);
-          });
-        }
-        
-        currentBrowsePath = path;
-        document.getElementById('browsePath').value = path;
-      } catch (e) {
-        console.error('Exception in browseFolders:', e);
-        msg.textContent = 'Error loading folders: ' + e.message;
+      } catch (error) {
+        if (request === browseRequest)
+          msg.textContent = 'Failed to load folders. ' + error.message;
       }
     }
 
@@ -477,6 +619,8 @@
           
           const btn = document.createElement('button');
           btn.textContent = '✕';
+          btn.type = 'button';
+          btn.setAttribute('aria-label', 'Remove folder ' + folder);
           btn.style.padding = '2px 6px';
           btn.style.fontSize = '10px';
           btn.style.marginLeft = '8px';
@@ -524,14 +668,6 @@
       }
     }
 
-    async function getCurrentUser() {
-      try {
-        const me = await fetch('/api/auth/me', { credentials: 'include' });
-        if (me.ok) { const md = await me.json(); return md.user || null; }
-      } catch {}
-      return null;
-    }
-
     async function submitChangePassword() {
       const newP = document.getElementById('pwNew').value;
       const conf = document.getElementById('pwConfirm').value;
@@ -541,16 +677,20 @@
       if (!newP) { msg.textContent = 'New password required'; return; }
       if (newP !== conf) { msg.textContent = 'Passwords do not match'; return; }
 
-      const body = { newPassword: newP };
-      // include currentPassword when present (non-admin changing own password)
-      if (document.getElementById('pwCurrentWrap').style.display !== 'none') body.currentPassword = cur;
+      const body = new FormData();
+      body.append('newPassword', newP);
+      if (pwTarget === currentUser) body.append('currentPassword', cur);
 
       try {
-        const res = await fetch('/api/users/' + encodeURIComponent(pwTarget) + '/password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), credentials: 'include' });
+        const res = await fetch('/api/users/' + encodeURIComponent(pwTarget) + '/password', { method: 'POST', body });
         if (res.ok) {
-          alert('Password changed');
+          if (pwTarget === currentUser) {
+            alert('Password changed. Sign in with your new password.');
+            window.location.replace('/');
+            return;
+          }
+          document.getElementById('accountStatus').textContent = 'Password updated for ' + pwTarget;
           closePwModal();
-          load();
         } else if (res.status === 403 || res.status === 401) {
           const t = await res.json().catch(() => null);
           msg.textContent = (t && t.error) || 'Not authorized';
@@ -561,10 +701,135 @@
       } catch (e) { msg.textContent = 'Request failed'; }
     }
 
-    load();
+    async function loadAiSettings() {
+      const status = document.getElementById('aiSettingsStatus');
+      const response = await fetch('/api/ai/settings');
+      if (!response.ok) {
+        status.textContent = 'AI settings could not be loaded.';
+        return;
+      }
+      const settings = await response.json();
+      document.getElementById('aiEnabled').checked = settings.enabled;
+      document.getElementById('openAiModel').value = settings.openAiModel;
+      setSelectValue('assemblyAiSpeechModel', settings.assemblyAiSpeechModel);
+      setSelectValue('assemblyAiTtsModel', settings.assemblyAiTtsModel);
+      document.getElementById('assemblyAiVoiceId').value = settings.assemblyAiVoiceId;
+      setSelectValue('assistantLanguage', settings.language);
+      document.getElementById('openAiKeyStatus').textContent = settings.openAiConfigured ? 'Key configured' : 'Not configured';
+      document.getElementById('assemblyAiKeyStatus').textContent = settings.assemblyAiConfigured ? 'Key configured' : 'Not configured';
+      document.getElementById('removeOpenAiKey').disabled = !settings.openAiConfigured;
+      document.getElementById('removeAssemblyAiKey').disabled = !settings.assemblyAiConfigured;
+    }
+
+    function setSelectValue(id, value) {
+      const select = document.getElementById(id);
+      if (![...select.options].some(option => option.value === value))
+        select.add(new Option(value, value));
+      select.value = value;
+    }
+
+    async function saveAiSettings() {
+      const status = document.getElementById('aiSettingsStatus');
+      status.textContent = 'Saving…';
+      const body = {
+        enabled: document.getElementById('aiEnabled').checked,
+        openAiApiKey: document.getElementById('openAiApiKey').value,
+        assemblyAiApiKey: document.getElementById('assemblyAiApiKey').value,
+        openAiModel: document.getElementById('openAiModel').value,
+        assemblyAiSpeechModel: document.getElementById('assemblyAiSpeechModel').value,
+        assemblyAiTtsModel: document.getElementById('assemblyAiTtsModel').value,
+        assemblyAiVoiceId: document.getElementById('assemblyAiVoiceId').value,
+        language: document.getElementById('assistantLanguage').value
+      };
+      const response = await fetch('/api/ai/settings', {
+        method: 'PUT', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+      });
+      const result = await response.json().catch(() => null);
+      if (!response.ok) {
+        status.textContent = result?.error || 'AI settings could not be saved.';
+        return;
+      }
+      document.getElementById('openAiApiKey').value = '';
+      document.getElementById('assemblyAiApiKey').value = '';
+      status.textContent = 'AI & Voice settings saved securely.';
+      await loadAiSettings();
+    }
+
+    async function removeAiKey(provider) {
+      if (!confirm(`Remove the saved ${provider === 'openai' ? 'OpenAI' : 'AssemblyAI'} key and disable the assistant?`)) return;
+      const response = await fetch('/api/ai/settings/keys/' + provider, { method: 'DELETE', credentials: 'include' });
+      document.getElementById('aiSettingsStatus').textContent = response.ok ? 'Key removed. The assistant is disabled.' : 'The key could not be removed.';
+      if (response.ok) await loadAiSettings();
+    }
+
+    async function testAiProvider(provider) {
+      const status = document.getElementById('aiSettingsStatus');
+      status.textContent = `Testing ${provider === 'openai' ? 'OpenAI' : 'AssemblyAI'}…`;
+      const response = await fetch('/api/ai/settings/test/' + provider, { method: 'POST', credentials: 'include' });
+      const result = await response.json().catch(() => null);
+      status.textContent = response.ok ? `${provider === 'openai' ? 'OpenAI' : 'AssemblyAI'} connection succeeded.` : (result?.error || 'Connection test failed.');
+    }
+
+    async function refreshAiModels() {
+      const status = document.getElementById('aiSettingsStatus');
+      status.textContent = 'Refreshing available models…';
+      const response = await fetch('/api/ai/settings/models', { credentials: 'include' });
+      const result = await response.json().catch(() => null);
+      if (!response.ok) { status.textContent = result?.error || 'Models could not be refreshed.'; return; }
+      const list = document.getElementById('openAiModels');
+      if (result.openAi.length) list.replaceChildren(...result.openAi.map(model => new Option('', model)));
+      status.textContent = result.openAi.length ? `Loaded ${result.openAi.length} OpenAI models available to this key.` : 'No OpenAI model list was returned. Save and test the OpenAI key first.';
+    }
+
+    document.getElementById('saveAiSettings').addEventListener('click', saveAiSettings);
+    document.getElementById('refreshAiModels').addEventListener('click', refreshAiModels);
+    document.getElementById('testOpenAi').addEventListener('click', () => testAiProvider('openai'));
+    document.getElementById('testAssemblyAi').addEventListener('click', () => testAiProvider('assemblyai'));
+    document.getElementById('removeOpenAiKey').addEventListener('click', () => removeAiKey('openai'));
+    document.getElementById('removeAssemblyAiKey').addEventListener('click', () => removeAiKey('assemblyai'));
+
+    function visibleDialog() {
+      if (document.getElementById('editModal').style.display !== 'none')
+        return { overlay: document.getElementById('editModal'), close: closeEditModal };
+      if (document.getElementById('folderModal').style.display !== 'none')
+        return { overlay: document.getElementById('folderModal'), close: closeFolderModal };
+      if (document.getElementById('pwModal').style.display !== 'none')
+        return { overlay: document.getElementById('pwModal'), close: closePwModal };
+      return null;
+    }
+
+    document.addEventListener('keydown', event => {
+      const active = visibleDialog();
+      if (!active) return;
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        active.close();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+
+      const focusable = [...active.overlay.querySelectorAll(
+        'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])'
+      )].filter(element => element.getClientRects().length > 0);
+      if (!focusable.length) {
+        event.preventDefault();
+        active.overlay.querySelector('.account-dialog')?.focus();
+        return;
+      }
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const focusIndex = focusable.indexOf(document.activeElement);
+      if (event.shiftKey && focusIndex <= 0) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (focusIndex === -1 || document.activeElement === last)) {
+        event.preventDefault();
+        first.focus();
+      }
+    });
+
+    load().catch(() => { document.getElementById('accountStatus').textContent = 'Failed to load your account.'; });
   </script>
-    <div style="margin: 24px 0 0 0; text-align:center;">
-      <button onclick="window.location.href='/LicensingServerPackage/admin.html'" style="background:#0ea5e9;color:#fff;border:none;border-radius:999px;padding:10px 28px;font-size:15px;cursor:pointer;box-shadow:0 2px 8px rgba(14,165,233,0.08);transition:background 0.2s;">Licenses</button>
-    </div>
 </body>
 </html>

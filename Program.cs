@@ -1,63 +1,114 @@
+﻿using System.Text.Json;
+using System.Text;
+using FilePortal.Models;
 using FilePortal.Services;
-using System.Text.Json;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.DataProtection;
 
-var builder = WebApplication.CreateBuilder(args);
+const string ProvisionCommand = "--provision-admin";
+var provisioning = args.Length > 0 && args[0] == ProvisionCommand;
+var builder = WebApplication.CreateBuilder(provisioning ? [] : args);
 
-// Add controllers and force camelCase JSON (so JS sees isDirectory, fullPath, etc.)
-builder.Services
-    .AddControllers()
-    .AddJsonOptions(options =>
-    {
-        options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
-    });
-
-// File browser service
+builder.Services.AddControllers().AddJsonOptions(options =>
+    options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase);
 builder.Services.AddSingleton<FileBrowserService>();
-// User store for managing users
+builder.Services.AddSingleton<AuthorizedFileSearchService>();
+builder.Services.AddSingleton<DuplicateFinderService>();
 builder.Services.AddSingleton<UserStoreService>();
-
-// Swagger (optional)
+builder.Services.AddSingleton<ThumbnailService>();
+builder.Services.AddSingleton<PhotoLibraryService>();
+builder.Services.AddSingleton<AlbumStoreService>();
+builder.Services.AddSingleton<FavoriteStoreService>();
+builder.Services.AddSingleton<ShareStoreService>();
+builder.Services.AddSingleton<FileArchiveService>();
+builder.Services.AddSingleton<AiSettingsService>();
+builder.Services.AddHttpClient("AiProviders", client => client.Timeout = TimeSpan.FromSeconds(15));
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+var dataDirectory = UserStoreService.GetDirectoryPath(builder.Configuration);
+var webRoot = builder.Environment.WebRootPath ?? Path.Combine(builder.Environment.ContentRootPath, "wwwroot");
+var dataRelativeToWebRoot = Path.GetRelativePath(webRoot, dataDirectory);
+if (!Path.IsPathRooted(dataRelativeToWebRoot) &&
+    dataRelativeToWebRoot != ".." &&
+    !dataRelativeToWebRoot.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+{
+    throw new InvalidOperationException("The FilePortal data directory must be outside wwwroot.");
+}
+var protection = builder.Services.AddDataProtection()
+    .SetApplicationName("FilePortal")
+    .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(dataDirectory, "keys")));
+if (OperatingSystem.IsWindows())
+    protection.ProtectKeysWithDpapi(protectToLocalMachine: true);
 
-// Cookie authentication
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>
     {
         options.ExpireTimeSpan = TimeSpan.FromDays(7);
         options.SlidingExpiration = true;
-        
-        // Return JSON 401 for API calls instead of redirecting
+        options.Cookie.HttpOnly = true;
+        options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
+        options.Events.OnValidatePrincipal = async context =>
+        {
+            var username = context.Principal?.Identity?.Name;
+            var stamp = context.Principal?.FindFirst(UserStoreService.SessionStampClaim)?.Value;
+            var users = context.HttpContext.RequestServices.GetRequiredService<UserStoreService>();
+            var user = username is null || stamp is null ? null : users.GetUser(username);
+            if (user is null || !Guid.TryParse(stamp, out var sessionStamp) || sessionStamp != user.SecurityStamp ||
+                context.Principal!.IsInRole("Admin") != user.IsAdmin)
+            {
+                context.RejectPrincipal();
+                await context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme);
+                return;
+            }
+
+            context.HttpContext.Items[typeof(UserRecord)] = user;
+        };
+
         options.Events.OnRedirectToLogin = context =>
         {
-            if (context.Request.Path.StartsWithSegments("/api"))
-            {
-                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-                context.Response.ContentType = "application/json";
-                return context.Response.WriteAsJsonAsync(new { error = "Unauthorized" });
-            }
-            context.Response.Redirect("/login.html");
-            return Task.CompletedTask;
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            return context.Response.WriteAsJsonAsync(new { error = "Unauthorized" });
         };
-        
         options.Events.OnRedirectToAccessDenied = context =>
         {
-            if (context.Request.Path.StartsWithSegments("/api"))
-            {
-                context.Response.StatusCode = StatusCodes.Status403Forbidden;
-                context.Response.ContentType = "application/json";
-                return context.Response.WriteAsJsonAsync(new { error = "Forbidden" });
-            }
-            context.Response.Redirect("/login.html");
-            return Task.CompletedTask;
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            return context.Response.WriteAsJsonAsync(new { error = "Forbidden" });
         };
     });
 
-// Authorization
 builder.Services.AddAuthorization();
 
 var app = builder.Build();
+
+if (provisioning)
+{
+    if (args.Length != 2 || string.IsNullOrWhiteSpace(args[1]))
+    {
+        Console.Error.WriteLine("Usage: dotnet FilePortal.dll --provision-admin <username>");
+        return 1;
+    }
+
+    Console.Write("Password: ");
+    var password = ReadPassword();
+    Console.Write("Confirm password: ");
+    var confirmation = ReadPassword();
+    if (string.IsNullOrWhiteSpace(password) || password != confirmation)
+    {
+        Console.Error.WriteLine("Enter matching, nonempty passwords.");
+        return 1;
+    }
+
+    var users = app.Services.GetRequiredService<UserStoreService>();
+    if (users.ProvisionAdmin(args[1], password) != UserChange.Updated)
+    {
+        Console.Error.WriteLine("An administrator already exists or the username is in use.");
+        return 1;
+    }
+
+    Console.WriteLine("Administrator provisioned.");
+    return 0;
+}
 
 if (app.Environment.IsDevelopment())
 {
@@ -65,24 +116,82 @@ if (app.Environment.IsDevelopment())
     app.UseSwagger();
     app.UseSwaggerUI();
 }
+else
+{
+    app.UseExceptionHandler(exceptionApp => exceptionApp.Run(context =>
+    {
+        context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+        return context.Response.WriteAsJsonAsync(new { error = "FilePortal could not complete the request." });
+    }));
+}
 
-// Serve wwwroot (index.html, js, css)
-app.UseStaticFiles();
-
+var clientFiles = new StaticFileOptions
+{
+    OnPrepareResponse = context =>
+    {
+        if (Path.GetExtension(context.File.Name) is ".html" or ".js" or ".css")
+            context.Context.Response.Headers.CacheControl = "no-cache, must-revalidate";
+    }
+};
+app.UseStaticFiles(clientFiles);
 app.UseRouting();
-
-// Authentication & Authorization middleware (must come after routing, before endpoints)
 app.UseAuthentication();
 app.UseAuthorization();
+app.Use(async (context, next) =>
+{
+    if (context.User.Identity?.IsAuthenticated == true &&
+        context.Items[typeof(UserRecord)] is UserRecord user &&
+        user.MustChangePassword &&
+        context.Request.Path.StartsWithSegments("/api"))
+    {
+        var requestPath = Uri.UnescapeDataString(context.Request.Path.Value ?? "");
+        var ownPasswordPath = $"/api/users/{user.Username}/password";
+        var allowed = requestPath.Equals("/api/auth/me", StringComparison.OrdinalIgnoreCase) ||
+            requestPath.Equals("/api/auth/logout", StringComparison.OrdinalIgnoreCase) ||
+            (HttpMethods.IsPost(context.Request.Method) &&
+                requestPath.Equals(ownPasswordPath, StringComparison.OrdinalIgnoreCase));
+        if (!allowed)
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            await context.Response.WriteAsJsonAsync(new
+            {
+                error = "Change your temporary password before continuing.",
+                mustChangePassword = true
+            });
+            return;
+        }
+    }
 
-// Map controllers (FilesController)
+    await next();
+});
+
 app.MapControllers();
+app.MapGet("/portal.html", () => Results.Redirect("/"));
+app.MapGet("/FileManager", () => Results.Redirect("/files.html"));
+app.MapFallback("/api/{**path}", () => Results.NotFound(new { error = "API route not found" }));
+app.MapFallbackToFile("index.html", clientFiles);
 
-// Fallback to index.html for unknown routes
-app.MapFallbackToFile("/index.html");
-
-// Let IIS handle URL binding - don't specify URLs in code
 app.Run();
+return 0;
 
-//app.Run("http://0.0.0.0:5251");
+static string ReadPassword()
+{
+    if (Console.IsInputRedirected)
+        return Console.ReadLine() ?? "";
 
+    var password = new StringBuilder();
+    while (true)
+    {
+        var key = Console.ReadKey(intercept: true);
+        if (key.Key == ConsoleKey.Enter)
+        {
+            Console.WriteLine();
+            return password.ToString();
+        }
+
+        if (key.Key == ConsoleKey.Backspace && password.Length > 0)
+            password.Length--;
+        else if (!char.IsControl(key.KeyChar))
+            password.Append(key.KeyChar);
+    }
+}

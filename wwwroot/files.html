@@ -1,0 +1,1634 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>My Files · FileNest</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #020617;
+      color: #e5e7eb;
+    }
+    .item.selected { box-shadow: 0 0 0 2px rgba(14,165,233,0.18); border:1px solid #0ea5e9 }
+    .item.keyboard-selected { box-shadow: 0 0 0 3px #0ea5e9; background: rgba(14,165,233,0.15); }
+    .item input[type="checkbox"] { display:none }
+    .selection-mode .item input[type="checkbox"] { display:inline-block }
+    /* Image viewer modal */
+    .image-viewer { display:none; position:fixed; inset:0; background:rgba(2,6,23,0.95); z-index:9999; align-items:center; justify-content:center; }
+    .image-viewer { flex-direction:column; }
+    .preview-toolbar { display:flex; justify-content:center; flex-wrap:wrap; gap:6px; padding:8px; }
+    .preview-toolbar button { min-height:44px; }
+    .preview-stage { width:100%; min-height:0; flex:1; display:grid; place-items:center; container-type:size; position:relative; overflow:hidden; }
+    .preview-stage img, .preview-stage video { max-width:100%; max-height:100%; max-width:100cqw; max-height:100cqh; object-fit:contain; }
+    .preview-stage.quarter-turn img, .preview-stage.quarter-turn video { max-width:100cqh; max-height:100cqw; }
+    .image-viewer-nav { position:absolute; top:50%; transform:translateY(-50%); background:#0ea5e9; color:#fff; border:none; border-radius:50%; width:50px; height:50px; font-size:24px; cursor:pointer; display:flex; align-items:center; justify-content:center; }
+    .image-viewer-nav:hover { background:#0284c7; }
+    .image-viewer-nav.prev { left:20px; }
+    .image-viewer-nav.next { right:20px; }
+    .app {
+      display: flex;
+      height: 100vh;
+      height: 100dvh;
+    }
+    .sidebar {
+      width: 260px;
+      background: #020617;
+      border-right: 1px solid #1f2937;
+      display: flex;
+      flex-direction: column;
+    }
+    .sidebar-header {
+      padding: 16px;
+      border-bottom: 1px solid #1f2937;
+      font-weight: 600;
+      font-size: 18px;
+    }
+    .drive-list {
+      overflow: auto;
+      padding: 8px;
+    }
+    .drive-item {
+      padding: 8px 10px;
+      border-radius: 999px;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .drive-item span.icon {
+      font-size: 16px;
+    }
+    .drive-item.active {
+      background: #0ea5e9;
+      color: #0b1120;
+    }
+    .drive-item:not(.active):hover {
+      background: #111827;
+    }
+    .main {
+      flex: 1;
+      min-width:0;
+      min-height:0;
+      display: flex;
+      flex-direction: column;
+    }
+    .toolbar {
+      padding: 10px 16px;
+      border-bottom: 1px solid #1f2937;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap:wrap;
+      gap: 12px;
+    }
+    .path {
+      font-size: 13px;
+      color: #9ca3af;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .buttons, .selection-toolbar {
+      display: flex;
+      flex-wrap:wrap;
+      align-items: center;
+      gap: 8px;
+    }
+    button, .btn-like {
+      border: none;
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 13px;
+      cursor: pointer;
+      background: #0ea5e9;
+      color: #0b1120;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    button.secondary {
+      background: #111827;
+      color: #e5e7eb;
+      border: 1px solid #374151;
+    }
+    button:hover, .btn-like:hover {
+      opacity: 0.9;
+    }
+    .content {
+      flex: 1;
+      overflow: auto;
+      padding: 12px 16px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 12px;
+    }
+    .grid.list-view {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .grid.list-view .item {
+      flex-direction: row;
+      height: 48px;
+      align-items: center;
+      padding: 0 12px;
+    }
+    .grid.list-view .item-thumbnail {
+      width: 32px;
+      height: 32px;
+      flex-shrink: 0;
+    }
+    .grid.list-view .item-info {
+      flex: 1;
+      flex-direction: row;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .grid.list-view .item-name {
+      flex: 1;
+    }
+    .grid.list-view .item-meta {
+      flex-direction: row;
+      gap: 16px;
+    }
+    .grid.details-view {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+    .grid.details-view .item {
+      flex-direction: row;
+      height: 40px;
+      align-items: center;
+      padding: 0 12px;
+      border-radius: 0;
+      border-left: none;
+      border-right: none;
+      border-top: none;
+    }
+    .grid.details-view .item-thumbnail {
+      width: 24px;
+      height: 24px;
+      flex-shrink: 0;
+      margin-right: 8px;
+    }
+    .grid.details-view .item-info {
+      flex: 1;
+      flex-direction: row;
+      align-items: center;
+      gap: 16px;
+    }
+    .grid.details-view .item-name {
+      flex: 1;
+      min-width: 200px;
+    }
+    .grid.details-view .item-meta {
+      flex-direction: row;
+      gap: 24px;
+      min-width: 200px;
+    }
+    .item {
+      background: #020617;
+      border-radius: 12px;
+      padding: 0;
+      border: 1px solid #1f2937;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      overflow: hidden;
+      transition: all 0.2s ease;
+    }
+    .item:hover {
+      border-color: #0ea5e9;
+      box-shadow: 0 0 12px rgba(14, 165, 233, 0.3);
+    }
+    .item-thumbnail {
+      width: 100%;
+      height: 120px;
+      background: #111827;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    .item-thumbnail img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .item-thumbnail svg {
+      width: 60%;
+      height: 60%;
+      filter: drop-shadow(0 0 2px rgba(0,0,0,0.5));
+    }
+    .item-info {
+      min-width:0;
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .item-name {
+      font-size: 12px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: #e5e7eb;
+    }
+    .item-location {
+      color: var(--muted);
+      font-size: 12px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .item-meta {
+      font-size: 10px;
+      color: #9ca3af;
+      display: flex;
+      justify-content: space-between;
+    }
+    .empty {
+      font-size: 13px;
+      color: #6b7280;
+    }
+    .error {
+      font-size: 12px;
+      color: #f97373;
+      margin-top: 8px;
+    }
+    #fileInput {
+      display: none;
+    }
+    .login-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.8);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+    .login-box {
+      background: #1f2937;
+      border: 1px solid #374151;
+      border-radius: 12px;
+      padding: 32px;
+      width: 100%;
+      max-width: 320px;
+      box-shadow: 0 20px 25px rgba(0,0,0,0.5);
+    }
+    .login-box h1 {
+      margin: 0 0 24px 0;
+      font-size: 24px;
+      color: #e5e7eb;
+    }
+    .login-box input {
+      width: 100%;
+      padding: 8px 12px;
+      margin-bottom: 12px;
+      background: #111827;
+      border: 1px solid #374151;
+      border-radius: 6px;
+      color: #e5e7eb;
+      font-size: 13px;
+      box-sizing: border-box;
+    }
+    .login-box input::placeholder {
+      color: #9ca3af;
+    }
+    .login-box button {
+      width: 100%;
+      margin-top: 8px;
+    }
+    .login-error {
+      color: #f97373;
+      font-size: 12px;
+      margin-bottom: 12px;
+    }
+    button.danger { background:#b91c1c; color:white; }
+    button:disabled { opacity:.5; cursor:not-allowed; }
+    .mobile-roots-toggle { display:none; }
+    .selection-toolbar { padding:8px 16px; border-bottom:1px solid #1f2937; }
+    .selection-toolbar [hidden] { display:none; }
+    #rangeBtn[aria-pressed="true"] { border-color:#0ea5e9; }
+    #selectedCountLabel { font-size:13px; color:#9ca3af; }
+    .item-delete { align-self:flex-end; margin:4px 8px 8px; }
+    .selection-mode .item-delete { display:none; }
+    .grid.list-view .item-delete, .grid.details-view .item-delete { align-self:center; margin:0 0 0 4px; }
+    @media (max-width:700px), (max-width:1100px) and (pointer:coarse) {
+      .app { flex-direction:column; }
+      .mobile-roots-toggle { display:inline-flex; }
+      .sidebar { display:none; width:100%; max-height:34dvh; overflow:auto; border-right:0; border-bottom:1px solid #1f2937; }
+      .sidebar.mobile-open { display:flex; }
+      .drive-list { flex-shrink:0; }
+      .drive-item { min-height:44px; }
+      .toolbar, .selection-toolbar { padding:6px 10px; gap:6px; }
+      .toolbar .path { flex-basis:100%; }
+      .buttons, .selection-toolbar { gap:6px; }
+      .buttons button, .buttons .btn-like, .selection-toolbar button { min-height:44px; justify-content:center; padding:6px 10px; }
+      #currentUser { display:none !important; }
+      .content { padding:6px 10px; }
+      .grid:not(.list-view):not(.details-view) { grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+      .grid.list-view .item, .grid.details-view .item { height:auto; min-height:56px; padding:0 6px; }
+      .grid.list-view .item-info, .grid.details-view .item-info { align-items:flex-start; flex-direction:column; gap:2px; }
+      .grid.details-view .item-meta, .grid.details-view .item-name { min-width:0; }
+      .item-meta { gap:6px; }
+      .item-delete { min-height:44px; margin:2px 5px 5px; }
+      .item input[type="checkbox"] { width:22px; height:22px; margin:10px; accent-color:#0ea5e9; }
+      .login-box { box-sizing:border-box; width:calc(100% - 24px); padding:20px; }
+      .login-box input { font-size:16px; }
+      .image-viewer-nav.prev { left:6px; }
+      .image-viewer-nav.next { right:6px; }
+    }
+  </style>
+<link rel="stylesheet" href="/filenest/site.css">
+<link rel="stylesheet" href="/filenest/workspace.css">
+<script src="/theme.js"></script>
+<script src="/filenest/shell.js" defer></script>
+</head>
+<body class="fn-workspace fn-files">
+  <header id="fileNestHeader" data-page="files"></header>
+  <p id="explorerStatus" class="fn-status" role="status">Loading your folders…</p>
+
+  <div class="app" style="display:none;" id="mainApp">
+    <aside class="sidebar fn-panel" id="driveSidebar" aria-label="Folders and file filters">
+      <div class="sidebar-header">
+        <strong>Browse folders</strong>
+        <span class="fn-muted">Choose an available location</span>
+      </div>
+      <div id="driveList" class="drive-list"></div>
+      <div class="drive-filters" aria-label="Filter by file type">
+        <h2>File types</h2>
+        <button id="filterPictures" class="secondary" type="button" onclick="filterByCategory('pictures')">🖼️ Pictures</button>
+        <button id="filterVideos" class="secondary" type="button" onclick="filterByCategory('videos')">🎬 Videos</button>
+        <button id="filterDocuments" class="secondary" type="button" onclick="filterByCategory('documents')">📄 Documents</button>
+      </div>
+    </aside>
+    <main class="main">
+      <div class="fn-explorer-title">
+        <h1>My Files</h1>
+        <nav id="fileBreadcrumbs" class="fn-breadcrumbs" aria-label="Current folder"></nav>
+      </div>
+      <div class="toolbar fn-panel">
+        <div class="path" id="currentPathLabel">Select a drive…</div>
+        <div class="buttons">
+          <button id="rootsToggle" class="secondary mobile-roots-toggle" type="button" aria-controls="driveSidebar" aria-expanded="false">Drives</button>
+          <div style="position:relative;display:inline-block">
+            <button id="uploadBtn" class="btn-like" type="button" aria-haspopup="menu" aria-controls="uploadMenu" aria-expanded="false">⬆️ Upload</button>
+            <div id="uploadMenu" role="menu" style="display:none;position:absolute;right:0;margin-top:6px;background:#0b1220;border:1px solid #1f2937;border-radius:6px;padding:6px;z-index:50;min-width:140px">
+              <button type="button" class="secondary" id="uploadFilesOption" role="menuitem">⬆️ Upload Files</button>
+              <button type="button" class="secondary" id="uploadFolderOption" role="menuitem">📁 Upload Folder</button>
+            </div>
+          </div>
+          <button class="secondary" type="button" disabled title="Folder creation is unavailable">New Folder</button>
+          <span class="fn-unsupported-note">Create, rename, and move are unavailable.</span>
+          <button class="secondary" id="upBtn" type="button" onclick="goUp()">⬆️ Up</button>
+          <button id="viewTypeBtn" class="secondary" type="button" onclick="toggleViewType()">📋 View</button>
+        </div>
+      </div>
+      <div class="fn-files-tools fn-panel">
+        <label for="folderSearch" class="fn-visually-hidden">Search this folder</label>
+        <input id="folderSearch" type="search" placeholder="Search this folder…">
+        <label for="fileSort" class="fn-visually-hidden">Sort files</label>
+        <select id="fileSort"><option value="name">Name</option><option value="modified">Last modified</option><option value="size">Size</option></select>
+        <label for="duplicateFilter" class="fn-visually-hidden">Duplicate filter</label>
+        <select id="duplicateFilter">
+          <option value="all">All files</option>
+          <option value="confirmed">Confirmed duplicates</option>
+          <option value="candidates">Name + size candidates</option>
+        </select>
+        <span id="duplicateStatus" class="fn-muted" role="status"></span>
+        <a class="fn-inline-link" href="/gallery.html#search">Search Gallery</a>
+      </div>
+      <div class="selection-toolbar fn-panel" aria-label="Selection and deletion">
+        <button id="selectBtn" class="secondary" type="button" aria-pressed="false">Select</button>
+        <button id="rangeBtn" class="secondary" type="button" aria-pressed="false" hidden>Range</button>
+        <button id="selectAllBtn" class="secondary" type="button" hidden onclick="selectAll()">Select all</button>
+        <button id="downloadSelectedBtn" class="secondary" type="button" hidden onclick="downloadSelected()">Download</button>
+        <button id="deleteSelectedBtn" class="danger" type="button" onclick="deleteSelected()">Delete</button>
+        <span id="selectedCountLabel" role="status"></span>
+      </div>
+      <p id="uploadStatus" class="fn-status" role="status"></p>
+      <div class="content fn-panel">
+        <div id="error" class="error" role="status"></div>
+        <div id="items" class="grid"></div>
+        <div id="emptyMsg" class="empty" style="display:none;">This folder is empty.</div>
+      </div>
+    </main>
+  </div>
+
+  <dialog id="filePreview" class="fn-dialog" aria-labelledby="filePreviewTitle">
+    <h2 id="filePreviewTitle"></h2>
+    <p id="filePreviewDescription" class="fn-muted"></p>
+    <div class="fn-dialog-actions">
+      <form method="dialog"><button class="fn-button" type="submit">Close</button></form>
+      <a id="previewOpen" class="fn-button" target="_blank" rel="noopener">Open file</a>
+      <a id="previewDownload" class="fn-button fn-button-primary">Download</a>
+    </div>
+  </dialog>
+
+  <!-- Hidden inputs for files and folders -->
+  <input id="fileInputFiles" type="file" multiple style="display:none" />
+  <input id="fileInputFolder" type="file" multiple webkitdirectory style="display:none" />
+
+  <div id="imageViewer" class="image-viewer" role="dialog" aria-modal="true" aria-label="Image preview">
+    <div class="preview-toolbar">
+      <button class="secondary" type="button" onclick="previewRotation.turn(document.getElementById('imageViewerImg'), -90)" aria-label="Rotate image counterclockwise">↶ Left</button>
+      <button class="secondary" type="button" onclick="previewRotation.turn(document.getElementById('imageViewerImg'), 90)" aria-label="Rotate image clockwise">↷ Right</button>
+      <button class="danger" type="button" onclick="deleteCurrentImage()">Delete</button>
+      <button class="secondary" id="imageViewerClose" type="button" onclick="closeImageViewer()">Close</button>
+    </div>
+    <div class="preview-stage">
+      <img id="imageViewerImg" alt="" />
+      <button class="image-viewer-nav prev" id="imagePrevBtn" onclick="navigateImage(-1)" aria-label="Previous image">‹</button>
+      <button class="image-viewer-nav next" id="imageNextBtn" onclick="navigateImage(1)" aria-label="Next image">›</button>
+    </div>
+  </div>
+
+  <div id="videoViewer" class="image-viewer" role="dialog" aria-modal="true" aria-label="Video preview">
+    <div class="preview-toolbar">
+      <button class="secondary" type="button" onclick="previewRotation.turn(document.getElementById('videoViewerVideo'), -90)" aria-label="Rotate video counterclockwise">↶ Left</button>
+      <button class="secondary" type="button" onclick="previewRotation.turn(document.getElementById('videoViewerVideo'), 90)" aria-label="Rotate video clockwise">↷ Right</button>
+      <button class="danger" type="button" onclick="deleteCurrentVideo()">Delete</button>
+      <button class="secondary" id="videoViewerClose" type="button" onclick="closeVideoViewer()">Close</button>
+    </div>
+    <div class="preview-stage">
+      <video id="videoViewerVideo" controls playsinline></video>
+    </div>
+  </div>
+
+  <script src="/preview.js"></script>
+  <script src="/range-selection.js"></script>
+  <iframe id="archiveDownload" name="archiveDownload" title="Archive download" hidden></iframe>
+  <script>
+    let currentRoot = null;
+    let currentVideoPath = null;
+    let currentPath = null;
+    let currentFilter = null;
+    let currentImageList = [];
+    let currentImageIndex = 0;
+    let imageZoom = 1;
+    let imagePanX = 0;
+    let imagePanY = 0;
+    let isPanning = false;
+    let panStartX = 0;
+    let panStartY = 0;
+    let lastSearchLetter = '';
+    let searchLetterIndex = 0;
+    let imageViewerReturnFocus = null;
+    let videoViewerReturnFocus = null;
+    let availableRoots = [];
+    let globalSearchQuery = null;
+
+    const initial = new URLSearchParams(location.search);
+    const folderSearch = document.getElementById("folderSearch");
+    const sorter = document.getElementById("fileSort");
+    const duplicateFilter = document.getElementById("duplicateFilter");
+    const duplicateStatus = document.getElementById("duplicateStatus");
+    const duplicateReports = new Map();
+    const categoryExtensions = {
+      pictures: new Set([".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".svg", ".ico", ".tiff", ".tif"]),
+      videos: new Set([".mp4", ".mkv", ".avi", ".mov", ".flv", ".wmv", ".webm", ".m4v", ".mpg", ".mpeg"]),
+      documents: new Set([".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".txt", ".rtf", ".odt", ".ods", ".odp"])
+    };
+    let duplicateRequest = 0;
+    let duplicatePaths = null;
+    let duplicateScanSummary = "";
+    let duplicateViewActive = false;
+    let entries = [];
+    let initialFolder = true;
+    let folderLoaded = false;
+    let accountUser;
+    folderSearch.value = initial.get("q") || "";
+
+    let rootRequest = 0;
+    let fileRequest = 0;
+
+    async function checkAuth() {
+      try {
+        const user = await FileNest.account();
+        if (!user) { location.replace(FileNest.signInUrl()); return; }
+        accountUser = user.user;
+        document.getElementById("explorerStatus").hidden = true;
+        document.getElementById("mainApp").style.display = "grid";
+        await loadDrives();
+      } catch (error) {
+        document.getElementById("explorerStatus").textContent = error.message;
+      }
+    }
+
+    function showLogin() { location.replace(FileNest.signInUrl()); }
+
+    function pathKey(path) {
+      return path.replaceAll("/", "\\").replace(/\\+$/, "").toLowerCase();
+    }
+
+    function rootForPath(path) {
+      const key = pathKey(path);
+      return availableRoots.filter(root => {
+        const rootKey = pathKey(root.path);
+        return key === rootKey || key.startsWith(rootKey + "\\");
+      }).sort((first, second) => second.path.length - first.path.length)[0] || null;
+    }
+
+    function selectRootForPath(path) {
+      const root = rootForPath(path);
+      currentRoot = root?.path || null;
+      document.querySelectorAll(".drive-item").forEach(item =>
+        item.classList.toggle("active", Boolean(root) && pathKey(item.dataset.path) === pathKey(root.path)));
+      return root;
+    }
+
+    function locationForItem(item) {
+      const root = rootForPath(item.path);
+      if (!root) return item.path;
+      const clean = item.path.replace(/[/\\]+$/, "");
+      const cut = Math.max(clean.lastIndexOf("\\"), clean.lastIndexOf("/"));
+      const parent = cut > 0 ? clean.slice(0, cut) : clean;
+      const base = root.path.replace(/[/\\]+$/, "");
+      const relative = parent.slice(base.length).split(/[/\\]+/).filter(Boolean);
+      return [root.name, ...relative].join(" / ");
+    }
+
+    function showBreadcrumbs(path) {
+      const breadcrumb = document.getElementById("fileBreadcrumbs");
+      const item = [...document.querySelectorAll(".drive-item")].find(drive => drive.dataset.path === currentRoot);
+      if (!item || !currentRoot) {
+        breadcrumb.replaceChildren();
+        return;
+      }
+
+      const base = currentRoot.replace(/[/\\]+$/, "");
+      const segments = path.slice(base.length).split(/[/\\]+/).filter(Boolean);
+      const names = [item.lastElementChild.textContent, ...segments];
+      breadcrumb.replaceChildren(...names.map((label, index) => {
+        const last = index === names.length - 1;
+        const crumb = document.createElement(last ? "span" : "button");
+        crumb.textContent = label;
+        if (last) crumb.setAttribute("aria-current", "page");
+        else {
+          crumb.type = "button";
+          crumb.addEventListener("click", () => {
+            const target = index ? base + "\\" + segments.slice(0, index).join("\\") : currentRoot;
+            loadFolder(target);
+          });
+        }
+        return crumb;
+      }));
+    }
+
+    async function loadDrives() {
+      const request = ++rootRequest;
+      setError("");
+      const listEl = document.getElementById("driveList");
+      listEl.innerHTML = "Loading…";
+
+      try {
+        const res = await fetch("/api/files/roots", { credentials: "include" });
+        if (!res.ok) {
+          if (res.status === 401) {
+            // Unauthorized - go back to login
+            showLogin();
+            return;
+          }
+          throw new Error("HTTP " + res.status);
+        }
+        const roots = await res.json();
+        if (request !== rootRequest) return;
+        availableRoots = roots;
+
+        listEl.textContent = roots.length ? "" : "No folders available";
+        const requested = initialFolder ? initial.get("path") : null;
+        const matches = requested ? roots.filter(root => {
+          const key = pathKey(root.path);
+          return pathKey(requested) === key || pathKey(requested).startsWith(key + "\\");
+        }).sort((a, b) => b.path.length - a.path.length) : [];
+        const requestedPath = matches.length ? requested : null;
+        const selectedRoot = matches[0] || roots[0];
+
+        roots.forEach(root => {
+          const div = document.createElement("button");
+          div.type = "button";
+          div.className = "drive-item";
+          div.dataset.path = root.path;
+          div.onclick = () => {
+            document.querySelectorAll(".drive-item").forEach(d => d.classList.remove("active"));
+            div.classList.add("active");
+            currentRoot = root.path;
+            closeDriveSidebar();
+            loadFolder(root.path);
+          };
+
+          const icon = document.createElement("span");
+          icon.className = "icon";
+          icon.textContent = "💽";
+
+          const label = document.createElement("span");
+          label.textContent = root.name;
+
+          div.appendChild(icon);
+          div.appendChild(label);
+          listEl.appendChild(div);
+
+          if (root === selectedRoot) div.classList.add("active");
+        });
+
+        const query = initialFolder ? initial.get("q")?.trim() : "";
+        if (query) {
+          await loadGlobalSearch(query);
+        } else if (selectedRoot) {
+          currentRoot = selectedRoot.path;
+          await loadFolder(requestedPath || selectedRoot.path, initialFolder ? initial.get("preview") : null);
+          const category = initialFolder ? initial.get("category") : null;
+          if (["pictures", "videos", "documents", "pdfs", "notes"].includes(category)) await filterByCategory(category);
+        }
+        initialFolder = false;
+      } catch (err) {
+        if (request !== rootRequest) return;
+        console.error(err);
+        listEl.innerHTML = "Failed to load drives.";
+        setError("Error loading drives: " + err.message);
+      }
+    }
+
+    async function loadFolder(path, previewPath) {
+      if (!path) return;
+      const request = ++fileRequest;
+      if (globalSearchQuery !== null) folderSearch.value = "";
+      globalSearchQuery = null;
+      currentPath = path;
+      currentFilter = null;
+      folderLoaded = false;
+      entries = [];
+      showBreadcrumbs(path);
+      document.getElementById("currentPathLabel").textContent = path;
+      folderSearch.placeholder = "Search this folder…";
+      document.getElementById("uploadBtn").disabled = false;
+      document.getElementById("upBtn").disabled = false;
+      setError("");
+      setSelectionMode(false);
+
+      const itemsEl = document.getElementById("items");
+      const emptyMsgEl = document.getElementById("emptyMsg");
+      itemsEl.textContent = "Loading…";
+      updateSelectedCount();
+      emptyMsgEl.textContent = "This folder is empty.";
+      emptyMsgEl.style.display = "none";
+
+      try {
+        const res = await fetch("/api/files/folder?path=" + encodeURIComponent(path), { credentials: "include" });
+        if (!res.ok) {
+          if (res.status === 401) {
+            showLogin();
+            return;
+          }
+          const text = await res.text();
+          throw new Error("HTTP " + res.status + " – " + text);
+        }
+        const items = await res.json();
+        if (request !== fileRequest) return;
+        entries = items;
+        folderLoaded = true;
+        applyFileFilters();
+        if (duplicateFilter.value !== "all") await applyDuplicateMode();
+        if (previewPath) {
+          const candidate = items.find(item => !item.isDirectory && pathKey(item.path) === pathKey(previewPath));
+          if (candidate) onItemClick(candidate);
+        }
+      } catch (err) {
+        console.error(err);
+        if (request !== fileRequest) return;
+        setError("Failed to load folder: " + err.message);
+        itemsEl.innerHTML = "";
+      }
+    }
+
+    async function loadGlobalSearch(query) {
+      query = query.trim();
+      if (!query) return;
+      const request = ++fileRequest;
+      globalSearchQuery = query;
+      currentRoot = null;
+      currentPath = null;
+      currentFilter = null;
+      folderLoaded = false;
+      entries = [];
+      folderSearch.value = query;
+      folderSearch.placeholder = "Filter global results…";
+      document.querySelectorAll(".drive-item").forEach(item => item.classList.remove("active"));
+      const breadcrumb = document.getElementById("fileBreadcrumbs");
+      const searchCrumb = document.createElement("span");
+      searchCrumb.textContent = "Search";
+      searchCrumb.setAttribute("aria-current", "page");
+      breadcrumb.replaceChildren(searchCrumb);
+      document.getElementById("currentPathLabel").textContent = `Search results for “${query}”`;
+      document.getElementById("uploadBtn").disabled = true;
+      document.getElementById("upBtn").disabled = true;
+      setError("");
+      setSelectionMode(false);
+
+      const itemsEl = document.getElementById("items");
+      const emptyMsgEl = document.getElementById("emptyMsg");
+      itemsEl.textContent = "Searching all accessible folders…";
+      updateSelectedCount();
+      emptyMsgEl.style.display = "none";
+
+      try {
+        const res = await fetch("/api/files/search?" + new URLSearchParams({ q: query }), { credentials: "include" });
+        if (!res.ok) {
+          if (res.status === 401) {
+            showLogin();
+            return;
+          }
+          const payload = await res.json().catch(() => null);
+          throw new Error(payload?.error || "HTTP " + res.status);
+        }
+        const items = await res.json();
+        if (request !== fileRequest) return;
+        entries = items;
+        folderLoaded = true;
+        applyFileFilters();
+        if (duplicateFilter.value !== "all") await applyDuplicateMode();
+      } catch (err) {
+        console.error(err);
+        if (request !== fileRequest) return;
+        setError("Failed to search: " + err.message);
+        itemsEl.replaceChildren();
+      }
+    }
+
+    function applyFileFilters() {
+      if (!folderLoaded) return;
+      const query = folderSearch.value.trim().toLowerCase();
+      const matching = entries.filter(item => {
+        if (query && !item.name.toLowerCase().includes(query)) return false;
+        if (duplicatePaths && (item.isDirectory || !duplicatePaths.has(pathKey(item.path)))) return false;
+        if (currentFilter === "pdfs") return item.extension?.toLowerCase() === ".pdf";
+        if (currentFilter === "notes") return [".txt", ".md", ".rtf"].includes(item.extension?.toLowerCase());
+        if (categoryExtensions[currentFilter] && !categoryExtensions[currentFilter].has(item.extension?.toLowerCase())) return false;
+        return true;
+      });
+      const compare = (a, b) => {
+        if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1;
+        if (sorter.value === "size" && a.size !== b.size) return (b.size || 0) - (a.size || 0);
+        if (sorter.value === "modified" && a.lastModified !== b.lastModified)
+          return (b.lastModified || "").localeCompare(a.lastModified || "");
+        return a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
+      };
+      setSelectionMode(false);
+      matching.sort(compare);
+      renderItems(matching);
+      const empty = document.getElementById("emptyMsg");
+      empty.textContent = duplicatePaths && duplicateScanSummary
+        ? (duplicateViewActive
+          ? ""
+          : `No files in this view match the selected duplicate evidence. The count above covers ${globalSearchQuery !== null ? "all scanned roots." : "the entire scanned root."}`)
+        : duplicateViewActive ? "No duplicate files found in the selected root."
+        : duplicatePaths ? "Could not apply the duplicate filter. See the status above." :
+        globalSearchQuery !== null ? "No files or folders matched this search." :
+        query || currentFilter ? "No matching files in this scope." : "This folder is empty.";
+      empty.style.display = matching.length ? "none" : "block";
+    }
+
+    folderSearch.addEventListener("input", applyFileFilters);
+    folderSearch.addEventListener("keydown", event => {
+      if (event.key !== "Enter" || globalSearchQuery === null) return;
+      const query = folderSearch.value.trim();
+      if (!query) return;
+      event.preventDefault();
+      const url = new URL(location.href);
+      url.search = "";
+      url.searchParams.set("q", query);
+      history.replaceState(null, "", url);
+      loadGlobalSearch(query);
+    });
+    sorter.addEventListener("change", applyFileFilters);
+
+    async function applyDuplicateMode() {
+      const request = ++duplicateRequest;
+      const mode = duplicateFilter.value;
+      duplicatePaths = null;
+      duplicateScanSummary = "";
+      duplicateViewActive = mode !== "all";
+      duplicateStatus.textContent = "";
+      if (mode === "all") {
+        duplicateViewActive = false;
+        if (globalSearchQuery !== null) await loadGlobalSearch(globalSearchQuery);
+        else await loadFolder(currentPath);
+        return;
+      }
+      const scopedRoots = currentRoot ? availableRoots.filter(root => pathKey(root.path) === pathKey(currentRoot)) : availableRoots;
+      if (!scopedRoots.length) { duplicateStatus.textContent = "Choose a drive first."; applyFileFilters(); return; }
+      try {
+        const reports = await Promise.all(scopedRoots.map(async root => {
+          if (duplicateReports.has(root.name)) return duplicateReports.get(root.name);
+          const response = await fetch("/api/duplicates?" + new URLSearchParams({ rootName: root.name }), { credentials: "include" });
+          if (!response.ok) throw new Error((await response.json().catch(() => null))?.error || "Duplicate scan failed.");
+          const report = await response.json();
+          duplicateReports.set(root.name, report);
+          return report;
+        }));
+        if (request !== duplicateRequest) return;
+        const confirmed = new Set(reports.flatMap(report => report.exactContent.flatMap(group => group.files.map(file => pathKey(file.path)))));
+        const candidates = new Set(reports.flatMap(report => report.similarNames.flatMap(group => group.files.map(file => pathKey(file.path))))
+          .filter(path => !confirmed.has(path)));
+        duplicatePaths = mode === "confirmed" ? confirmed : candidates;
+        duplicateScanSummary = "";
+        duplicateStatus.textContent = "";
+        const duplicateItems = new Map();
+        const sourceItems = mode === "confirmed"
+          ? reports.flatMap(report => report.exactContent.flatMap(group => group.files))
+          : reports.flatMap(report => report.similarNames.flatMap(group => group.files));
+        sourceItems.forEach(file => {
+          const key = pathKey(file.path);
+          if (!duplicatePaths.has(key) || duplicateItems.has(key)) return;
+          duplicateItems.set(key, {
+            name: file.name,
+            path: file.path,
+            size: file.size,
+            extension: file.name.includes(".") ? "." + file.name.split(".").pop().toLowerCase() : "",
+            isDirectory: false
+          });
+        });
+        entries = Array.from(duplicateItems.values()).sort((a, b) =>
+          a.name.localeCompare(b.name, undefined, { sensitivity: "base" }) || a.path.localeCompare(b.path));
+        folderLoaded = true;
+        duplicateStatus.textContent = "";
+        const partial = reports.some(report => report.truncated);
+        const matchType = mode === "confirmed" ? "confirmed duplicate files" : "candidate files";
+        const rootScope = scopedRoots.length === 1 ? "the scanned root" : "the scanned roots";
+        duplicateScanSummary = `${duplicatePaths.size} ${matchType} across ${rootScope}` +
+          (partial ? " — scan capped; results may be incomplete" : "");
+        applyFileFilters();
+      } catch (error) {
+        if (request !== duplicateRequest) return;
+        duplicatePaths = new Set();
+        duplicateScanSummary = "";
+        duplicateStatus.textContent = error.message;
+        applyFileFilters();
+      }
+    }
+    duplicateFilter.addEventListener("change", applyDuplicateMode);
+
+    function renderItems(items) {
+      const fragment = document.createDocumentFragment();
+      items.forEach(item => {
+        const card = document.createElement("div");
+        card.className = "item";
+        card.tabIndex = 0;
+        card.dataset.path = item.path;
+        card.dataset.item = JSON.stringify(item);
+        card.onclick = event => {
+          if (selectionMode) {
+            selectFile(card, event.shiftKey, !checkbox.checked);
+          } else {
+            onItemClick(item);
+          }
+        };
+        card.onkeydown = event => {
+          if (event.target === card && (event.key === "Enter" || event.key === " ")) {
+            event.preventDefault();
+            if (selectionMode) selectFile(card, event.shiftKey, !checkbox.checked);
+            else onItemClick(item);
+          }
+        };
+        // Checkbox (only visible in selection mode)
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.setAttribute('aria-label', 'Select ' + item.name);
+        checkbox.style.cursor = 'pointer';
+        checkbox.onclick = event => {
+          event.stopPropagation();
+          selectFile(card, event.shiftKey, checkbox.checked);
+        };
+        // Thumbnail container
+        const thumbContainer = document.createElement("div");
+        thumbContainer.className = "item-thumbnail";
+        const thumbImg = document.createElement("img");
+        thumbImg.src = "/api/files/thumbnail?path=" + encodeURIComponent(item.path);
+        thumbImg.alt = "";
+        thumbImg.loading = "lazy";
+        thumbImg.onerror = () => {
+          thumbImg.style.display = "none";
+        };
+        thumbContainer.appendChild(thumbImg);
+        // Info container
+        const infoContainer = document.createElement("div");
+        infoContainer.className = "item-info";
+        const name = document.createElement("div");
+        name.className = "item-name";
+        name.textContent = item.name;
+        name.title = item.name;
+        const meta = document.createElement("div");
+        meta.className = "item-meta";
+        const left = document.createElement("span");
+        left.textContent = item.isDirectory ? "Folder" : (item.extension || "").toUpperCase();
+        const right = document.createElement("span");
+        right.textContent = item.isDirectory ? "" : formatSize(item.size);
+        meta.appendChild(left);
+        meta.appendChild(right);
+        infoContainer.appendChild(name);
+        if (globalSearchQuery !== null || duplicateViewActive) {
+          const location = document.createElement("div");
+          location.className = "item-location";
+          location.textContent = locationForItem(item);
+          location.title = item.path;
+          infoContainer.appendChild(location);
+        }
+        infoContainer.appendChild(meta);
+        card.appendChild(checkbox);
+        card.appendChild(thumbContainer);
+        card.appendChild(infoContainer);
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "secondary item-delete";
+        remove.textContent = "Delete";
+        remove.setAttribute("aria-label", "Delete " + item.name);
+        remove.onclick = event => {
+          event.stopPropagation();
+          deleteItems([item]);
+        };
+        card.appendChild(remove);
+        fragment.appendChild(card);
+      });
+      document.getElementById("items").replaceChildren(fragment);
+      updateSelectedCount();
+    }
+
+    function onItemClick(item) {
+      if (item.isDirectory) {
+        selectRootForPath(item.path);
+        loadFolder(item.path);
+      } else {
+        const clean = item.path.replace(/[/\\]+$/, "");
+        const parent = clean.slice(0, Math.max(clean.lastIndexOf("\\"), clean.lastIndexOf("/")));
+        const folder = currentRoot && pathKey(parent) === pathKey(currentRoot) ? currentRoot : parent;
+        FileNest.activity(accountUser, "recent", { path: item.path, folder });
+        // Check if it's an image
+        const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.heic', '.tiff', '.svg'];
+        const videoExtensions = ['.mp4', '.mkv', '.avi', '.mov', '.flv', '.wmv', '.webm', '.m4v', '.mpg', '.mpeg', '.3gp'];
+        const ext = (item.extension || '').toLowerCase();
+        if (imageExtensions.includes(ext)) {
+          // Build image list from current view
+          const items = Array.from(document.querySelectorAll('.item'));
+          const imageList = [];
+          let clickedIndex = 0;
+          items.forEach((el) => {
+            const itemData = JSON.parse(el.getAttribute('data-item') || '{}');
+            const itemExt = (itemData.extension || '').toLowerCase();
+            if (imageExtensions.includes(itemExt)) {
+              if (itemData.path === item.path) clickedIndex = imageList.length;
+              imageList.push(itemData.path);
+            }
+          });
+          if (!imageList.includes(item.path)) showImageViewer([item.path], 0);
+          else showImageViewer(imageList, clickedIndex);
+        } else if (videoExtensions.includes(ext)) {
+          showVideoViewer(item.path);
+        } else {
+          const modal = document.getElementById("filePreview");
+          document.getElementById("filePreviewTitle").textContent = item.name;
+          document.getElementById("filePreviewDescription").textContent = FileNest.bytes(item.size);
+          const query = new URLSearchParams({ path: item.path });
+          document.getElementById("previewOpen").href = "/api/files/file?" + query;
+          document.getElementById("previewDownload").href = "/api/files/open?" + query;
+          modal.showModal();
+        }
+      }
+    }
+
+    function showImageViewer(imageList, index) {
+      imageViewerReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      currentImageList = imageList;
+      currentImageIndex = index;
+      imageZoom = 1;
+      imagePanX = 0;
+      imagePanY = 0;
+      updateImageViewer();
+      const viewer = document.getElementById('imageViewer');
+      const img = document.getElementById('imageViewerImg');
+      viewer.style.display = 'flex';
+      document.addEventListener('keydown', handleImageViewerKeys);
+      img.addEventListener('wheel', handleImageZoom, { passive: false });
+      img.addEventListener('mousedown', handlePanStart);
+      document.addEventListener('mousemove', handlePanMove);
+      document.addEventListener('mouseup', handlePanEnd);
+      document.getElementById('imageViewerClose').focus();
+    }
+
+    function updateImageViewer() {
+      const img = document.getElementById('imageViewerImg');
+      const source = '/api/files/file?path=' + encodeURIComponent(currentImageList[currentImageIndex]);
+      if (img.getAttribute('src') !== source) {
+        previewRotation.reset(img);
+        img.src = source;
+      }
+      img.style.transform = `scale(${imageZoom}) translate(${imagePanX}px, ${imagePanY}px)`;
+      img.style.cursor = imageZoom > 1 ? 'grab' : 'default';
+      document.getElementById('imagePrevBtn').style.display = currentImageIndex > 0 ? 'flex' : 'none';
+      document.getElementById('imageNextBtn').style.display = currentImageIndex < currentImageList.length - 1 ? 'flex' : 'none';
+    }
+
+    function showVideoViewer(videoPath) {
+      const viewer = document.getElementById('videoViewer');
+      const video = document.getElementById('videoViewerVideo');
+      videoViewerReturnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      currentVideoPath = videoPath;
+      previewRotation.reset(video);
+      video.src = '/api/files/file?path=' + encodeURIComponent(videoPath);
+      viewer.style.display = 'flex';
+      document.addEventListener('keydown', handleVideoViewerKeys);
+      document.getElementById('videoViewerClose').focus();
+    }
+
+    function navigateImage(direction) {
+      currentImageIndex += direction;
+      if (currentImageIndex < 0) currentImageIndex = 0;
+      if (currentImageIndex >= currentImageList.length) currentImageIndex = currentImageList.length - 1;
+      imageZoom = 1;
+      imagePanX = 0;
+      imagePanY = 0;
+      updateImageViewer();
+    }
+
+    function handleImageViewerKeys(e) {
+      if (e.key === 'Tab') trapViewerFocus(e, document.getElementById('imageViewer'));
+      else if (e.key === 'ArrowLeft') { e.preventDefault(); navigateImage(-1); }
+      else if (e.key === 'ArrowRight') { e.preventDefault(); navigateImage(1); }
+      else if (e.key === 'Escape') { e.preventDefault(); closeImageViewer(); }
+    }
+
+    function handleVideoViewerKeys(e) {
+      if (e.key === 'Tab') trapViewerFocus(e, document.getElementById('videoViewer'));
+      else if (e.key === 'Escape') { e.preventDefault(); closeVideoViewer(); }
+    }
+
+    function trapViewerFocus(event, viewer) {
+      const controls = Array.from(viewer.querySelectorAll('button:not([disabled]), video[controls]'))
+        .filter(element => element.getClientRects().length);
+      if (!controls.length) return;
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+
+    function handleImageZoom(e) {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? -0.1 : 0.1;
+      imageZoom = Math.max(0.5, Math.min(5, imageZoom + delta));
+      updateImageViewer();
+    }
+
+    function handlePanStart(e) {
+      if (imageZoom > 1) {
+        isPanning = true;
+        panStartX = e.clientX - imagePanX;
+        panStartY = e.clientY - imagePanY;
+        e.target.style.cursor = 'grabbing';
+      }
+    }
+
+    function handlePanMove(e) {
+      if (isPanning) {
+        imagePanX = e.clientX - panStartX;
+        imagePanY = e.clientY - panStartY;
+        updateImageViewer();
+      }
+    }
+
+    function handlePanEnd(e) {
+      if (isPanning) {
+        isPanning = false;
+        const img = document.getElementById('imageViewerImg');
+        img.style.cursor = imageZoom > 1 ? 'grab' : 'default';
+      }
+    }
+
+    function closeImageViewer() {
+      const viewer = document.getElementById('imageViewer');
+      const img = document.getElementById('imageViewerImg');
+      viewer.style.display = 'none';
+      img.removeAttribute('src');
+      previewRotation.reset(img);
+      document.removeEventListener('keydown', handleImageViewerKeys);
+      img.removeEventListener('wheel', handleImageZoom);
+      img.removeEventListener('mousedown', handlePanStart);
+      document.removeEventListener('mousemove', handlePanMove);
+      document.removeEventListener('mouseup', handlePanEnd);
+      if (imageViewerReturnFocus?.isConnected) imageViewerReturnFocus.focus();
+      imageViewerReturnFocus = null;
+    }
+
+    function closeVideoViewer() {
+      const viewer = document.getElementById('videoViewer');
+      const video = document.getElementById('videoViewerVideo');
+      viewer.style.display = 'none';
+      document.removeEventListener('keydown', handleVideoViewerKeys);
+      video.pause();
+      video.removeAttribute('src');
+      previewRotation.reset(video);
+      currentVideoPath = null;
+      video.load();
+      if (videoViewerReturnFocus?.isConnected) videoViewerReturnFocus.focus();
+      videoViewerReturnFocus = null;
+    }
+
+    function previewItem(path) {
+      const card = Array.from(document.querySelectorAll("#items .item")).find(item => item.dataset.path === path);
+      return card ? JSON.parse(card.dataset.item) : { path, name: path.split(/[/\\]/).pop() };
+    }
+
+    function deleteCurrentVideo() {
+      if (currentVideoPath) deleteItems([previewItem(currentVideoPath)], closeVideoViewer);
+    }
+
+    function deleteCurrentImage() {
+      const path = currentImageList[currentImageIndex];
+      if (path) deleteItems([previewItem(path)], closeImageViewer);
+    }
+
+    let selectionMode = false;
+    let deleting = false;
+    let viewType = matchMedia("(max-width: 700px), (max-width: 1100px) and (pointer: coarse)").matches ? "list" : "tiles";
+    const fileRange = new RangeSelection();
+
+    function selectFile(card, extend, checked) {
+      if (deleting) {
+        card.querySelector('input[type="checkbox"]').checked = card.classList.contains("selected");
+        return;
+      }
+      const cards = [...document.querySelectorAll("#items .item")];
+      const range = fileRange.select(cards, card, extend);
+      for (const item of range || [card])
+        item.querySelector('input[type="checkbox"]').checked = Boolean(range) || checked;
+      updateSelectedCount();
+    }
+
+    function setSelectionMode(active) {
+      selectionMode = active;
+      const grid = document.getElementById("items");
+      grid.classList.toggle("selection-mode", active);
+      const select = document.getElementById("selectBtn");
+      select.textContent = active ? "Done" : "Select";
+      select.setAttribute("aria-pressed", active);
+      document.getElementById("selectAllBtn").hidden = !active;
+      document.getElementById("downloadSelectedBtn").hidden = !active;
+      if (!active) {
+        fileRange.reset();
+        grid.querySelectorAll('input[type="checkbox"]:checked').forEach(box => { box.checked = false; });
+      }
+      updateSelectedCount();
+    }
+
+    function updateSelectedCount() {
+      const cards = Array.from(document.querySelectorAll("#items .item"));
+      let selected = 0;
+      for (const card of cards) {
+        const checked = card.querySelector('input[type="checkbox"]').checked;
+        card.classList.toggle("selected", checked);
+        if (checked) selected++;
+      }
+      const hint = fileRange.hint;
+      document.getElementById("selectedCountLabel").textContent = selectionMode
+        ? selected + " selected" + (hint ? ". " + hint : "")
+        : "";
+      const range = document.getElementById("rangeBtn");
+      range.hidden = !selectionMode;
+      range.disabled = deleting || cards.length === 0;
+      range.setAttribute("aria-pressed", fileRange.active);
+      document.getElementById("selectAllBtn").textContent =
+        cards.length && cards.length === selected ? "Deselect all" : "Select all";
+      document.getElementById("selectAllBtn").disabled = deleting || cards.length === 0;
+      document.getElementById("selectBtn").disabled = deleting || cards.length === 0;
+      document.getElementById("downloadSelectedBtn").disabled = deleting || selected === 0;
+      const remove = document.getElementById("deleteSelectedBtn");
+      remove.textContent = selected ? "Delete selected (" + selected + ")" : "Delete";
+      remove.disabled = deleting || cards.length === 0;
+    }
+
+    function selectAll() {
+      fileRange.reset();
+      const boxes = Array.from(document.querySelectorAll('#items .item input[type="checkbox"]'));
+      const allChecked = boxes.every(box => box.checked);
+      boxes.forEach(box => { box.checked = !allChecked; });
+      updateSelectedCount();
+    }
+
+    function toggleViewType() {
+      const views = ['tiles', 'list', 'details'];
+      const currentIndex = views.indexOf(viewType);
+      viewType = views[(currentIndex + 1) % views.length];
+
+      applyViewType();
+    }
+
+    function applyViewType() {
+      const grid = document.getElementById('items');
+      grid.classList.remove('list-view', 'details-view');
+
+      if (viewType === 'list') {
+        grid.classList.add('list-view');
+        document.getElementById('viewTypeBtn').textContent = '📝 List';
+      } else if (viewType === 'details') {
+        grid.classList.add('details-view');
+        document.getElementById('viewTypeBtn').textContent = '📊 Details';
+      } else {
+        document.getElementById('viewTypeBtn').textContent = '📋 Tiles';
+      }
+    }
+
+    function downloadSelected() {
+      const selected = Array.from(document.querySelectorAll('.item input[type="checkbox"]:checked'))
+        .map(checkbox => checkbox.closest('.item'));
+      if (!selected.length) { alert('No items selected'); return; }
+
+      if (selected.length === 1 && !JSON.parse(selected[0].dataset.item).isDirectory) {
+        const link = document.createElement('a');
+        link.href = '/api/files/open?path=' + encodeURIComponent(selected[0].dataset.path);
+        link.download = '';
+        link.click();
+        return;
+      }
+
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = '/api/files/download-zip-form';
+      form.target = 'archiveDownload';
+      form.hidden = true;
+      for (const item of selected) {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'paths';
+        input.value = item.dataset.path;
+        form.appendChild(input);
+      }
+      document.body.appendChild(form);
+      form.submit();
+      form.remove();
+    }
+
+    document.getElementById('archiveDownload').addEventListener('load', event => {
+      const text = event.currentTarget.contentDocument?.body?.textContent;
+      if (!text) return;
+      try {
+        const error = JSON.parse(text)?.error;
+        if (error) setError(error);
+      } catch {}
+    });
+
+    function deleteSelected() {
+      const marked = Array.from(document.querySelectorAll('#items .item input[type="checkbox"]:checked'));
+      if (!marked.length) {
+        setSelectionMode(true);
+        setError("Select the files or folders to delete.");
+        return;
+      }
+      deleteItems(marked.map(checkbox => JSON.parse(checkbox.closest(".item").dataset.item)));
+    }
+
+    async function deleteItems(items, closePreview) {
+      if (deleting || !items.length) return;
+      const subject = items.length === 1 ? '"' + items[0].name + '"' : items.length + " selected items";
+      const recursive = items.some(item => item.isDirectory) ? " Selected folders and everything inside them will be removed." : "";
+      if (!confirm("Permanently delete " + subject + "?" + recursive)) return;
+
+      deleting = true;
+      updateSelectedCount();
+      const viewAtStart = fileRequest;
+      try {
+        const response = await fetch("/api/files/batch/delete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ paths: items.map(item => item.path) })
+        });
+        if (response.status === 401) {
+          closePreview?.();
+          showLogin();
+          return;
+        }
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Could not delete the selection.");
+        if (result.deleted.length) {
+          duplicateReports.clear();
+          duplicatePaths = null;
+        }
+
+        if (result.deleted.length) closePreview?.();
+        if (viewAtStart === fileRequest) {
+          if (globalSearchQuery !== null) await loadGlobalSearch(globalSearchQuery);
+          else if (currentFilter === "notes") {
+            await loadFolder(currentPath);
+            await filterByCategory("notes");
+          } else if (currentFilter) await filterByCategory(currentFilter);
+          else await loadFolder(currentPath);
+        } else if (result.deleted.length && duplicateFilter.value !== "all")
+          await applyDuplicateMode();
+        const count = result.deleted.length;
+        const failures = result.failures.length;
+        const firstFailure = result.failures[0];
+        const failedItem = firstFailure && items.find(item => item.path === firstFailure.path);
+        const summary = count + (count === 1 ? " item deleted." : " items deleted.") +
+          (failures ? " " + failures + " could not be deleted. " +
+            (failedItem ? failedItem.name + ": " : "") + firstFailure.error : "");
+        if (closePreview && !count) alert(summary);
+        else setError(summary);
+      } catch (error) {
+        if (closePreview) alert(error.message);
+        else setError(error.message);
+      } finally {
+        deleting = false;
+        updateSelectedCount();
+      }
+    }
+
+    const rootsToggle = document.getElementById("rootsToggle");
+    const driveSidebar = document.getElementById("driveSidebar");
+    function closeDriveSidebar() {
+      driveSidebar.classList.remove("mobile-open");
+      rootsToggle.setAttribute("aria-expanded", "false");
+    }
+    rootsToggle.addEventListener("click", () => {
+      rootsToggle.setAttribute("aria-expanded", driveSidebar.classList.toggle("mobile-open"));
+    });
+    document.getElementById("selectBtn").addEventListener("click", () => setSelectionMode(!selectionMode));
+    document.getElementById("rangeBtn").addEventListener("click", () => {
+      fileRange.toggle();
+      updateSelectedCount();
+    });
+    applyViewType();
+    updateSelectedCount();
+
+    function goUp() {
+      if (!currentPath || !currentRoot) return;
+
+      const root = currentRoot.replace(/[/\\]+$/, "");
+      const path = currentPath.replace(/[/\\]+$/, "");
+      if (path === root) return;
+
+      const cut = Math.max(path.lastIndexOf("\\"), path.lastIndexOf("/"));
+      loadFolder(cut <= root.length ? currentRoot : path.substring(0, cut));
+    }
+
+    function formatSize(bytes) {
+      if (bytes == null) return "";
+      const units = ["B","KB","MB","GB","TB"];
+      let i = 0;
+      let v = bytes;
+      while (v >= 1024 && i < units.length - 1) {
+        v /= 1024;
+        i++;
+      }
+      return v.toFixed(1) + " " + units[i];
+    }
+
+    function setError(msg) {
+      document.getElementById("error").textContent = msg || "";
+    }
+
+    async function uploadSelectedFiles(evt) {
+      const input = evt.target;
+      const files = input.files;
+
+      if (!currentPath) {
+        alert("Select a drive / folder first.");
+        input.value = "";
+        return;
+      }
+      if (!files || !files.length) return;
+
+      const targetPath = currentPath;
+      document.getElementById("uploadStatus").textContent = "Uploading…";
+      const form = new FormData();
+      for (const f of files) {
+        const rel = f.webkitRelativePath && f.webkitRelativePath.length > 0
+          ? f.webkitRelativePath
+          : f.name;
+        form.append("files", f, rel);
+      }
+
+      try {
+        const res = await fetch(
+          "/api/files/upload?targetPath=" + encodeURIComponent(targetPath),
+          {
+            method: "POST",
+            body: form,
+            credentials: "include"
+          }
+        );
+        if (!res.ok) {
+          if (res.status === 401) {
+            showLogin();
+            return;
+          }
+          const text = await res.text();
+          throw new Error("HTTP " + res.status + " – " + text);
+        }
+        await res.json();
+        duplicateReports.clear();
+        duplicatePaths = null;
+        const base = targetPath.replace(/[/\\]+$/, "");
+        for (const file of [...files].slice(-15)) {
+          const relative = (file.webkitRelativePath || file.name).split("/");
+          const folder = relative.length === 1 ? targetPath : [base, ...relative.slice(0, -1)].join("\\");
+          FileNest.activity(accountUser, "uploads", { folder, path: folder.replace(/[/\\]+$/, "") + "\\" + file.name });
+        }
+        if (currentPath === targetPath) await loadFolder(targetPath);
+        else if (duplicateFilter.value !== "all") await applyDuplicateMode();
+        document.getElementById("uploadStatus").textContent = "Upload complete.";
+      } catch (err) {
+        console.error(err);
+        document.getElementById("uploadStatus").textContent = "Upload failed: " + err.message;
+      } finally {
+        input.value = "";
+      }
+    }
+
+    // Wire hidden inputs to upload handler
+    document.getElementById("fileInputFiles").addEventListener("change", uploadSelectedFiles);
+    document.getElementById("fileInputFolder").addEventListener("change", uploadSelectedFiles);
+
+    // Upload dropdown/menu logic
+    (function() {
+      const uploadBtn = document.getElementById('uploadBtn');
+      const uploadMenu = document.getElementById('uploadMenu');
+      const filesOpt = document.getElementById('uploadFilesOption');
+      const folderOpt = document.getElementById('uploadFolderOption');
+
+      if (!uploadBtn) return;
+
+      function menuIsOpen() {
+        return uploadMenu.style.display === 'flex';
+      }
+
+      function openMenu() {
+        uploadMenu.style.display = 'flex';
+        uploadMenu.style.flexDirection = 'column';
+        uploadBtn.setAttribute('aria-expanded', 'true');
+        filesOpt.focus();
+      }
+
+      function closeMenu(restoreFocus = false) {
+        if (!menuIsOpen()) return;
+        uploadMenu.style.display = 'none';
+        uploadBtn.setAttribute('aria-expanded', 'false');
+        if (restoreFocus) uploadBtn.focus();
+      }
+
+      uploadBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (menuIsOpen()) closeMenu();
+        else openMenu();
+      });
+
+      filesOpt.addEventListener('click', (e) => {
+        e.stopPropagation();
+        closeMenu(true);
+        document.getElementById('fileInputFiles').click();
+      });
+      folderOpt.addEventListener('click', (e) => {
+        e.stopPropagation();
+        closeMenu(true);
+        document.getElementById('fileInputFolder').click();
+      });
+
+      uploadMenu.addEventListener('keydown', event => {
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          closeMenu(true);
+        } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+          event.preventDefault();
+          const options = [filesOpt, folderOpt];
+          const index = options.indexOf(document.activeElement);
+          const direction = event.key === 'ArrowDown' ? 1 : -1;
+          options[(index + direction + options.length) % options.length].focus();
+        }
+      });
+
+      // Close menu when clicking outside
+      document.addEventListener('click', (e) => {
+        if (!uploadBtn.contains(e.target) && !uploadMenu.contains(e.target)) closeMenu();
+      });
+    })();
+
+    // Filter by category (Pictures, Videos, Documents)
+    async function filterByCategory(category) {
+      if (!currentRoot) {
+        alert('Please select a drive first');
+        return;
+      }
+
+      if (category === "notes") {
+        currentFilter = category;
+        document.getElementById("currentPathLabel").textContent = "Notes directly in the current folder";
+        applyFileFilters();
+        if (duplicateFilter.value !== "all") await applyDuplicateMode();
+        return;
+      }
+
+      const request = ++fileRequest;
+      folderLoaded = false;
+      entries = [];
+      currentFilter = category;
+
+      const scopeLabel = category === "pdfs" ? "PDFs among the first 500 document results" :
+        category.charAt(0).toUpperCase() + category.slice(1) + " · up to 500 results";
+      document.getElementById("currentPathLabel").textContent = scopeLabel;
+      setError("");
+      setSelectionMode(false);
+
+      const itemsEl = document.getElementById("items");
+      const emptyMsgEl = document.getElementById("emptyMsg");
+      itemsEl.textContent = "Searching for " + category + "...";
+      updateSelectedCount();
+      emptyMsgEl.style.display = "none";
+
+      try {
+        const res = await fetch("/api/files/category?path=" + encodeURIComponent(currentRoot) + "&category=" + encodeURIComponent(category === "pdfs" ? "documents" : category), { credentials: "include" });
+        if (!res.ok) {
+          if (res.status === 401) {
+            showLogin();
+            return;
+          }
+          const text = await res.text();
+          throw new Error("HTTP " + res.status + " – " + text);
+        }
+        const items = await res.json();
+        if (request !== fileRequest) return;
+        entries = items;
+        folderLoaded = true;
+        applyFileFilters();
+        if (duplicateFilter.value !== "all") await applyDuplicateMode();
+      } catch (err) {
+        console.error(err);
+        if (request !== fileRequest) return;
+        setError("Failed to search: " + err.message);
+        itemsEl.innerHTML = "";
+      }
+    }
+
+    // Keyboard letter navigation
+    document.addEventListener('keydown', (e) => {
+      // Ignore if typing in input fields, or if modifier keys pressed
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.ctrlKey || e.altKey || e.metaKey) return;
+
+      // Only handle letter keys (a-z)
+      if (e.key.length === 1 && /[a-zA-Z]/.test(e.key)) {
+        e.preventDefault();
+        const letter = e.key.toLowerCase();
+
+        // Get all visible items
+        const items = Array.from(document.querySelectorAll('.item'));
+        if (items.length === 0) return;
+
+        // Filter items that start with this letter
+        const matchingItems = items.filter(item => {
+          const itemData = JSON.parse(item.getAttribute('data-item') || '{}');
+          const name = (itemData.name || '').toLowerCase();
+          return name.startsWith(letter);
+        });
+
+        if (matchingItems.length === 0) return;
+
+        // If same letter pressed, cycle to next match
+        if (letter === lastSearchLetter) {
+          searchLetterIndex = (searchLetterIndex + 1) % matchingItems.length;
+        } else {
+          // New letter, start at first match
+          lastSearchLetter = letter;
+          searchLetterIndex = 0;
+        }
+
+        // Clear previous highlight
+        items.forEach(item => item.classList.remove('keyboard-selected'));
+
+        // Highlight current match
+        const selectedItem = matchingItems[searchLetterIndex];
+        selectedItem.classList.add('keyboard-selected');
+
+        // Scroll into view
+        selectedItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    });
+
+    window.addEventListener("pageshow", event => { if (event.persisted) location.reload(); });
+    document.addEventListener("DOMContentLoaded", checkAuth);
+  </script>
+</body>
+</html>

@@ -1,177 +1,238 @@
 using System.Security.Cryptography;
-using System.Text;
-using FilePortal.Models;
 using System.Text.Json;
+using FilePortal.Models;
 
 namespace FilePortal.Services;
 
+public enum UserChange
+{
+    Updated,
+    NotFound,
+    Conflict,
+    LastAdmin,
+    InvalidPassword
+}
+
 public class UserStoreService
 {
-    private readonly string _storePath;
-    private readonly object _lock = new();
-    private readonly JsonSerializerOptions _jsonOptions = new() { WriteIndented = true };
+    public const string SessionStampClaim = "fileportal:session-stamp";
 
-    public UserStoreService()
+    private readonly string _storePath;
+    private readonly string _lockPath;
+    public string DirectoryPath { get; }
+    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
+
+    public UserStoreService(IConfiguration configuration)
     {
-        var dataDir = Path.Combine(AppContext.BaseDirectory, "data");
-        Directory.CreateDirectory(dataDir);
-        _storePath = Path.Combine(dataDir, "users.json");
+        DirectoryPath = GetDirectoryPath(configuration);
+        Directory.CreateDirectory(DirectoryPath);
+        _storePath = Path.Combine(DirectoryPath, "users.json");
+        _lockPath = Path.Combine(DirectoryPath, "users.lock");
+    }
+
+    public static string GetDirectoryPath(IConfiguration configuration)
+    {
+        var directory = configuration["FilePortal:DataDirectory"];
+        return string.IsNullOrWhiteSpace(directory)
+            ? Path.Combine(AppContext.BaseDirectory, "data")
+            : Path.GetFullPath(directory);
     }
 
     private List<UserRecord> LoadAll()
     {
-        lock (_lock)
+        try
         {
-            if (!File.Exists(_storePath)) return new List<UserRecord>();
-            var json = File.ReadAllText(_storePath);
-            try
-            {
-                return JsonSerializer.Deserialize<List<UserRecord>>(json) ?? new List<UserRecord>();
-            }
-            catch
-            {
-                return new List<UserRecord>();
-            }
+            using var stream = new FileStream(_storePath, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
+            var users = JsonSerializer.Deserialize<List<UserRecord>>(stream, JsonOptions);
+            if (users is null || users.Any(user => user is null || user.AllowedFolders is null))
+                throw new InvalidDataException("The FilePortal user store is invalid.");
+            return users;
+        }
+        catch (FileNotFoundException)
+        {
+            return [];
+        }
+        catch (JsonException exception)
+        {
+            throw new InvalidDataException("The FilePortal user store is invalid.", exception);
         }
     }
 
-    private void SaveAll(List<UserRecord> list)
+    private void SaveAll(List<UserRecord> users)
     {
-        lock (_lock)
+        var temporaryPath = _storePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
         {
-            var json = JsonSerializer.Serialize(list, _jsonOptions);
-            File.WriteAllText(_storePath, json);
+            using (var stream = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            {
+                JsonSerializer.Serialize(stream, users, JsonOptions);
+                stream.Flush(flushToDisk: true);
+            }
+
+            File.Move(temporaryPath, _storePath, overwrite: true);
+        }
+        finally
+        {
+            File.Delete(temporaryPath);
         }
     }
 
-    public IEnumerable<UserRecord> GetUsers()
+    private UserChange Update(Func<List<UserRecord>, UserChange> change)
     {
-        return LoadAll().OrderBy(u => u.Username, StringComparer.OrdinalIgnoreCase);
+        using var writeLock = FileStateLock.Acquire(_lockPath);
+        var users = LoadAll();
+        var result = change(users);
+        if (result == UserChange.Updated)
+            SaveAll(users);
+        return result;
     }
 
-    public UserRecord? GetUser(string username)
-    {
-        if (string.IsNullOrWhiteSpace(username)) return null;
-        return LoadAll().FirstOrDefault(u => string.Equals(u.Username, username, StringComparison.OrdinalIgnoreCase));
-    }
+    private static UserRecord? FindUser(List<UserRecord> users, string username) =>
+        users.Find(user => string.Equals(user.Username, username, StringComparison.OrdinalIgnoreCase));
 
-    public int CountAdmins()
-    {
-        return LoadAll().Count(u => u.IsAdmin);
-    }
+    public IEnumerable<UserRecord> GetUsers() =>
+        LoadAll().OrderBy(user => user.Username, StringComparer.OrdinalIgnoreCase);
 
-    public bool IsEmpty()
-    {
-        return LoadAll().Count == 0;
-    }
-
-    public bool SetAdmin(string username, bool isAdmin)
-    {
-        var list = LoadAll();
-        var rec = list.FirstOrDefault(u => string.Equals(u.Username, username, StringComparison.OrdinalIgnoreCase));
-        if (rec == null) return false;
-        rec.IsAdmin = isAdmin;
-        SaveAll(list);
-        return true;
-    }
-
-    public bool SetAllowedFolders(string username, List<string> folderPaths)
-    {
-        var list = LoadAll();
-        var rec = list.FirstOrDefault(u => string.Equals(u.Username, username, StringComparison.OrdinalIgnoreCase));
-        if (rec == null) return false;
-        rec.AllowedFolders = folderPaths ?? new List<string>();
-        SaveAll(list);
-        return true;
-    }
-
-    public bool AddUser(string username, string password, bool isAdmin = false, string firstName = "", string lastName = "")
-    {
-        if (string.IsNullOrWhiteSpace(username) || string.IsNullOrEmpty(password)) return false;
-        username = username.Trim();
-
-        var list = LoadAll();
-        if (list.Any(u => string.Equals(u.Username, username, StringComparison.OrdinalIgnoreCase))) return false;
-
-        // generate salt
-        var salt = RandomNumberGenerator.GetBytes(16);
-        var hash = HashPassword(password, salt);
-
-        var rec = new UserRecord
-        {
-            Username = username,
-            FirstName = firstName?.Trim() ?? string.Empty,
-            LastName = lastName?.Trim() ?? string.Empty,
-            Salt = Convert.ToBase64String(salt),
-            Hash = Convert.ToBase64String(hash),
-            CreatedUtc = DateTime.UtcNow
-            ,IsAdmin = isAdmin
-        };
-
-        list.Add(rec);
-        SaveAll(list);
-        return true;
-    }
-
-    public bool RemoveUser(string username)
-    {
-        var list = LoadAll();
-        var found = list.FirstOrDefault(u => string.Equals(u.Username, username, StringComparison.OrdinalIgnoreCase));
-        if (found == null) return false;
-        list.Remove(found);
-        SaveAll(list);
-        return true;
-    }
-
-    public bool ValidateCredentials(string username, string password)
-    {
-        if (string.IsNullOrWhiteSpace(username) || string.IsNullOrEmpty(password)) return false;
-        var list = LoadAll();
-        var rec = list.FirstOrDefault(u => string.Equals(u.Username, username, StringComparison.OrdinalIgnoreCase));
-        if (rec == null) return false;
-
-        var salt = Convert.FromBase64String(rec.Salt);
-        var expected = Convert.FromBase64String(rec.Hash);
-        var actual = HashPassword(password, salt);
-
-        return CryptographicOperations.FixedTimeEquals(actual, expected);
-    }
+    public UserRecord? GetUser(string username) => FindUser(LoadAll(), username);
 
     public UserRecord? Authenticate(string username, string password)
     {
-        if (string.IsNullOrWhiteSpace(username) || string.IsNullOrEmpty(password)) return null;
-        var list = LoadAll();
-        var rec = list.FirstOrDefault(u => string.Equals(u.Username, username, StringComparison.OrdinalIgnoreCase));
-        if (rec == null) return null;
+        var user = GetUser(username.Trim());
+        return user is not null && CheckPassword(user, password) ? user : null;
+    }
 
-        var salt = Convert.FromBase64String(rec.Salt);
-        var expected = Convert.FromBase64String(rec.Hash);
+    public UserChange AddUser(string username, string password, bool isAdmin, string firstName, string lastName) =>
+        AddUser(username, password, isAdmin, firstName, lastName, provisioning: false);
+
+    public UserChange ProvisionAdmin(string username, string password) =>
+        AddUser(username, password, true, "", "", provisioning: true);
+
+    private UserChange AddUser(string username, string password, bool isAdmin, string firstName, string lastName, bool provisioning)
+    {
+        username = username.Trim();
+        var user = new UserRecord
+        {
+            Username = username,
+            FirstName = firstName.Trim(),
+            LastName = lastName.Trim(),
+            IsAdmin = isAdmin,
+            CreatedUtc = DateTime.UtcNow
+        };
+        SetPassword(user, password);
+
+        return Update(users =>
+        {
+            if (FindUser(users, username) is not null || (provisioning && users.Any(account => account.IsAdmin)))
+                return UserChange.Conflict;
+
+            users.Add(user);
+            return UserChange.Updated;
+        });
+    }
+
+    public UserChange RemoveUser(string username) => Update(users =>
+    {
+        var user = FindUser(users, username);
+        if (user is null) return UserChange.NotFound;
+        if (user.IsAdmin && users.Count(account => account.IsAdmin) == 1) return UserChange.LastAdmin;
+
+        users.Remove(user);
+        return UserChange.Updated;
+    });
+
+    public UserChange SetAdmin(string username, bool isAdmin) => Update(users =>
+    {
+        var user = FindUser(users, username);
+        if (user is null) return UserChange.NotFound;
+        if (user.IsAdmin == isAdmin) return UserChange.Conflict;
+        if (!isAdmin && users.Count(account => account.IsAdmin) == 1) return UserChange.LastAdmin;
+
+        user.IsAdmin = isAdmin;
+        user.SecurityStamp = Guid.NewGuid();
+        return UserChange.Updated;
+    });
+
+    public UserChange SetAllowedFolders(string username, List<string> folders) => Update(users =>
+    {
+        var user = FindUser(users, username);
+        if (user is null) return UserChange.NotFound;
+
+        user.AllowedFolders = folders;
+        return UserChange.Updated;
+    });
+
+    public UserChange UpdateProfile(string username, string firstName, string lastName) => Update(users =>
+    {
+        var user = FindUser(users, username);
+        if (user is null) return UserChange.NotFound;
+
+        user.FirstName = firstName.Trim();
+        user.LastName = lastName.Trim();
+        return UserChange.Updated;
+    });
+
+    public UserChange UpdatePassword(string username, string newPassword, string? currentPassword) => Update(users =>
+    {
+        var user = FindUser(users, username);
+        if (user is null) return UserChange.NotFound;
+        if (currentPassword is not null && !CheckPassword(user, currentPassword)) return UserChange.InvalidPassword;
+
+        SetPassword(user, newPassword);
+        user.MustChangePassword = false;
+        return UserChange.Updated;
+    });
+
+    public (UserChange Result, string? Password) GenerateTemporaryPassword(string username)
+    {
+        string? password = null;
+        var result = Update(users =>
+        {
+            var user = FindUser(users, username);
+            if (user is null) return UserChange.NotFound;
+
+            password = CreateTemporaryPassword();
+            SetPassword(user, password);
+            user.MustChangePassword = true;
+            return UserChange.Updated;
+        });
+        return (result, password);
+    }
+
+    private static string CreateTemporaryPassword()
+    {
+        const string upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+        const string lower = "abcdefghijkmnopqrstuvwxyz";
+        const string digits = "23456789";
+        const string symbols = "!@#$%*+-=?";
+        const string all = upper + lower + digits + symbols;
+        var password = new char[18];
+        password[0] = upper[RandomNumberGenerator.GetInt32(upper.Length)];
+        password[1] = lower[RandomNumberGenerator.GetInt32(lower.Length)];
+        password[2] = digits[RandomNumberGenerator.GetInt32(digits.Length)];
+        password[3] = symbols[RandomNumberGenerator.GetInt32(symbols.Length)];
+        for (var index = 4; index < password.Length; index++)
+            password[index] = all[RandomNumberGenerator.GetInt32(all.Length)];
+
+        RandomNumberGenerator.Shuffle(password);
+        return new string(password);
+    }
+
+    private static bool CheckPassword(UserRecord user, string password)
+    {
+        var salt = Convert.FromBase64String(user.Salt);
+        var expected = Convert.FromBase64String(user.Hash);
         var actual = HashPassword(password, salt);
-        if (CryptographicOperations.FixedTimeEquals(actual, expected)) return rec;
-        return null;
+        return CryptographicOperations.FixedTimeEquals(actual, expected);
     }
 
-    private static byte[] HashPassword(string password, byte[] salt)
+    private static void SetPassword(UserRecord user, string password)
     {
-        // PBKDF2
-        using var kdf = new Rfc2898DeriveBytes(password, salt, 100_000, HashAlgorithmName.SHA256);
-        return kdf.GetBytes(32);
-    }
-
-    public bool UpdatePassword(string username, string newPassword)
-    {
-        if (string.IsNullOrWhiteSpace(username) || string.IsNullOrEmpty(newPassword)) return false;
-        var list = LoadAll();
-        var rec = list.FirstOrDefault(u => string.Equals(u.Username, username, StringComparison.OrdinalIgnoreCase));
-        if (rec == null) return false;
-
         var salt = RandomNumberGenerator.GetBytes(16);
-        var hash = HashPassword(newPassword, salt);
-
-        rec.Salt = Convert.ToBase64String(salt);
-        rec.Hash = Convert.ToBase64String(hash);
-        rec.CreatedUtc = DateTime.UtcNow;
-        SaveAll(list);
-        return true;
+        user.Salt = Convert.ToBase64String(salt);
+        user.Hash = Convert.ToBase64String(HashPassword(password, salt));
+        user.SecurityStamp = Guid.NewGuid();
     }
+
+    private static byte[] HashPassword(string password, byte[] salt) =>
+        Rfc2898DeriveBytes.Pbkdf2(password, salt, 100_000, HashAlgorithmName.SHA256, 32);
 }
