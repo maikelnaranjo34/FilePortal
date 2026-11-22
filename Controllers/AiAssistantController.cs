@@ -64,7 +64,7 @@ public sealed class AiAssistantController(AiSettingsService settingsStore, IHttp
         var body = new
         {
             model = settings.OpenAiModel,
-            instructions = "You are Nesti, the concise FilePortal action assistant. When the user asks to open, navigate, search, download, or prepare an operation, call the appropriate tool instead of describing steps. Do not narrate what you are thinking or what you intend to do. Reply in at most two short sentences after tools finish. Never claim an action happened unless its tool reports it was prepared or completed. Never request API keys or passwords. Destructive actions require separate visual confirmation. Duplicate scans are read-only. The current user is " + currentUser.Username + ". Available root display names: " + availableRoots + ".",
+            instructions = "You are Nesti, the concise FilePortal action assistant. When the user asks to open, navigate, search, download, or prepare an operation, call the appropriate tool instead of describing steps. For requests to go to or open a folder, call open_folder, not list_folder. Use list_folder when the user asks what is inside a folder or asks to list its contents without navigating. Never claim navigation happened unless a navigation tool reports prepared=true. Do not narrate what you are thinking or what you intend to do. Reply in at most two short sentences after tools finish. Never request API keys or passwords. Destructive actions require separate visual confirmation. Duplicate scans are read-only. The current user is " + currentUser.Username + ". Available root display names: " + availableRoots + ".",
             input,
             tools = new object[]
             {
@@ -92,6 +92,12 @@ public sealed class AiAssistantController(AiSettingsService settingsStore, IHttp
                 {
                     type = "function", name = "list_folder",
                     description = "List the immediate contents of an authorized folder path.",
+                    parameters = new { type = "object", properties = new { path = new { type = "string" } }, required = new[] { "path" }, additionalProperties = false }, strict = true
+                },
+                new
+                {
+                    type = "function", name = "open_folder",
+                    description = "Navigate the user's browser to a specific authorized folder. Use this when the user asks to go to, open, or show a folder, for example Easystore.",
                     parameters = new { type = "object", properties = new { path = new { type = "string" } }, required = new[] { "path" }, additionalProperties = false }, strict = true
                 },
                 new
@@ -278,6 +284,55 @@ public sealed class AiAssistantController(AiSettingsService settingsStore, IHttp
                     .Select(entry => new { entry.Name, entry.FullName, isDirectory = entry is DirectoryInfo,
                         size = entry is FileInfo file ? file.Length : (long?)null, entry.LastWriteTime });
                 return JsonSerializer.Serialize(new { path = folder, entries });
+            }
+            if (call.Name == "open_folder")
+            {
+                var requestedPath = arguments.RootElement.GetProperty("path").GetString()?.Trim() ?? "";
+                string? folder = roots.FirstOrDefault(root =>
+                    string.Equals(root.Name, requestedPath, StringComparison.OrdinalIgnoreCase))?.Path;
+
+                if (folder is null &&
+                    fileBrowser.TryResolve(requestedPath, roots, out var directPath, allowMissing: false) &&
+                    Directory.Exists(directPath))
+                    folder = directPath;
+
+                if (folder is null)
+                {
+                    var matchedRoot = roots
+                        .Where(root => requestedPath.Length > root.Name.Length &&
+                            requestedPath.StartsWith(root.Name, StringComparison.OrdinalIgnoreCase) &&
+                            requestedPath[root.Name.Length] is '\\' or '/')
+                        .OrderByDescending(root => root.Name.Length)
+                        .FirstOrDefault();
+                    if (matchedRoot is not null)
+                    {
+                        var relativePath = requestedPath[(matchedRoot.Name.Length + 1)..]
+                            .Replace('/', Path.DirectorySeparatorChar)
+                            .Replace('\\', Path.DirectorySeparatorChar);
+                        if (!string.IsNullOrWhiteSpace(relativePath))
+                        {
+                            var candidatePath = Path.Combine(matchedRoot.Path, relativePath);
+                            if (fileBrowser.TryResolve(candidatePath, roots, out var subfolder, allowMissing: false) &&
+                                Directory.Exists(subfolder))
+                            {
+                                var relativeToRoot = Path.GetRelativePath(matchedRoot.Path, subfolder);
+                                if (relativeToRoot != ".." &&
+                                    !relativeToRoot.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal) &&
+                                    !Path.IsPathRooted(relativeToRoot))
+                                    folder = subfolder;
+                            }
+                        }
+                    }
+                }
+
+                if (folder is null || !Directory.Exists(folder))
+                    return JsonSerializer.Serialize(new { error = "That folder is unavailable or outside your access." });
+                var route = "/files.html" + QueryString.Create(new Dictionary<string, string?>
+                {
+                    ["path"] = folder
+                }).Value;
+                clientActions.Add(new { type = "navigate", url = route });
+                return JsonSerializer.Serialize(new { prepared = true, path = folder, route });
             }
             if (call.Name == "open_page")
             {
